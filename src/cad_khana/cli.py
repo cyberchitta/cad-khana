@@ -8,6 +8,7 @@ from typing import Annotated
 
 import typer
 
+from cad_khana.core import viewer
 from cad_khana.core.diagnostics import Diagnostics
 
 app = typer.Typer(
@@ -47,27 +48,27 @@ def _write_error_diagnostics(out: Path, error: str) -> None:
     )
 
 
-@app.command()
-def build(
-    script: Annotated[
-        Path,
-        typer.Argument(
-            exists=True,
-            file_okay=True,
-            dir_okay=False,
-            readable=True,
-            help="Python script that composes an assembly and calls cad_khana.build().",
-        ),
-    ],
-    out: Annotated[
-        Path,
-        typer.Option(
-            "--out",
-            help="Directory to write error diagnostics if the script fails.",
-        ),
-    ] = Path("outputs"),
-) -> None:
-    """Run a user script to compose an assembly and export geometry."""
+ScriptArg = Annotated[
+    Path,
+    typer.Argument(
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        help="Python script that composes an assembly and calls cad_khana.build().",
+    ),
+]
+
+OutOpt = Annotated[
+    Path,
+    typer.Option(
+        "--out",
+        help="Directory to write error diagnostics if the script fails.",
+    ),
+]
+
+
+def _run_script(script: Path, out: Path, command: str) -> None:
     try:
         runpy.run_path(str(script), run_name="__main__")
     except (SystemExit, typer.Exit):
@@ -75,9 +76,25 @@ def build(
     except BaseException as exc:
         tb = traceback.format_exc()
         typer.echo(tb, err=True)
-        typer.echo(f"khana build failed: {type(exc).__name__}: {exc}", err=True)
+        typer.echo(f"khana {command} failed: {type(exc).__name__}: {exc}", err=True)
         _write_error_diagnostics(out, tb)
         raise typer.Exit(code=1)
+
+
+@app.command()
+def build(script: ScriptArg, out: OutOpt = Path("outputs")) -> None:
+    """Run a user script to compose an assembly and export geometry."""
+    _run_script(script, out, "build")
+
+
+@app.command()
+def view(script: ScriptArg, out: OutOpt = Path("outputs")) -> None:
+    """Run a user script and push the resulting assembly to the OCP viewer."""
+    viewer.set_auto(True)
+    try:
+        _run_script(script, out, "view")
+    finally:
+        viewer.set_auto(False)
 
 
 def main() -> None:

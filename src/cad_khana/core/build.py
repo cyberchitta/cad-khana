@@ -8,6 +8,7 @@ from cad_khana.core.assembly import Assembly
 from cad_khana.core.assertions import evaluate as evaluate_assertions
 from cad_khana.core.diagnostics import Diagnostics, compute
 from cad_khana.core.export import export_assembly
+from cad_khana.core import viewer
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,8 @@ def build(assembly: Assembly, out: str | Path = "outputs") -> BuildResult:
     (out_path / "diagnostics.json").write_text(
         json.dumps(asdict(diagnostics), indent=2) + "\n"
     )
+    if viewer.auto_enabled():
+        viewer.push(assembly)
     result = BuildResult(exports=exports, diagnostics=diagnostics)
     if failed:
         raise SystemExit(1)
