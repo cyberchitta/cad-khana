@@ -60,7 +60,7 @@ cad-khana/
     build123d_cheatsheet.md   # primitives agents use most
     printability.md           # design rules baked into diagnostics
     examples/
-      hinged_box/             # canonical reference project
+      pin_hinge/              # canonical reference project (clevis-tang-pin)
       snap_latch/
   tests/
 ```
@@ -318,5 +318,5 @@ for end-user install, `uvx khana ...` for ephemeral use.
 - [x] Step 4: assertions (no-interference + clearance; `assert_min_wall` deferred to step 6)
 - [x] Step 5: viewer
 - [x] Step 6: wall thickness + overhangs (+ `assert_min_wall`)
-- [ ] Step 7: SKILL.md + example
+- [x] Step 7: SKILL.md + example (pin-hinge; also tightened `min_wall` sliver filter)
 - [ ] Step 8: polish commands

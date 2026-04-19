@@ -27,7 +27,12 @@ is the minimum over all samples.
   produce small triangles whose centroid is close to an adjacent face.
   The inward ray may hit that adjacent face at a short distance and
   report a misleadingly small wall — especially for chamfered or
-  filleted edges. Expect some noise at sharp geometric transitions.
+  filleted edges. To suppress this noise, hits closer than
+  `SLIVER_HIT_DISTANCE_MM` (0.05 mm) are ignored; real walls thinner
+  than ~50 µm will therefore read as None and fail `assert_min_wall`
+  for "min wall could not be computed". That cutoff is well below any
+  printable feature, but it is a floor — don't expect meaningful
+  numbers for sub-0.05 mm geometry.
 - **Non-perpendicular thinness.** If a wall's thinnest cross-section is
   not aligned with any face's outward normal (e.g., diagonal pinch
   points), ray-casting inward from face centroids will overestimate

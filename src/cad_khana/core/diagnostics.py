@@ -16,6 +16,7 @@ OVERHANG_ANGLE_THRESHOLD_DEG = 45.0
 TESSELLATION_TOLERANCE_MM = 0.1
 TESSELLATION_ANGULAR_TOLERANCE = 0.3
 RAY_OFFSET_MM = 1e-4
+SLIVER_HIT_DISTANCE_MM = 0.05
 
 
 @dataclass(frozen=True)
@@ -133,7 +134,7 @@ def _wall_thickness_at(part: Part, triangle: Triangle) -> float | None:
     forward = tuple(
         d
         for hit, _ in part.find_intersection_points(axis)
-        if (d := (hit - origin).dot(inward)) > RAY_OFFSET_MM
+        if (d := (hit - origin).dot(inward)) > SLIVER_HIT_DISTANCE_MM
     )
     return min(forward) + RAY_OFFSET_MM if forward else None
 
