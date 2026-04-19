@@ -70,21 +70,26 @@ The VS Code extension is not required for `khana build` or
 ## Example (planned API)
 
 ```python
-import cad_khana as ck
 from build123d import *
+
+from cad_khana.core.assembly import Assembly
+from cad_khana.core.build import build
+
 
 def housing(width: float = 40, depth: float = 30, height: float = 20):
     with BuildPart() as p:
         Box(width, depth, height)
     return p.part
 
+
 def lever(length: float = 25):
     with BuildPart() as p:
         Box(length, 5, 3)
     return p.part
 
+
 assembly = (
-    ck.Assembly()
+    Assembly()
     .add("housing", housing(), location=Location((0, 0, 0)))
     .add("lever",   lever(),   location=Location((0, 0, 12)))
     .assert_no_interference("lever", "housing")
@@ -92,7 +97,7 @@ assembly = (
     .assert_min_wall("housing", min_mm=1.5)
 )
 
-ck.build(assembly, out="outputs/")
+build(assembly, out="outputs/")
 ```
 
 ## Project documents

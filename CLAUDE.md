@@ -46,10 +46,10 @@ cad-khana/
   NOTES.md                    # design rationale, open questions, history
   pyproject.toml              # uv-managed, entry point: khana = cad_khana.cli:main
   src/
-    cad_khana/
-      __init__.py             # re-export public API: Assembly, assertions
+    cad_khana/                # PEP 420 namespace package, no __init__.py
       core/
         assembly.py           # Assembly class: named parts + locations
+        build.py              # build() orchestrator + BuildResult
         diagnostics.py        # interference, wall thickness, overhangs
         assertions.py         # assertion primitives + results collection
         export.py             # STL, STEP, 3MF
@@ -71,32 +71,42 @@ that a different surface would also need.
 
 ## Public API shape
 
+The package has no `__init__.py` (PEP 420 namespace). User scripts import
+the public names directly from their submodules — no aliasing, no shim,
+the structure speaks for itself.
+
 ```python
-import cad_khana as ck
 from build123d import *
+
+from cad_khana.core.assembly import Assembly
+from cad_khana.core.build import build
+
 
 def housing():
     with BuildPart() as p:
         Box(40, 30, 20)
     return p.part
 
+
 def lever():
     with BuildPart() as p:
         Box(25, 5, 3)
     return p.part
 
-assembly = ck.Assembly()
-assembly.add("housing", housing(), location=Location((0, 0, 0)))
-assembly.add("lever",   lever(),   location=Location((0, 0, 12)))
 
-assembly.assert_no_interference("lever", "housing")
-assembly.assert_clearance("lever", "housing", min_mm=0.2)
-assembly.assert_min_wall("housing", min_mm=1.5)
+assembly = (
+    Assembly()
+    .add("housing", housing(), location=Location((0, 0, 0)))
+    .add("lever",   lever(),   location=Location((0, 0, 12)))
+    .assert_no_interference("lever", "housing")
+    .assert_clearance("lever", "housing", min_mm=0.2)
+    .assert_min_wall("housing", min_mm=1.5)
+)
 
-ck.build(assembly, out="outputs/")
+build(assembly, out="outputs/")
 ```
 
-The `ck.build` call runs the diagnostics, executes assertions, writes exports
+The `build()` call runs the diagnostics, executes assertions, writes exports
 and `diagnostics.json`, and exits nonzero if any assertion failed.
 
 ## CLI surface
@@ -300,7 +310,7 @@ for end-user install, `uvx khana ...` for ephemeral use.
 [Update this section as work progresses.]
 
 - [x] Step 1: scaffolding
-- [ ] Step 2: assembly + export
+- [x] Step 2: assembly + export
 - [ ] Step 3: basic diagnostics
 - [ ] Step 4: assertions
 - [ ] Step 5: viewer
