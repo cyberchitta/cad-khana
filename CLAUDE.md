@@ -317,6 +317,6 @@ for end-user install, `uvx khana ...` for ephemeral use.
 - [x] Step 3: basic diagnostics
 - [x] Step 4: assertions (no-interference + clearance; `assert_min_wall` deferred to step 6)
 - [x] Step 5: viewer
-- [ ] Step 6: wall thickness + overhangs (+ `assert_min_wall`)
+- [x] Step 6: wall thickness + overhangs (+ `assert_min_wall`)
 - [ ] Step 7: SKILL.md + example
 - [ ] Step 8: polish commands

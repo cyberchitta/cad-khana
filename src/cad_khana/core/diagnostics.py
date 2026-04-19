@@ -2,15 +2,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from itertools import combinations
+from math import asin, degrees
 from typing import TYPE_CHECKING
 
-from build123d import Part
+from build123d import Axis, Part, Vector
 
 if TYPE_CHECKING:
     from cad_khana.core.assembly import Assembly, PlacedPart
 
 SCHEMA_VERSION = "0.1"
 INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
+OVERHANG_ANGLE_THRESHOLD_DEG = 45.0
+TESSELLATION_TOLERANCE_MM = 0.1
+TESSELLATION_ANGULAR_TOLERANCE = 0.3
+RAY_OFFSET_MM = 1e-4
 
 
 @dataclass(frozen=True)
@@ -60,6 +65,13 @@ class Diagnostics:
     exports: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class Triangle:
+    centroid: Vector
+    normal: Vector
+    area: float
+
+
 def _placed(p: PlacedPart) -> Part:
     return p.part.moved(p.location)
 
@@ -72,9 +84,74 @@ def _bbox(part: Part) -> BBox:
     )
 
 
-def _part_diagnostics(p: PlacedPart) -> PartDiagnostics:
-    shape = _placed(p)
-    return PartDiagnostics(bbox=_bbox(shape), volume_mm3=shape.volume)
+def _triangle(a: Vector, b: Vector, c: Vector) -> Triangle:
+    cross = (b - a).cross(c - a)
+    length = cross.length
+    return Triangle(
+        centroid=(a + b + c) / 3,
+        normal=cross / length if length > 0 else cross,
+        area=length / 2,
+    )
+
+
+def _tessellate(part: Part) -> tuple[Triangle, ...]:
+    verts, tris = part.tessellate(
+        TESSELLATION_TOLERANCE_MM, TESSELLATION_ANGULAR_TOLERANCE
+    )
+    return tuple(_triangle(verts[a], verts[b], verts[c]) for a, b, c in tris)
+
+
+def _overhang_angle_deg(normal: Vector) -> float:
+    downward = min(1.0, max(0.0, -normal.Z))
+    return degrees(asin(downward))
+
+
+def _overhang(name: str, triangles: tuple[Triangle, ...]) -> Overhang | None:
+    flagged = tuple(
+        (t.area, ang)
+        for t in triangles
+        if (ang := _overhang_angle_deg(t.normal)) > OVERHANG_ANGLE_THRESHOLD_DEG
+    )
+    if not flagged:
+        return None
+    return Overhang(
+        part=name,
+        area_mm2=sum(a for a, _ in flagged),
+        max_angle_deg=max(ang for _, ang in flagged),
+    )
+
+
+def _wall_thickness_at(part: Part, triangle: Triangle) -> float | None:
+    if triangle.area <= 0:
+        return None
+    inward = -triangle.normal
+    origin = triangle.centroid + inward * RAY_OFFSET_MM
+    axis = Axis(
+        origin=(origin.X, origin.Y, origin.Z),
+        direction=(inward.X, inward.Y, inward.Z),
+    )
+    forward = tuple(
+        d
+        for hit, _ in part.find_intersection_points(axis)
+        if (d := (hit - origin).dot(inward)) > RAY_OFFSET_MM
+    )
+    return min(forward) + RAY_OFFSET_MM if forward else None
+
+
+def min_wall_mm(part: Part) -> float | None:
+    triangles = _tessellate(part)
+    hits = tuple(
+        d for t in triangles if (d := _wall_thickness_at(part, t)) is not None
+    )
+    return min(hits) if hits else None
+
+
+def _part_diagnostics(shape: Part) -> PartDiagnostics:
+    return PartDiagnostics(
+        bbox=_bbox(shape),
+        volume_mm3=shape.volume,
+        min_wall_mm=min_wall_mm(shape),
+    )
 
 
 def _interference(a: PlacedPart, b: PlacedPart) -> Interference | None:
@@ -92,10 +169,20 @@ def _interference(a: PlacedPart, b: PlacedPart) -> Interference | None:
 
 
 def compute(assembly: Assembly) -> Diagnostics:
-    parts = {p.name: _part_diagnostics(p) for p in assembly.parts}
+    shapes = {p.name: _placed(p) for p in assembly.parts}
+    parts = {name: _part_diagnostics(shape) for name, shape in shapes.items()}
     interferences = tuple(
         r
         for a, b in combinations(assembly.parts, 2)
         if (r := _interference(a, b)) is not None
     )
-    return Diagnostics(parts=parts, interferences=interferences)
+    overhangs = tuple(
+        o
+        for name, shape in shapes.items()
+        if (o := _overhang(name, _tessellate(shape))) is not None
+    )
+    return Diagnostics(
+        parts=parts,
+        interferences=interferences,
+        overhangs=overhangs,
+    )

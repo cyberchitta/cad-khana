@@ -46,9 +46,10 @@ def test_build_writes_diagnostics_json(tmp_path: Path):
     assert data["error"] is None
     assert set(data["parts"]) == {"cube"}
     assert data["parts"]["cube"]["volume_mm3"] == approx(1000.0)
-    assert data["parts"]["cube"]["min_wall_mm"] is None
+    assert data["parts"]["cube"]["min_wall_mm"] == approx(10.0, abs=0.05)
     assert data["interferences"] == []
-    assert data["overhangs"] == []
+    assert len(data["overhangs"]) == 1
+    assert data["overhangs"][0]["part"] == "cube"
     assert data["assertions"] == []
 
 

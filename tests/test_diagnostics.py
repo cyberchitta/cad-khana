@@ -11,6 +11,12 @@ def _cube(size: float = 10):
     return p.part
 
 
+def _plate(x: float, y: float, z: float):
+    with BuildPart() as p:
+        Box(x, y, z)
+    return p.part
+
+
 def test_empty_assembly_has_no_parts_or_interferences():
     d = compute(Assembly())
     assert d.parts == {}
@@ -81,12 +87,33 @@ def test_interference_pairs_are_unordered_combinations():
     assert pairs == {("a", "b"), ("a", "c"), ("b", "c")}
 
 
-def test_overhangs_and_assertions_are_empty_placeholders():
-    d = compute(Assembly().add("cube", _cube()))
-    assert d.overhangs == ()
-    assert d.assertions == ()
+def test_assertions_default_empty():
+    assert compute(Assembly().add("cube", _cube())).assertions == ()
 
 
-def test_min_wall_mm_is_not_yet_computed():
-    d = compute(Assembly().add("cube", _cube()))
-    assert d.parts["cube"].min_wall_mm is None
+def test_min_wall_reports_thinnest_dimension():
+    d = compute(Assembly().add("plate", _plate(20, 20, 2)))
+    assert d.parts["plate"].min_wall_mm == approx(2.0, abs=0.05)
+
+
+def test_min_wall_for_cube_equals_edge_length():
+    d = compute(Assembly().add("cube", _cube(10)))
+    assert d.parts["cube"].min_wall_mm == approx(10.0, abs=0.05)
+
+
+def test_overhangs_flag_downward_faces():
+    overhangs = compute(Assembly().add("cube", _cube(10))).overhangs
+    assert len(overhangs) == 1
+    o = overhangs[0]
+    assert o.part == "cube"
+    assert o.max_angle_deg == approx(90.0, abs=0.01)
+    assert o.area_mm2 == approx(100.0, abs=0.01)
+
+
+def test_overhangs_are_per_part():
+    a = (
+        Assembly()
+        .add("a", _cube(10))
+        .add("b", _cube(10), location=Location((20, 0, 0)))
+    )
+    assert {o.part for o in compute(a).overhangs} == {"a", "b"}
