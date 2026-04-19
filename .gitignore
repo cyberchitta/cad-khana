@@ -69,3 +69,6 @@ desktop.ini
 .env
 .env.local
 .env.*.local
+
+# Working files (commit message drafts, etc.)
+.commit-msg

@@ -299,7 +299,7 @@ for end-user install, `uvx khana ...` for ephemeral use.
 
 [Update this section as work progresses.]
 
-- [ ] Step 1: scaffolding
+- [x] Step 1: scaffolding
 - [ ] Step 2: assembly + export
 - [ ] Step 3: basic diagnostics
 - [ ] Step 4: assertions
