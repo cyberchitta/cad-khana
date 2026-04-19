@@ -10,7 +10,9 @@ import typer
 
 from cad_khana.core import render as _render
 from cad_khana.core import viewer
+from cad_khana.core.build import set_export_enabled
 from cad_khana.core.diagnostics import Diagnostics
+from cad_khana.core.diff import diff as compute_diff
 
 app = typer.Typer(
     name="khana",
@@ -89,6 +91,16 @@ def build(script: ScriptArg, out: OutOpt = Path("outputs")) -> None:
 
 
 @app.command()
+def check(script: ScriptArg, out: OutOpt = Path("outputs")) -> None:
+    """Run a user script and write diagnostics only (no STL/STEP export)."""
+    set_export_enabled(False)
+    try:
+        _run_script(script, out, "check")
+    finally:
+        set_export_enabled(True)
+
+
+@app.command()
 def view(script: ScriptArg, out: OutOpt = Path("outputs")) -> None:
     """Run a user script and push the resulting assembly to the OCP viewer."""
     viewer.set_auto(True)
@@ -116,6 +128,26 @@ def render(
         _run_script(script, out, "render")
     finally:
         _render.set_auto(False)
+
+
+DiagArg = Annotated[
+    Path,
+    typer.Argument(
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        help="Path to a diagnostics.json file.",
+    ),
+]
+
+
+@app.command()
+def diff(before: DiagArg, after: DiagArg) -> None:
+    """Diff two diagnostics.json files and print a summary of changes."""
+    old = json.loads(before.read_text())
+    new = json.loads(after.read_text())
+    typer.echo(compute_diff(old, new), nl=False)
 
 
 def main() -> None:

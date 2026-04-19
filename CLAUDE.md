@@ -328,4 +328,4 @@ for end-user install, `uvx khana ...` for ephemeral use.
 - [x] Step 5: viewer
 - [x] Step 6: wall thickness + overhangs (+ `assert_min_wall`)
 - [x] Step 7: SKILL.md + example (pin-hinge; also tightened `min_wall` sliver filter)
-- [ ] Step 8: polish commands (`render` done via build123d HLR + Pillow; `check`, `diff` pending)
+- [x] Step 8: polish commands (`render`, `check`, `diff`)

@@ -17,9 +17,18 @@ class BuildResult:
     diagnostics: Diagnostics
 
 
+_export_enabled = True
+
+
+def set_export_enabled(enabled: bool) -> None:
+    global _export_enabled
+    _export_enabled = enabled
+
+
 def build(assembly: Assembly, out: str | Path = "outputs") -> BuildResult:
     out_path = Path(out)
-    exports = export_assembly(assembly, out_path)
+    out_path.mkdir(parents=True, exist_ok=True)
+    exports = export_assembly(assembly, out_path) if _export_enabled else ()
     assertion_results = evaluate_assertions(assembly)
     failed = any(not a.passed for a in assertion_results)
     diagnostics = replace(

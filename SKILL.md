@@ -33,11 +33,17 @@ violated — read the JSON to decide what to edit next.
 ## CLI
 
 ```
-khana build  <script>  # run script, export STL/STEP, write diagnostics.json
-khana view   <script>  # build, then push assembly to the OCP VS Code viewer
-khana render <script>  # build, then write PNG views under <out>/views/
+khana build  <script>        # run script, export STL/STEP, write diagnostics.json
+khana check  <script>        # run script, write diagnostics.json only (no export)
+khana view   <script>        # build, then push assembly to the OCP VS Code viewer
+khana render <script>        # build, then write PNG views under <out>/views/
+khana diff   <before> <after>  # diff two diagnostics.json files
 khana --version
 ```
+
+Prefer `khana check` during fast iteration — it skips STL/STEP export
+so the loop is tighter. Switch to `khana build` when you want the
+exports on disk.
 
 `diagnostics.json` is always written to `--out` (default `outputs/`),
 even on failure — read it to diagnose errors. Exit code is nonzero on

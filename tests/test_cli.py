@@ -91,6 +91,46 @@ def test_build_does_not_push_to_viewer(
     assert calls == []
 
 
+def test_check_writes_diagnostics_without_exports(tmp_path: Path):
+    out = tmp_path / "out"
+    script = tmp_path / "good.py"
+    script.write_text(
+        "from build123d import Box, BuildPart\n"
+        "from cad_khana.core.assembly import Assembly\n"
+        "from cad_khana.core.build import build\n"
+        "\n"
+        "with BuildPart() as p:\n"
+        "    Box(10, 10, 10)\n"
+        f"build(Assembly().add('cube', p.part), out=r'{out}')\n"
+    )
+    result = runner.invoke(app, ["check", str(script)])
+    assert result.exit_code == 0, result.output
+    data = json.loads((out / "diagnostics.json").read_text())
+    assert data["status"] == "ok"
+    assert data["exports"] == []
+    assert not (out / "assembly.stl").exists()
+    assert not (out / "assembly.step").exists()
+
+
+def test_build_after_check_still_exports(tmp_path: Path):
+    out = tmp_path / "out"
+    script = tmp_path / "good.py"
+    script.write_text(
+        "from build123d import Box, BuildPart\n"
+        "from cad_khana.core.assembly import Assembly\n"
+        "from cad_khana.core.build import build\n"
+        "\n"
+        "with BuildPart() as p:\n"
+        "    Box(10, 10, 10)\n"
+        f"build(Assembly().add('cube', p.part), out=r'{out}')\n"
+    )
+    runner.invoke(app, ["check", str(script)])
+    result = runner.invoke(app, ["build", str(script)])
+    assert result.exit_code == 0, result.output
+    assert (out / "assembly.stl").exists()
+    assert (out / "assembly.step").exists()
+
+
 def test_render_writes_png_views(tmp_path: Path):
     out = tmp_path / "out"
     views = tmp_path / "views"
