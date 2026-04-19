@@ -17,9 +17,10 @@ failures when violated, so geometric constraints are enforced, not
 hoped for.
 
 The tool is designed to close a specific gap: LLMs can reason about
-CAD geometry from code but can't see rendered output. Computed
-diagnostics give the agent the feedback a human would get from
-looking at the model.
+CAD geometry from code but need explicit feedback on the things a
+human would catch visually. Computed diagnostics cover the scalar
+questions; `khana render` produces PNGs a multimodal agent can read
+for shape-level questions that numbers don't express well.
 
 ## Why it exists
 
@@ -30,7 +31,9 @@ feedback loop works better:
 1. Agent writes a Build123d script.
 2. `khana build` runs it, exports geometry, writes diagnostics.
 3. Agent reads diagnostics, edits the script, repeats.
-4. When diagnostics are clean, a human reviews visually.
+4. When a shape-level question arises that diagnostics can't answer,
+   the agent runs `khana render` and reads the PNGs directly.
+5. When the design is clean, a human reviews it in the OCP viewer.
 
 Humans stay in the loop for taste and physical-world validation;
 correctness iteration happens in code.
@@ -41,7 +44,7 @@ correctness iteration happens in code.
 khana build <path>      # run script, export, write diagnostics.json
 khana check <path>      # diagnostics only, no export
 khana view <path>       # build + push to OCP viewer
-khana render <path>     # orthographic PNGs
+khana render <path>     # orthographic/iso PNGs for the agent to read
 khana diff <old> <new>  # diff two diagnostics.json files
 ```
 

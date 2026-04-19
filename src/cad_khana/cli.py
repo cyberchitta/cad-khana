@@ -8,6 +8,7 @@ from typing import Annotated
 
 import typer
 
+from cad_khana.core import render as _render
 from cad_khana.core import viewer
 from cad_khana.core.diagnostics import Diagnostics
 
@@ -95,6 +96,26 @@ def view(script: ScriptArg, out: OutOpt = Path("outputs")) -> None:
         _run_script(script, out, "view")
     finally:
         viewer.set_auto(False)
+
+
+@app.command()
+def render(
+    script: ScriptArg,
+    out: OutOpt = Path("outputs"),
+    views_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--views-dir",
+            help="Directory to write PNG views. Defaults to <out>/views.",
+        ),
+    ] = None,
+) -> None:
+    """Run a user script and write orthographic + isometric PNG views."""
+    _render.set_auto(True, views_dir)
+    try:
+        _run_script(script, out, "render")
+    finally:
+        _render.set_auto(False)
 
 
 def main() -> None:

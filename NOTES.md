@@ -15,6 +15,11 @@ interferences, clearances, wall thickness, overhangs. A diagnostics-first
 wrapper closes that gap by computing those checks and returning structured
 JSON the agent can read after every build.
 
+Rendered views are a complementary channel, not a human-only one. Modern
+agent harnesses are multimodal, so PNGs fed back to the model handle the
+shape-level questions that scalars express poorly. `khana render` is built
+for the agent first; humans have the OCP viewer.
+
 ## Prior art worth knowing
 
 - **CADAM** (github.com/Adam-CAD/CADAM) — browser text-to-CAD using OpenSCAD.
@@ -89,10 +94,14 @@ a stateful or imported part should still work without friction.
 - **Pattern extraction.** At what point does a mechanism pattern (hinge,
   four-bar, cam, snap-fit) recur often enough to justify a helper? Track
   in `references/examples/` as we build them.
-- **Orthographic rendering on demand.** `khana render` is in the build order
-  as a polish command, but we haven't decided whether the agent should
-  invoke it proactively (when diagnostics are ambiguous) or only when a
-  human asks. Probably the former, but needs real use to tell.
+- **Rendered views as a second diagnostic channel.** Originally framed as a
+  human convenience, but modern agent harnesses are multimodal — rendered
+  PNGs fed back to the model catch shape-level problems that are awkward
+  to express as scalars ("is the tang pointing the right way", "does the
+  overall proportion look right", "did that cut land where I expected").
+  `khana render` therefore belongs in the agent's iteration loop alongside
+  `khana build`, not just as a PR-artifact producer. Humans have the OCP
+  viewer; the PNGs are primarily for the model.
 
 ## Things considered and rejected
 
@@ -108,8 +117,9 @@ a stateful or imported part should still work without friction.
   harness) is the chat.
 - **Slider-based parameter editing (CADAM style).** Agent edits code
   directly; no human-UI sliders needed. Parameters are just Python variables.
-- **Rendering orthographic views by default.** Diagnostics cover the common
-  case. `khana render` exists for the exceptions.
+- **Rendering orthographic views on every build.** Diagnostics cover the
+  common case cheaply; renders are a targeted tool for shape-level questions
+  the agent (or human) raises explicitly. On-demand, not automatic.
 - **Constraint solver with first-class relationships.** Too much machinery
   for v0. Assertions plus diagnostics cover the needs we can see.
 

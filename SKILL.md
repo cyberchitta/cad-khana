@@ -18,8 +18,9 @@ violated — read the JSON to decide what to edit next.
   lids).
 - Producing **printable geometry** where wall thickness, clearance, and
   overhangs matter.
-- Iterating under **agent control** — you can't see renders, so you
-  rely on `diagnostics.json` to tell you whether the design is correct.
+- Iterating under **agent control** — `diagnostics.json` is the
+  primary signal; `khana render` supplements it with PNGs you can read
+  directly when shape-level questions come up.
 
 ## When not to use it
 
@@ -32,8 +33,9 @@ violated — read the JSON to decide what to edit next.
 ## CLI
 
 ```
-khana build <script>   # run script, export STL/STEP, write diagnostics.json
-khana view  <script>   # build, then push assembly to the OCP VS Code viewer
+khana build  <script>  # run script, export STL/STEP, write diagnostics.json
+khana view   <script>  # build, then push assembly to the OCP VS Code viewer
+khana render <script>  # build, then write PNG views under <out>/views/
 khana --version
 ```
 
@@ -170,7 +172,13 @@ Read these fields after every build:
      everything that matters (a silent passing build isn't proof; it's
      just no failures detected).
 4. Edit parameters or geometry. Re-run. Repeat.
-5. When diagnostics are clean, ask the human to view it via
+5. When a question is shape-level rather than scalar ("is the tang
+   pointing the right way", "did that cut land where I expected"), run
+   `khana render path/to/script.py` and read the PNGs under
+   `outputs/views/`. Four views (`front`, `top`, `right`, `iso`) are
+   produced as hidden-line engineering drawings — solid black for
+   visible edges, gray for edges hidden behind geometry.
+6. When diagnostics are clean, ask the human to view it via
    `khana view path/to/script.py` (which pushes to the OCP VS Code
    viewer).
 

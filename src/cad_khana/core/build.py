@@ -8,7 +8,7 @@ from cad_khana.core.assembly import Assembly
 from cad_khana.core.assertions import evaluate as evaluate_assertions
 from cad_khana.core.diagnostics import Diagnostics, compute
 from cad_khana.core.export import export_assembly
-from cad_khana.core import viewer
+from cad_khana.core import render, viewer
 
 
 @dataclass(frozen=True)
@@ -33,6 +33,8 @@ def build(assembly: Assembly, out: str | Path = "outputs") -> BuildResult:
     )
     if viewer.auto_enabled():
         viewer.push(assembly)
+    if render.auto_enabled():
+        render.render(assembly, render.auto_out() or out_path / "views")
     result = BuildResult(exports=exports, diagnostics=diagnostics)
     if failed:
         raise SystemExit(1)

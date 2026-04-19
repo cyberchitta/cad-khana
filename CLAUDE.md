@@ -10,15 +10,24 @@ agents. An agent (you, or another instance) writes Python scripts that declare
 parts and assemblies using the `cad_khana` library, runs them via the `khana`
 CLI, and reads structured JSON diagnostics to iterate until the design is clean.
 
-The core insight: LLMs can reason about CAD geometry from code, but can't see
-rendered output. So the tool closes that gap with computed diagnostics —
-interferences, clearances, wall thickness, overhangs — returned as structured
-JSON the agent reads after every build. Assertions make geometric constraints
-first-class: a failed assertion is a build failure, not a silent geometry bug.
+The core insight: LLMs can reason about CAD geometry from code, but need
+explicit feedback on the things a human would catch visually. The tool
+provides that through two channels:
 
-Humans view the geometry via the OCP CAD Viewer VS Code extension. The agent
-never needs to see renders; diagnostics are sufficient for correctness, humans
-are sufficient for taste.
+1. **Computed diagnostics** — interferences, clearances, wall thickness,
+   overhangs — returned as structured JSON the agent reads after every
+   build. Cheap, scalar, and the primary iteration signal.
+2. **Rendered views** — orthographic and isometric PNGs produced by
+   `khana render` on demand. Multimodal harnesses feed these back to the
+   model for shape-level questions that scalars express poorly ("is the
+   tang pointing the right way", "did that cut land where I expected").
+
+Assertions make geometric constraints first-class: a failed assertion is
+a build failure, not a silent geometry bug.
+
+Humans view live geometry via the OCP CAD Viewer VS Code extension. The
+rendered PNGs are primarily for the agent; the viewer is primarily for
+humans.
 
 ## Non-goals
 
@@ -115,7 +124,7 @@ and `diagnostics.json`, and exits nonzero if any assertion failed.
 khana build <path>              # run script, export, write diagnostics.json
 khana check <path>              # diagnostics only, no export
 khana view <path>               # build + push to OCP viewer
-khana render <path> --views 4   # orthographic PNGs (for later)
+khana render <path> --views 4   # orthographic/iso PNGs for the agent to read
 khana diff <old> <new>          # diff two diagnostics.json files (for later)
 ```
 
@@ -319,4 +328,4 @@ for end-user install, `uvx khana ...` for ephemeral use.
 - [x] Step 5: viewer
 - [x] Step 6: wall thickness + overhangs (+ `assert_min_wall`)
 - [x] Step 7: SKILL.md + example (pin-hinge; also tightened `min_wall` sliver filter)
-- [ ] Step 8: polish commands
+- [ ] Step 8: polish commands (`render` done via build123d HLR + Pillow; `check`, `diff` pending)

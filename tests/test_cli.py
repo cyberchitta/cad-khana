@@ -5,7 +5,7 @@ import pytest
 from typer.testing import CliRunner
 
 from cad_khana.cli import app
-from cad_khana.core import viewer
+from cad_khana.core import render, viewer
 
 runner = CliRunner()
 
@@ -89,6 +89,28 @@ def test_build_does_not_push_to_viewer(
     result = runner.invoke(app, ["build", str(script)])
     assert result.exit_code == 0, result.output
     assert calls == []
+
+
+def test_render_writes_png_views(tmp_path: Path):
+    out = tmp_path / "out"
+    views = tmp_path / "views"
+    script = tmp_path / "asm.py"
+    script.write_text(
+        "from build123d import Box, BuildPart\n"
+        "from cad_khana.core.assembly import Assembly\n"
+        "from cad_khana.core.build import build\n"
+        "\n"
+        "with BuildPart() as p:\n"
+        "    Box(10, 10, 10)\n"
+        f"build(Assembly().add('cube', p.part), out=r'{out}')\n"
+    )
+    result = runner.invoke(
+        app, ["render", str(script), "--views-dir", str(views)]
+    )
+    assert result.exit_code == 0, result.output
+    expected = {"front.png", "top.png", "right.png", "iso.png"}
+    assert expected.issubset({p.name for p in views.iterdir()})
+    assert not render.auto_enabled(), "render auto toggle must be cleared"
 
 
 def test_build_writes_error_diagnostics_on_script_failure(tmp_path: Path):
