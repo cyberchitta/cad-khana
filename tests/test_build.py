@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from build123d import Box, BuildPart, Location
 from pytest import approx
 
@@ -61,6 +62,76 @@ def test_build_result_carries_diagnostics(tmp_path: Path):
     result = build(Assembly().add("cube", _cube(10)), out=tmp_path)
     assert result.diagnostics.status == "ok"
     assert result.diagnostics.parts["cube"].volume_mm3 == approx(1000.0)
+
+
+def test_build_records_passing_assertion(tmp_path: Path):
+    assembly = (
+        Assembly()
+        .add("a", _cube())
+        .add("b", _cube(), location=Location((20, 0, 0)))
+        .assert_no_interference("a", "b")
+    )
+    result = build(assembly, out=tmp_path)
+    assert result.diagnostics.status == "ok"
+    assert len(result.diagnostics.assertions) == 1
+    assert result.diagnostics.assertions[0].passed
+
+
+def test_build_raises_system_exit_on_assertion_failure(tmp_path: Path):
+    assembly = (
+        Assembly()
+        .add("a", _cube())
+        .add("b", _cube(), location=Location((5, 0, 0)))
+        .assert_no_interference("a", "b")
+    )
+    with pytest.raises(SystemExit) as exc:
+        build(assembly, out=tmp_path)
+    assert exc.value.code == 1
+
+
+def test_build_writes_diagnostics_before_exit_on_failure(tmp_path: Path):
+    assembly = (
+        Assembly()
+        .add("a", _cube())
+        .add("b", _cube(), location=Location((5, 0, 0)))
+        .assert_no_interference("a", "b")
+    )
+    with pytest.raises(SystemExit):
+        build(assembly, out=tmp_path)
+    data = json.loads((tmp_path / "diagnostics.json").read_text())
+    assert data["status"] == "assertion_failed"
+    assert len(data["assertions"]) == 1
+    assert not data["assertions"][0]["passed"]
+    assert data["assertions"][0]["detail"] is not None
+
+
+def test_build_still_exports_on_assertion_failure(tmp_path: Path):
+    assembly = (
+        Assembly()
+        .add("a", _cube())
+        .add("b", _cube(), location=Location((5, 0, 0)))
+        .assert_no_interference("a", "b")
+    )
+    with pytest.raises(SystemExit):
+        build(assembly, out=tmp_path)
+    assert (tmp_path / "assembly.stl").exists()
+    assert (tmp_path / "assembly.step").exists()
+
+
+def test_build_collects_all_assertion_failures(tmp_path: Path):
+    assembly = (
+        Assembly()
+        .add("a", _cube())
+        .add("b", _cube(), location=Location((5, 0, 0)))
+        .assert_no_interference("a", "b", name="first")
+        .assert_clearance("a", "b", min_mm=0.2, name="second")
+    )
+    with pytest.raises(SystemExit):
+        build(assembly, out=tmp_path)
+    data = json.loads((tmp_path / "diagnostics.json").read_text())
+    names = [a["name"] for a in data["assertions"]]
+    assert names == ["first", "second"]
+    assert all(not a["passed"] for a in data["assertions"])
 
 
 def test_build_records_interferences(tmp_path: Path):

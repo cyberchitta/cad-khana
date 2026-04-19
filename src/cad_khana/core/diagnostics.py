@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from itertools import combinations
+from typing import TYPE_CHECKING
 
 from build123d import Part
 
-from cad_khana.core.assembly import Assembly, PlacedPart
+if TYPE_CHECKING:
+    from cad_khana.core.assembly import Assembly, PlacedPart
 
 SCHEMA_VERSION = "0.1"
 INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
