@@ -94,14 +94,6 @@ a stateful or imported part should still work without friction.
 - **Pattern extraction.** At what point does a mechanism pattern (hinge,
   four-bar, cam, snap-fit) recur often enough to justify a helper? Track
   in `references/examples/` as we build them.
-- **Rendered views as a second diagnostic channel.** Originally framed as a
-  human convenience, but modern agent harnesses are multimodal — rendered
-  PNGs fed back to the model catch shape-level problems that are awkward
-  to express as scalars ("is the tang pointing the right way", "does the
-  overall proportion look right", "did that cut land where I expected").
-  `khana render` therefore belongs in the agent's iteration loop alongside
-  `khana build`, not just as a PR-artifact producer. Humans have the OCP
-  viewer; the PNGs are primarily for the model.
 
 ## Things considered and rejected
 

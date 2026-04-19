@@ -194,5 +194,3 @@ Read these fields after every build:
   mechanism with all three assertion types.
 - `references/printability.md` — how wall thickness and overhang
   detection work, and where they're unreliable.
-- `references/build123d_cheatsheet.md` — the Build123d primitives used
-  most often in scripts (planned; drop into Build123d docs for now).

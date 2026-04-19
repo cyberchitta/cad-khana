@@ -4,7 +4,7 @@ A CLI tool and agent skill for designing 3D-printable mechanisms in
 [Build123d](https://build123d.readthedocs.io/), built for LLM-driven
 iteration.
 
-**Status:** in development. Not yet installable.
+**Status:** early. API may still churn.
 
 ## What it does
 
@@ -38,7 +38,7 @@ feedback loop works better:
 Humans stay in the loop for taste and physical-world validation;
 correctness iteration happens in code.
 
-## Planned CLI
+## CLI
 
 ```
 khana build <path>      # run script, export, write diagnostics.json
@@ -48,16 +48,19 @@ khana render <path>     # orthographic/iso PNGs for the agent to read
 khana diff <old> <new>  # diff two diagnostics.json files
 ```
 
-## Install (planned)
+## Install
+
+From a local checkout (for development):
 
 ```bash
-uv tool install cad-khana
+uv sync
+uv run khana build assembly.py
 ```
 
-Or ephemeral use:
+As a global tool from GitHub:
 
 ```bash
-uvx khana build assembly.py
+uv tool install git+https://github.com/restlessronin/cad-khana
 ```
 
 ## Viewer setup (for humans)
@@ -70,7 +73,7 @@ will push assemblies to it.
 The VS Code extension is not required for `khana build` or
 `khana check`; only `khana view` needs it.
 
-## Example (planned API)
+## Example
 
 ```python
 from build123d import *
@@ -108,8 +111,8 @@ build(assembly, out="outputs/")
 - `CLAUDE.md` — operational instructions for agents working on this
   repo.
 - `NOTES.md` — design rationale, key decisions, open questions.
-- `SKILL.md` *(planned)* — agent-facing guide to using the tool.
+- `SKILL.md` — agent-facing guide to using the tool.
 
 ## License
 
-[choose one — MIT or Apache-2.0 recommended]
+Apache-2.0.

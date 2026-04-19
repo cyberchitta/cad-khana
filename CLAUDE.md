@@ -66,11 +66,9 @@ cad-khana/
       cli.py                  # typer CLI — thin dispatcher over core
       # mcp.py                # future: MCP server over the same core
   references/
-    build123d_cheatsheet.md   # primitives agents use most
     printability.md           # design rules baked into diagnostics
     examples/
       pin_hinge/              # canonical reference project (clevis-tang-pin)
-      snap_latch/
   tests/
 ```
 
@@ -125,7 +123,7 @@ khana build <path>              # run script, export, write diagnostics.json
 khana check <path>              # diagnostics only, no export
 khana view <path>               # build + push to OCP viewer
 khana render <path> --views 4   # orthographic/iso PNGs for the agent to read
-khana diff <old> <new>          # diff two diagnostics.json files (for later)
+khana diff <old> <new>          # diff two diagnostics.json files
 ```
 
 Use `typer` for the CLI. Every command exits nonzero on failure. `build` and
@@ -221,32 +219,6 @@ inside internal functions.
 When in doubt, prefer elegance and functional patterns over apparent
 convenience.
 
-## Build order
-
-Each step must ship something usable before moving on.
-
-1. **Scaffolding.** `pyproject.toml` with `uv`, package skeleton,
-   `khana --version` works. No CAD logic yet.
-2. **Assembly + export.** `Assembly` class, STL + STEP export via Build123d.
-   `khana build` produces files. No diagnostics yet.
-3. **Basic diagnostics.** Bounding boxes, volumes, interference check (pairwise
-   boolean intersection, volume > epsilon). `diagnostics.json` written.
-4. **Assertions.** `assert_no_interference`, `assert_clearance`, `assert_min_wall`.
-   Build exits nonzero on failure, diagnostics.json captures results.
-5. **Viewer.** `khana view` pushes to `ocp_vscode`. Build first, push second,
-   so agent sees clean designs.
-6. **Wall thickness + overhangs.** Start with cheap approximations. Document
-   their limitations in references/printability.md.
-7. **SKILL.md + hinged-box example.** Makes the repo installable as a skill.
-   Include user-script style guidance: pure part functions, declarative
-   assembly composition, derived dimensions, `Location` for placement. Frame
-   the recommendation around re-editability — the next edit session should be
-   able to change a top-level parameter and see the design update
-   consistently.
-8. **Polish commands.** `khana check`, `khana diff`, `khana render`.
-
-Stop at any step and the tool is still useful.
-
 ## Key dependencies
 
 - `build123d` — CAD kernel (wraps OCCT)
@@ -261,35 +233,20 @@ need to parse incoming JSON (e.g., `khana diff` reading prior runs).
 Install via `uv`. Project uses `uv sync` for dev, `uv tool install cad-khana`
 for end-user install, `uvx khana ...` for ephemeral use.
 
-## Implementation notes
+## Invariants
 
-- **Assembly model.** `Assembly` should be a frozen dataclass where `add()`
-  returns a new Assembly with the part appended. The user script composes an
-  assembly by chaining `add()` calls; `ck.build()` takes the final immutable
-  value. Assertions are recorded the same way — `assert_no_interference()`
-  returns a new Assembly with the assertion added to its list.
-- **Interference check.** Iterate pairs, compute `part_a.intersect(part_b)`,
-  report volume if above epsilon (0.001 mm³ to ignore FP noise). O(n²) is
-  fine at mechanism scale (< 20 parts). No need to optimize.
-- **Min wall thickness (v0).** Point-sampling approximation: sample points on
-  each face, ray-cast inward along the normal, record shortest hit distance.
-  Document as approximate in `references/printability.md`; a medial-axis
-  approach is a later refinement.
-- **Overhang detection.** Iterate faces of the mesh tessellation, compute
-  angle between normal and +Z, flag faces below threshold (default 45°) that
-  lack support from below.
-- **Assertion execution.** Assertions are declarative records on the Assembly,
-  evaluated during `ck.build`. Collect all results; never raise on first
-  failure. The agent wants every failure at once.
-- **Error handling at the boundary.** The CLI is the true application
-  boundary. Uncaught exceptions from the user script get caught at the CLI,
-  written to `diagnostics.json` with `status: "error"` and traceback in
-  `error`. Never crash without leaving a diagnostic behind. Inside `core/`,
-  functions fail fast on bad inputs without defensive checks.
-- **Side effect isolation.** `core/diagnostics.py` and `core/assertions.py`
-  should be pure (take an Assembly, return results). File I/O lives in
-  `core/export.py` and the CLI. Viewer calls live in `core/viewer.py` and
-  are only invoked by `khana view`.
+- **Side effect isolation.** `core/diagnostics.py`, `core/assertions.py`,
+  and `core/diff.py` are pure — take data, return data. File I/O lives in
+  `core/export.py`, `core/render.py`, and the CLI. Viewer and renderer
+  pushes are gated on module-level toggles set by the CLI command, so user
+  scripts stay identical across `build`/`view`/`render`/`check`.
+- **Error handling at the boundary.** Uncaught exceptions from user
+  scripts are caught at the CLI and written to `diagnostics.json` with
+  `status: "error"` and the traceback in `error`. Never crash without
+  leaving a diagnostic behind. Inside `core/`, trust inputs — no
+  defensive checks.
+- **Assertions collect, don't short-circuit.** Evaluate every assertion
+  and record all results; the agent wants every failure at once.
 
 ## References
 
@@ -317,15 +274,3 @@ for end-user install, `uvx khana ...` for ephemeral use.
 - Don't add dependencies casually. Every dep is a support burden.
 - Don't reproduce copyrighted code from other projects. Write originals.
 
-## Current status
-
-[Update this section as work progresses.]
-
-- [x] Step 1: scaffolding
-- [x] Step 2: assembly + export
-- [x] Step 3: basic diagnostics
-- [x] Step 4: assertions (no-interference + clearance; `assert_min_wall` deferred to step 6)
-- [x] Step 5: viewer
-- [x] Step 6: wall thickness + overhangs (+ `assert_min_wall`)
-- [x] Step 7: SKILL.md + example (pin-hinge; also tightened `min_wall` sliver filter)
-- [x] Step 8: polish commands (`render`, `check`, `diff`)
