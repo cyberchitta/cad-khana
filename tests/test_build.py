@@ -1,9 +1,12 @@
+import json
 from pathlib import Path
 
 from build123d import Box, BuildPart, Location
+from pytest import approx
 
 from cad_khana.core.assembly import Assembly
 from cad_khana.core.build import build
+from cad_khana.core.diagnostics import SCHEMA_VERSION
 
 
 def _cube(size: float = 10):
@@ -30,3 +33,47 @@ def test_build_creates_missing_out_directory(tmp_path: Path):
     target = tmp_path / "nested" / "outputs"
     build(Assembly().add("a", _cube()), out=target)
     assert target.is_dir()
+
+
+def test_build_writes_diagnostics_json(tmp_path: Path):
+    build(Assembly().add("cube", _cube(10)), out=tmp_path)
+    diag_path = tmp_path / "diagnostics.json"
+    assert diag_path.exists()
+    data = json.loads(diag_path.read_text())
+    assert data["schema_version"] == SCHEMA_VERSION
+    assert data["status"] == "ok"
+    assert data["error"] is None
+    assert set(data["parts"]) == {"cube"}
+    assert data["parts"]["cube"]["volume_mm3"] == approx(1000.0)
+    assert data["parts"]["cube"]["min_wall_mm"] is None
+    assert data["interferences"] == []
+    assert data["overhangs"] == []
+    assert data["assertions"] == []
+
+
+def test_build_records_exports_in_diagnostics(tmp_path: Path):
+    result = build(Assembly().add("cube", _cube()), out=tmp_path)
+    data = json.loads((tmp_path / "diagnostics.json").read_text())
+    assert sorted(data["exports"]) == sorted(str(p) for p in result.exports)
+
+
+def test_build_result_carries_diagnostics(tmp_path: Path):
+    result = build(Assembly().add("cube", _cube(10)), out=tmp_path)
+    assert result.diagnostics.status == "ok"
+    assert result.diagnostics.parts["cube"].volume_mm3 == approx(1000.0)
+
+
+def test_build_records_interferences(tmp_path: Path):
+    assembly = (
+        Assembly()
+        .add("a", _cube(10))
+        .add("b", _cube(10), location=Location((5, 0, 0)))
+    )
+    build(assembly, out=tmp_path)
+    data = json.loads((tmp_path / "diagnostics.json").read_text())
+    assert len(data["interferences"]) == 1
+    hit = data["interferences"][0]
+    assert (hit["a"], hit["b"]) == ("a", "b")
+    assert hit["volume_mm3"] == approx(500.0)
+    assert hit["centroid"][0] == approx(2.5)
+    assert hit["centroid"][1] == approx(0.0, abs=1e-9)

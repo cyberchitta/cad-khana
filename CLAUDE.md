@@ -244,7 +244,10 @@ Stop at any step and the tool is still useful.
 - `ocp_vscode` — viewer client (Python side only; VS Code extension is a
   human prerequisite, documented separately)
 - `typer` — CLI
-- `pydantic` — diagnostics schema validation (keeps JSON output honest)
+
+Diagnostics use plain `@dataclass(frozen=True)` + `dataclasses.asdict()` +
+stdlib `json` for serialization. Don't reach for pydantic unless we actually
+need to parse incoming JSON (e.g., `khana diff` reading prior runs).
 
 Install via `uv`. Project uses `uv sync` for dev, `uv tool install cad-khana`
 for end-user install, `uvx khana ...` for ephemeral use.
@@ -311,7 +314,7 @@ for end-user install, `uvx khana ...` for ephemeral use.
 
 - [x] Step 1: scaffolding
 - [x] Step 2: assembly + export
-- [ ] Step 3: basic diagnostics
+- [x] Step 3: basic diagnostics
 - [ ] Step 4: assertions
 - [ ] Step 5: viewer
 - [ ] Step 6: wall thickness + overhangs
