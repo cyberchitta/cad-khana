@@ -5,14 +5,13 @@ from typing import TYPE_CHECKING
 
 from build123d import Part
 
-from cad_khana.core.diagnostics import (
+from cad_khana.mechanism.diagnostics import (
     INTERFERENCE_VOLUME_EPSILON_MM3,
     AssertionResult,
-    min_wall_mm,
 )
 
 if TYPE_CHECKING:
-    from cad_khana.core.assembly import Assembly, PlacedPart
+    from cad_khana.mechanism.assembly import Assembly, PlacedPart
 
 
 @dataclass(frozen=True)
@@ -47,28 +46,7 @@ class Clearance:
         return AssertionResult(self.name, passed, detail)
 
 
-@dataclass(frozen=True)
-class MinWall:
-    part: str
-    min_mm: float
-    name: str
-
-    def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
-        wall = min_wall_mm(parts[self.part])
-        if wall is None:
-            return AssertionResult(
-                self.name, False, "min wall could not be computed"
-            )
-        passed = wall >= self.min_mm
-        detail = (
-            None
-            if passed
-            else f"min wall {wall:.4f}mm below min {self.min_mm}mm"
-        )
-        return AssertionResult(self.name, passed, detail)
-
-
-Assertion = NoInterference | Clearance | MinWall
+Assertion = NoInterference | Clearance
 
 
 def _placed(p: PlacedPart) -> Part:

@@ -1,19 +1,13 @@
 from build123d import Box, BuildPart, Location
 from pytest import approx
 
-from cad_khana.core.assembly import Assembly
-from cad_khana.core.diagnostics import SCHEMA_VERSION, compute
+from cad_khana.mechanism.assembly import Assembly
+from cad_khana.mechanism.diagnostics import SCHEMA_VERSION, compute
 
 
 def _cube(size: float = 10):
     with BuildPart() as p:
         Box(size, size, size)
-    return p.part
-
-
-def _plate(x: float, y: float, z: float):
-    with BuildPart() as p:
-        Box(x, y, z)
     return p.part
 
 
@@ -41,6 +35,15 @@ def test_part_bbox_reflects_placement():
 def test_part_volume_is_reported_in_mm3():
     d = compute(Assembly().add("cube", _cube(10)))
     assert d.parts["cube"].volume_mm3 == approx(1000.0)
+
+
+def test_part_diagnostics_has_no_min_wall_field():
+    d = compute(Assembly().add("cube", _cube(10)))
+    assert not hasattr(d.parts["cube"], "min_wall_mm")
+
+
+def test_diagnostics_has_no_overhangs_field():
+    assert not hasattr(compute(Assembly()), "overhangs")
 
 
 def test_non_overlapping_parts_have_no_interference():
@@ -89,31 +92,3 @@ def test_interference_pairs_are_unordered_combinations():
 
 def test_assertions_default_empty():
     assert compute(Assembly().add("cube", _cube())).assertions == ()
-
-
-def test_min_wall_reports_thinnest_dimension():
-    d = compute(Assembly().add("plate", _plate(20, 20, 2)))
-    assert d.parts["plate"].min_wall_mm == approx(2.0, abs=0.05)
-
-
-def test_min_wall_for_cube_equals_edge_length():
-    d = compute(Assembly().add("cube", _cube(10)))
-    assert d.parts["cube"].min_wall_mm == approx(10.0, abs=0.05)
-
-
-def test_overhangs_flag_downward_faces():
-    overhangs = compute(Assembly().add("cube", _cube(10))).overhangs
-    assert len(overhangs) == 1
-    o = overhangs[0]
-    assert o.part == "cube"
-    assert o.max_angle_deg == approx(90.0, abs=0.01)
-    assert o.area_mm2 == approx(100.0, abs=0.01)
-
-
-def test_overhangs_are_per_part():
-    a = (
-        Assembly()
-        .add("a", _cube(10))
-        .add("b", _cube(10), location=Location((20, 0, 0)))
-    )
-    assert {o.part for o in compute(a).overhangs} == {"a", "b"}

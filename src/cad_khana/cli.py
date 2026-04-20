@@ -8,11 +8,11 @@ from typing import Annotated
 
 import typer
 
-from cad_khana.core import render as _render
-from cad_khana.core import viewer
-from cad_khana.core.build import set_export_enabled
-from cad_khana.core.diagnostics import Diagnostics
-from cad_khana.core.diff import diff as compute_diff
+from cad_khana import render as _render
+from cad_khana import viewer
+from cad_khana.diff import diff as compute_diff
+from cad_khana.mechanism.check import _set_export_default
+from cad_khana.mechanism.diagnostics import Diagnostics
 
 app = typer.Typer(
     name="khana",
@@ -46,7 +46,7 @@ def _root(
 def _write_error_diagnostics(out: Path, error: str) -> None:
     out.mkdir(parents=True, exist_ok=True)
     diag = Diagnostics(status="error", error=error)
-    (out / "diagnostics.json").write_text(
+    (out / "mechanism.json").write_text(
         json.dumps(asdict(diag), indent=2) + "\n"
     )
 
@@ -58,7 +58,7 @@ ScriptArg = Annotated[
         file_okay=True,
         dir_okay=False,
         readable=True,
-        help="Python script that composes an assembly and calls cad_khana.build().",
+        help="Python script that composes an assembly and calls check()/inspect().",
     ),
 ]
 
@@ -93,11 +93,11 @@ def build(script: ScriptArg, out: OutOpt = Path("outputs")) -> None:
 @app.command()
 def check(script: ScriptArg, out: OutOpt = Path("outputs")) -> None:
     """Run a user script and write diagnostics only (no STL/STEP export)."""
-    set_export_enabled(False)
+    _set_export_default(False)
     try:
         _run_script(script, out, "check")
     finally:
-        set_export_enabled(True)
+        _set_export_default(True)
 
 
 @app.command()
@@ -137,17 +137,21 @@ DiagArg = Annotated[
         file_okay=True,
         dir_okay=False,
         readable=True,
-        help="Path to a diagnostics.json file.",
+        help="Path to a mechanism.json or *-printability.json file.",
     ),
 ]
 
 
 @app.command()
 def diff(before: DiagArg, after: DiagArg) -> None:
-    """Diff two diagnostics.json files and print a summary of changes."""
+    """Diff two diagnostics JSON files (mechanism or printability)."""
     old = json.loads(before.read_text())
     new = json.loads(after.read_text())
-    typer.echo(compute_diff(old, new), nl=False)
+    try:
+        typer.echo(compute_diff(old, new), nl=False)
+    except ValueError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2)
 
 
 def main() -> None:

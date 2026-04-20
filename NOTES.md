@@ -74,6 +74,23 @@ mode already uses it) and fits naturally for a declarative assembly model.
 patterns in real use, not be invented upfront. Build123d primitives plus
 named assembly parts are the starting vocabulary.
 
+**Mechanism and printability are separate workflows.** `Assembly` captures
+relational constraints (interference, clearance). Printability is per-part
+and depends on manufacturing method (FDM orientation, wall/overhang
+thresholds). Conflating them on `Assembly` created three concrete problems
+while using the tool on sorted-studs:
+(1) `assert_min_wall` ran on non-printed stand-ins (extrusion stubs,
+shafts), producing spurious numbers;
+(2) `assert_min_wall` lived on `Assembly` even though it was a property of
+one part, not the mechanism;
+(3) overhang detection had no build-plate awareness, because the part's
+print orientation didn't belong anywhere — you can't declare "this part
+is printed with +Z up" on an assembly that has 20 parts.
+The split — `mechanism.assembly.Assembly` + `mechanism.check.check()` for
+relations, `printability.inspect.inspect(part, method=FDM())` for
+per-part manufacturing — fixes all three. Build-plate orientation is now
+a property of `FDM`, so the bottom-face false-positive disappears.
+
 **User-script style is recommended, not enforced.** The library accepts any
 Build123d `Part`. `SKILL.md` recommends functional patterns (pure part
 functions, declarative assemblies, derived dimensions) because the agent

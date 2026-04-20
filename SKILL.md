@@ -5,11 +5,17 @@ description: Diagnostics-first CAD wrapper around Build123d. Use when you need t
 
 # cad-khana
 
-You author a Build123d script that composes an `Assembly`, call
-`build(assembly, out=...)`, and run it through the `khana` CLI. The CLI
-writes STL + STEP exports and a structured `diagnostics.json`. Every
-assertion you declare on the assembly becomes a build failure when
-violated — read the JSON to decide what to edit next.
+cad-khana splits geometric reasoning into two workflows:
+
+- **Mechanism** — relational checks on an assembly (no interference,
+  clearance between parts). Expressed via `Assembly.assert_*(...)` and
+  evaluated by `check(assembly, out=...)`. Writes `mechanism.json`.
+- **Printability** — per-part, per-manufacturing-method checks (min
+  wall thickness, overhangs). Expressed via `inspect(part, method=...)`.
+  Writes `<name>-printability.json`.
+
+A script typically does both: composes an `Assembly`, calls `check()`,
+then calls `inspect()` once per printed part.
 
 ## When to use this tool
 
@@ -18,7 +24,7 @@ violated — read the JSON to decide what to edit next.
   lids).
 - Producing **printable geometry** where wall thickness, clearance, and
   overhangs matter.
-- Iterating under **agent control** — `diagnostics.json` is the
+- Iterating under **agent control** — the JSON diagnostics are the
   primary signal; `khana render` supplements it with PNGs you can read
   directly when shape-level questions come up.
 
@@ -33,11 +39,11 @@ violated — read the JSON to decide what to edit next.
 ## CLI
 
 ```
-khana build  <script>        # run script, export STL/STEP, write diagnostics.json
-khana check  <script>        # run script, write diagnostics.json only (no export)
-khana view   <script>        # build, then push assembly to the OCP VS Code viewer
-khana render <script>        # build, then write PNG views under <out>/views/
-khana diff   <before> <after>  # diff two diagnostics.json files
+khana build  <script>          # run script, export STL/STEP, write JSON diagnostics
+khana check  <script>          # run script, write JSON diagnostics only (no export)
+khana view   <script>          # build, then push assembly to the OCP VS Code viewer
+khana render <script>          # build, then write PNG views under <out>/views/
+khana diff   <before> <after>  # diff two JSON files (mechanism or printability)
 khana --version
 ```
 
@@ -45,31 +51,35 @@ Prefer `khana check` during fast iteration — it skips STL/STEP export
 so the loop is tighter. Switch to `khana build` when you want the
 exports on disk.
 
-`diagnostics.json` is always written to `--out` (default `outputs/`),
-even on failure — read it to diagnose errors. Exit code is nonzero on
-any assertion failure or script exception.
+JSON diagnostics are always written to `--out` (default `outputs/`),
+even on failure — read them to diagnose errors. Exit code is nonzero
+on any assertion failure or script exception.
 
 ## Script structure
 
-Keep three sections, in order:
+Keep four sections, in order:
 
 1. **Parameters + derived** — named constants at the top, so one change
    propagates through everything.
 2. **Pure part functions** — each returns a `Part`. Take parameters with
    defaults; no hidden globals, no mutation.
 3. **Assembly composition** — build an `Assembly` by chaining `.add()`
-   and `.assert_*()` calls. End with `build(assembly, out="outputs")`.
+   and `.assert_*()` calls. Call `check(assembly, out="outputs")`.
+4. **Per-part printability** — one `inspect(part, method=FDM(), name=...)`
+   call per printed part.
 
 See `references/examples/pin_hinge/assembly.py` for the canonical
-example. Re-read it when you're unsure of the pattern.
+example.
 
 ## Minimal skeleton
 
 ```python
 from build123d import Box, Cylinder, Location, Part, Pos, Rot
 
-from cad_khana.core.assembly import Assembly
-from cad_khana.core.build import build
+from cad_khana.mechanism.assembly import Assembly
+from cad_khana.mechanism.check import check
+from cad_khana.printability.inspect import inspect
+from cad_khana.printability.methods import FDM
 
 # 1. parameters + derived
 WIDTH = 40.0
@@ -85,17 +95,18 @@ def bracket(w: float = WIDTH, h: float = HEIGHT) -> Part:
 def pin(length: float = WIDTH, d: float = PIN_D) -> Part:
     return Cylinder(d / 2, length)
 
-# 3. assembly + assertions
+# 3. assembly + mechanism assertions
 assembly = (
     Assembly()
     .add("bracket", bracket())
     .add("pin", pin(), location=Location((0, 0, HEIGHT / 2)) * Rot(90, 0, 0))
     .assert_no_interference("pin", "bracket")
-    .assert_min_wall("bracket", min_mm=1.5)
 )
 
 if __name__ == "__main__":
-    build(assembly, out="outputs")
+    check(assembly, out="outputs")
+    # 4. printability checks for each printed part
+    inspect(bracket(), method=FDM(), out="outputs", name="bracket")
 ```
 
 ## Recommended style
@@ -108,8 +119,7 @@ bump a parameter and the design updates consistently.
   constant would do.
 - **Pure part functions.** Each function takes everything it needs as
   parameters (with defaults), returns a `Part`, and doesn't touch
-  globals or mutate anything. A part function should build the same
-  geometry every time for the same inputs.
+  globals or mutate anything.
 - **Default arguments = the intended top-level parameter.** `housing()`
   with no args should return the current design's housing. Callers who
   want to override a single dimension pass it by keyword.
@@ -117,48 +127,79 @@ bump a parameter and the design updates consistently.
   Part functions build geometry at a canonical pose (typically centered
   on origin); the assembly places each part in world coordinates.
 - **Algebraic mode operators (`+`, `-`, `*`, `Pos`, `Rot`) read more
-  cleanly than `BuildPart` for short shapes** — prefer them for the
-  examples unless the BuildPart context buys something (sketches,
-  workplanes, patterns).
+  cleanly than `BuildPart` for short shapes** — prefer them unless the
+  BuildPart context buys something (sketches, workplanes, patterns).
 - **Name parts with stable identifiers** when you add them — assertions
-  reference these names, and `diagnostics.json` reports per-name data.
+  reference these names, and the JSON diagnostics report per-name data.
+- **Inspect only the parts you will actually print.** Stand-ins
+  (extrusion stubs, shafts, fixed hardware) don't need `inspect()`;
+  they are bought, not printed.
 
-## Available assertions
+## Available mechanism assertions
 
-Every assertion records a result in `diagnostics.json`. If any fail,
-`khana build` exits nonzero. All failures are collected — you get every
-problem in one pass, not just the first.
+Every assertion records a result in `mechanism.json`. If any fail,
+`check()` raises `SystemExit(1)`. All failures are collected — you get
+every problem in one pass, not just the first.
 
 | Assertion | Checks |
 |---|---|
 | `.assert_no_interference(a, b)` | Parts `a` and `b` don't overlap (intersection volume ≤ 0.001 mm³). |
 | `.assert_clearance(a, b, min_mm=…)` | Minimum distance between `a` and `b` is at least `min_mm`. |
-| `.assert_min_wall(part, min_mm=…)` | Part's thinnest wall is at least `min_mm`. Approximate; see caveats below. |
 
 Give assertions a `name=` when you'd benefit from a specific label in
 the diagnostics; otherwise they get an auto-generated one.
 
-## diagnostics.json essentials
+## Printability: `inspect(part, method=…)`
 
-Read these fields after every build:
+The method object carries manufacturing parameters. Today only
+`FDM` exists:
+
+```python
+from cad_khana.printability.methods import FDM
+
+FDM(
+    up_axis=(0, 0, 1),     # part-local "up" direction during printing
+    wall_min_mm=1.5,       # fail if a wall is thinner than this
+    overhang_max_deg=45.0, # fail if a face overhangs past this
+)
+```
+
+`inspect(part, method=FDM(), out="outputs", name="bracket")` writes
+`outputs/bracket-printability.json` and raises `SystemExit(1)` on
+failure. Each call is independent — pass a different `name=` per
+printed part.
+
+## JSON diagnostics essentials
+
+`mechanism.json` after every `check()`:
 
 - `status` — `"ok"`, `"error"`, or `"assertion_failed"`.
 - `error` — traceback string if the script itself crashed.
-- `parts[name].volume_mm3` — use this to sanity-check a part is not empty.
-- `parts[name].bbox` — quick sanity check on size and placement.
-- `parts[name].min_wall_mm` — thinnest wall found by ray sampling.
+- `parts[name].volume_mm3` — sanity-check a part is not empty.
+- `parts[name].bbox` — sanity-check on size and placement.
 - `interferences` — list of overlapping part pairs with volume + centroid.
-- `overhangs` — per-part total flagged area and max angle (> 45° from vertical).
 - `assertions` — one entry per declared assertion; `passed` + `detail`.
+
+`<name>-printability.json` after every `inspect()`:
+
+- `kind: "printability"` — identifies the file.
+- `name`, `method` — for disambiguation when scripts inspect many parts.
+- `volume_mm3`, `bbox` — basic part metrics.
+- `min_wall_mm` — thinnest wall found by ray sampling; `null` if
+  unmeasurable.
+- `overhang` — `null` or `{area_mm2, max_angle_deg}`.
+- `assertions` — `wall_min:…` and `overhang_max:…` entries; `passed` +
+  `detail`.
 
 ## Known limitations
 
 - **Min wall thickness is approximate.** Ray-sampling from tessellated
   faces; it can miss diagonal pinch points and can be noisy near sharp
   convex edges. See `references/printability.md` for details.
-- **Overhangs ignore build-plate orientation.** The bottom face of a
-  part resting on the bed gets flagged as a 90° overhang because the
-  algorithm doesn't know the print orientation.
+- **Overhang detection excludes the build-plate face.** Faces coplanar
+  with the min-`up_axis` plane aren't flagged. Faces that face downward
+  but sit above the build plate (ledge undersides, cavity ceilings) are
+  still flagged.
 - **Interference check is O(n²)** over parts. Fine up to ~20 parts.
 - **Tangent contact reads as zero clearance.** Two parts sharing a face
   (e.g., a lid sitting on a rim) have `distance_to == 0`, which fails
@@ -168,22 +209,24 @@ Read these fields after every build:
 ## Workflow
 
 1. Write the script. Use the canonical example as a template.
-2. `khana build path/to/script.py`
-3. Read `outputs/diagnostics.json`.
+2. `khana check path/to/script.py`
+3. Read `outputs/mechanism.json` and each `outputs/<name>-printability.json`.
    - `status: "error"` → fix the Python error reported in `error`.
-   - `status: "assertion_failed"` → read `assertions` for failing
-     entries. `interferences` and `parts[*].min_wall_mm` often point
-     directly at the root cause.
-   - `status: "ok"` → design is clean. Consider whether you've asserted
-     everything that matters (a silent passing build isn't proof; it's
-     just no failures detected).
+   - `status: "assertion_failed"` in mechanism → read `assertions` for
+     failing entries. `interferences` often points directly at the
+     root cause.
+   - `status: "assertion_failed"` in a printability file → look at
+     `min_wall_mm` and `overhang`; adjust the part's geometry or the
+     `FDM` threshold.
+   - All `status: "ok"` → design is clean. Consider whether you've
+     asserted everything that matters (a silent passing check isn't
+     proof; it's just no failures detected).
 4. Edit parameters or geometry. Re-run. Repeat.
 5. When a question is shape-level rather than scalar ("is the tang
    pointing the right way", "did that cut land where I expected"), run
    `khana render path/to/script.py` and read the PNGs under
    `outputs/views/`. Four views (`front`, `top`, `right`, `iso`) are
-   produced as hidden-line engineering drawings — solid black for
-   visible edges, gray for edges hidden behind geometry.
+   produced as hidden-line engineering drawings.
 6. When diagnostics are clean, ask the human to view it via
    `khana view path/to/script.py` (which pushes to the OCP VS Code
    viewer).
@@ -191,6 +234,6 @@ Read these fields after every build:
 ## Reference files
 
 - `references/examples/pin_hinge/assembly.py` — canonical three-part
-  mechanism with all three assertion types.
+  mechanism with mechanism assertions and per-part `inspect()` calls.
 - `references/printability.md` — how wall thickness and overhang
   detection work, and where they're unreliable.

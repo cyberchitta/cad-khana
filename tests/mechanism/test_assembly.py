@@ -1,6 +1,6 @@
 from build123d import Box, BuildPart, Location
 
-from cad_khana.core.assembly import Assembly
+from cad_khana.mechanism.assembly import Assembly
 
 
 def _cube(size: float = 10):
@@ -69,3 +69,7 @@ def test_chained_assertions_preserve_order():
         .assert_clearance("a", "b", min_mm=0.2, name="second")
     )
     assert [a.name for a in assembly.assertions] == ["first", "second"]
+
+
+def test_assembly_has_no_min_wall_method():
+    assert not hasattr(Assembly(), "assert_min_wall")

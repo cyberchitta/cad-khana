@@ -9,18 +9,21 @@ slot, and a pin passing through both. The design shows the workflow
   propagates through the whole assembly;
 * pure part functions that return Build123d ``Part`` values;
 * declarative assembly composition via method chaining;
-* assertions that capture geometric intent (the slot fits, the pin fits,
-  walls are printable) and fail the build if violated.
+* mechanism assertions (no interference, clearance) and per-part
+  printability checks (``inspect(..., method=FDM())``).
 
 Run ``khana build references/examples/pin_hinge/assembly.py`` to regenerate
-``outputs/assembly.stl``, ``outputs/assembly.step``, and
-``outputs/diagnostics.json``.
+``outputs/assembly.stl``, ``outputs/assembly.step``,
+``outputs/mechanism.json``, and one ``*-printability.json`` per printed
+part (``clevis``, ``tang``; the pin is assumed stock hardware).
 """
 
 from build123d import Box, Cylinder, Location, Part, Pos, Rot
 
-from cad_khana.core.assembly import Assembly
-from cad_khana.core.build import build
+from cad_khana.mechanism.assembly import Assembly
+from cad_khana.mechanism.check import check
+from cad_khana.printability.inspect import inspect
+from cad_khana.printability.methods import FDM
 
 
 # --- Parameters ---------------------------------------------------------
@@ -122,9 +125,12 @@ assembly = (
     .assert_no_interference("pin", "tang")
     .assert_clearance("tang", "clevis", min_mm=0.3)
     .assert_clearance("pin", "clevis", min_mm=0.2)
-    .assert_min_wall("clevis", min_mm=1.5)
 )
 
 
 if __name__ == "__main__":
-    build(assembly, out="outputs")
+    check(assembly, out="outputs")
+    # The pin is stock (a cylindrical rod); only the printed parts get
+    # printability checks.
+    inspect(clevis(), method=FDM(), out="outputs", name="clevis")
+    inspect(tang(), method=FDM(), out="outputs", name="tang")

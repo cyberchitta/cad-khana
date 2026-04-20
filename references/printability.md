@@ -4,12 +4,18 @@ How `cad_khana` computes wall thickness and overhangs, and where these
 approximations break down. Keep this honest — false confidence from a
 bad diagnostic is worse than no diagnostic.
 
+Entry point: `inspect(part, method=FDM(), out="outputs", name=…)` from
+`cad_khana.printability.inspect`. The `FDM` method object carries the
+wall-thickness floor, overhang threshold, and print `up_axis`; see
+`cad_khana.printability.methods`.
+
 ## Minimum wall thickness
 
 ### Algorithm
 
-Tessellate each part (mesh tolerance `TESSELLATION_TOLERANCE_MM`,
-angular tolerance `TESSELLATION_ANGULAR_TOLERANCE`). For every triangle,
+Tessellate the part (mesh tolerance `TESSELLATION_TOLERANCE_MM`,
+angular tolerance `TESSELLATION_ANGULAR_TOLERANCE`, shared with the
+overhang check in `cad_khana.core.tessellation`). For every triangle,
 take its centroid and outward normal; cast an `Axis` from a point just
 inside the surface along the inward normal; take the nearest forward
 hit on the part as the local wall thickness. The part's `min_wall_mm`
@@ -54,36 +60,42 @@ part with a hidden diagonal pinch, it may still be wrong.
 
 ### Algorithm
 
-Tessellate each part. For each triangle with outward normal `N`,
-compute the overhang angle from vertical:
+Tessellate each part. For each triangle with outward normal `N` and
+print-orientation up vector `u` (from `FDM.up_axis`), compute the
+overhang angle from vertical:
 
 ```
-overhang_angle = asin(max(0, -N_z))
+overhang_angle = asin(max(0, -N · u))
 ```
 
 A vertical wall gives 0°, a horizontal downward-facing ceiling gives
-90°. Triangles with `overhang_angle > OVERHANG_ANGLE_THRESHOLD_DEG`
-(default 45°) are flagged. Per part, the diagnostic reports total
-flagged area and the maximum overhang angle observed.
+90°. Triangles with `overhang_angle > FDM.overhang_max_deg` (default
+45°) are candidates. The build-plate face — triangles whose centroid
+lies on the minimum-`u` plane and whose normal points straight along
+`-u` — is filtered out before reporting. Per part, the diagnostic
+reports total flagged area and the maximum overhang angle observed.
 
 ### What it gets right
 
 - Catches horizontal ceilings, steep overhangs, and downward-slanted
   faces past the threshold.
+- **Build-plate face excluded.** Triangles whose centroids lie on the
+  min-`up_axis` plane and whose normals point straight into it are
+  recognized as the build-plate face and not flagged.
 
 ### What it misses or over-reports
 
-- **No build-plate awareness.** A part's bottom face (resting on the
-  plate) is flagged as a 90° overhang even though the printer
-  supports it. The diagnostic does not know the orientation the user
-  intends to print in.
 - **No support-from-below check.** A downward-facing face with solid
   material directly beneath it (e.g., the ceiling of an enclosed
   cavity printed last) is still flagged. Most slicers also flag these
   for safety, so the false positive is usually harmless.
-- **Threshold is fixed.** 45° is a common default but printer- and
-  material-specific. A follow-up should make this configurable per
-  build.
+- **Build-plate test is centroid-based.** Tessellated triangles of a
+  curved bottom face have centroids slightly above the minimum of the
+  bounding box; those triangles are still flagged. Truly flat bottoms
+  (axis-aligned with `up_axis`) are handled cleanly.
+- **Threshold is per-part, not global.** Set via
+  `FDM(overhang_max_deg=…)`. 45° is a common default but printer- and
+  material-specific.
 - **Area aggregation is coarse.** A single per-part entry tells you
   there's an overhang but not where. Callers who need location
   information should iterate the tessellation themselves.

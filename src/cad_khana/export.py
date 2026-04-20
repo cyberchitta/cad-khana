@@ -4,7 +4,7 @@ from pathlib import Path
 
 from build123d import export_step, export_stl
 
-from cad_khana.core.assembly import Assembly
+from cad_khana.mechanism.assembly import Assembly
 
 
 def export_assembly(

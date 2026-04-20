@@ -4,7 +4,7 @@ from dataclasses import dataclass, replace
 
 from build123d import Compound, Location, Part
 
-from cad_khana.core.assertions import Assertion, Clearance, MinWall, NoInterference
+from cad_khana.mechanism.assertions import Assertion, Clearance, NoInterference
 
 
 @dataclass(frozen=True)
@@ -48,19 +48,6 @@ class Assembly:
             b=b,
             min_mm=min_mm,
             name=name or f"clearance:{a}/{b}>={min_mm}",
-        )
-        return replace(self, assertions=self.assertions + (assertion,))
-
-    def assert_min_wall(
-        self,
-        part: str,
-        min_mm: float,
-        name: str | None = None,
-    ) -> "Assembly":
-        assertion = MinWall(
-            part=part,
-            min_mm=min_mm,
-            name=name or f"min_wall:{part}>={min_mm}",
         )
         return replace(self, assertions=self.assertions + (assertion,))
 

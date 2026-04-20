@@ -7,7 +7,7 @@ from build123d import Compound, Edge, GeomType
 from build123d.exporters import Drawing
 from PIL import Image, ImageDraw
 
-from cad_khana.core.assembly import Assembly
+from cad_khana.mechanism.assembly import Assembly
 
 _auto_enabled = False
 _auto_out: Path | None = None

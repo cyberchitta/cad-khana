@@ -56,25 +56,38 @@ cad-khana/
   pyproject.toml              # uv-managed, entry point: khana = cad_khana.cli:main
   src/
     cad_khana/                # PEP 420 namespace package, no __init__.py
-      core/
+      mechanism/
         assembly.py           # Assembly class: named parts + locations
-        build.py              # build() orchestrator + BuildResult
-        diagnostics.py        # interference, wall thickness, overhangs
-        assertions.py         # assertion primitives + results collection
-        export.py             # STL, STEP, 3MF
-        viewer.py             # ocp_vscode push (only used by `khana view`)
-      cli.py                  # typer CLI — thin dispatcher over core
-      # mcp.py                # future: MCP server over the same core
+        assertions.py         # NoInterference, Clearance + evaluate()
+        diagnostics.py        # bbox, volume, interferences
+        check.py              # check() orchestrator + CheckResult
+      printability/
+        methods.py            # FDM dataclass (up_axis, wall_min, overhang_max)
+        wall.py               # min_wall_mm()
+        overhangs.py          # detect_overhang() — honors FDM.up_axis
+        inspect.py            # inspect() orchestrator + PrintabilityDiagnostics
+      core/
+        tessellation.py       # shared mesh utilities (wall + overhangs)
+      export.py               # STL, STEP (used by mechanism check)
+      render.py               # PNG rendering (mechanism-level)
+      viewer.py               # ocp_vscode push (used by `khana view`)
+      diff.py                 # dispatches on file kind (mechanism/printability)
+      cli.py                  # typer CLI — thin dispatcher
+      # mcp.py                # future: MCP server over the same primitives
   references/
-    printability.md           # design rules baked into diagnostics
+    printability.md           # design rules baked into printability checks
     examples/
       pin_hinge/              # canonical reference project (clevis-tang-pin)
   tests/
+    mechanism/                # per-module tests for mechanism.*
+    printability/             # per-module tests for printability.*
+    test_cli.py, test_diff.py # cross-cutting tests
 ```
 
-**Discipline:** `core/` has no CLI or MCP dependencies. `cli.py` imports from
-`core`. A future MCP layer does the same. Never put logic in the CLI module
-that a different surface would also need.
+**Discipline:** the library modules (`mechanism/*`, `printability/*`) have
+no CLI or MCP dependencies. `cli.py` imports from them. A future MCP layer
+does the same. Never put logic in the CLI module that a different surface
+would also need.
 
 ## Public API shape
 
@@ -85,8 +98,10 @@ the structure speaks for itself.
 ```python
 from build123d import *
 
-from cad_khana.core.assembly import Assembly
-from cad_khana.core.build import build
+from cad_khana.mechanism.assembly import Assembly
+from cad_khana.mechanism.check import check
+from cad_khana.printability.inspect import inspect
+from cad_khana.printability.methods import FDM
 
 
 def housing():
@@ -107,32 +122,38 @@ assembly = (
     .add("lever",   lever(),   location=Location((0, 0, 12)))
     .assert_no_interference("lever", "housing")
     .assert_clearance("lever", "housing", min_mm=0.2)
-    .assert_min_wall("housing", min_mm=1.5)
 )
 
-build(assembly, out="outputs/")
+check(assembly, out="outputs/")
+inspect(housing(), method=FDM(), out="outputs/", name="housing")
+inspect(lever(),   method=FDM(), out="outputs/", name="lever")
 ```
 
-The `build()` call runs the diagnostics, executes assertions, writes exports
-and `diagnostics.json`, and exits nonzero if any assertion failed.
+`check()` runs mechanism diagnostics, executes assertions, writes exports
+and `mechanism.json`, and exits nonzero if any assertion failed.
+`inspect()` does the same for one part and writes
+`<name>-printability.json`.
 
 ## CLI surface
 
 ```
-khana build <path>              # run script, export, write diagnostics.json
+khana build <path>              # run script, export, write diagnostics JSON
 khana check <path>              # diagnostics only, no export
 khana view <path>               # build + push to OCP viewer
 khana render <path> --views 4   # orthographic/iso PNGs for the agent to read
-khana diff <old> <new>          # diff two diagnostics.json files
+khana diff <old> <new>          # diff two diagnostics JSON files
 ```
 
 Use `typer` for the CLI. Every command exits nonzero on failure. `build` and
-`check` always write `diagnostics.json` even on failure, so the agent can
-always read structured error info.
+`check` always write `mechanism.json` (and `<name>-printability.json` per
+`inspect()` call) even on failure, so the agent can always read structured
+error info.
 
-## diagnostics.json schema (v0.1)
+## Diagnostics JSON schemas (v0.1)
 
-Version this from day one. Agents depend on field stability.
+Version these from day one. Agents depend on field stability.
+
+`mechanism.json` — written by `check()`:
 
 ```json
 {
@@ -142,24 +163,40 @@ Version this from day one. Agents depend on field stability.
   "parts": {
     "<name>": {
       "bbox": {"min": [x,y,z], "max": [x,y,z]},
-      "volume_mm3": 12403.2,
-      "min_wall_mm": 1.8
+      "volume_mm3": 12403.2
     }
   },
   "interferences": [
     {"a": "lever", "b": "housing", "volume_mm3": 0.3, "centroid": [x,y,z]}
   ],
-  "overhangs": [
-    {"part": "housing", "area_mm2": 42.1, "max_angle_deg": 58}
-  ],
   "assertions": [
-    {"name": "lever_clears_housing", "passed": true, "detail": null},
-    {"name": "pin_press_fit", "passed": false,
-     "detail": "clearance 0.35mm exceeds max 0.1mm"}
+    {"name": "lever_clears_housing", "passed": true, "detail": null}
   ],
   "exports": ["outputs/assembly.stl", "outputs/assembly.step"]
 }
 ```
+
+`<name>-printability.json` — written by each `inspect()`:
+
+```json
+{
+  "schema_version": "0.1",
+  "kind": "printability",
+  "status": "ok | assertion_failed",
+  "name": "housing",
+  "method": "FDM",
+  "bbox": {"min": [x,y,z], "max": [x,y,z]},
+  "volume_mm3": 12403.2,
+  "min_wall_mm": 1.8,
+  "overhang": {"area_mm2": 42.1, "max_angle_deg": 58},
+  "assertions": [
+    {"name": "wall_min:1.5", "passed": true, "detail": null}
+  ]
+}
+```
+
+`kind` is absent on mechanism files and `"printability"` on printability
+files — that's how `diff` disambiguates.
 
 Field naming convention: boolean fields are `passed` (not `status`, not `ok`).
 Units are always in the field name (`_mm`, `_mm3`, `_deg`). No ambiguity.
@@ -235,15 +272,16 @@ for end-user install, `uvx khana ...` for ephemeral use.
 
 ## Invariants
 
-- **Side effect isolation.** `core/diagnostics.py`, `core/assertions.py`,
-  and `core/diff.py` are pure — take data, return data. File I/O lives in
-  `core/export.py`, `core/render.py`, and the CLI. Viewer and renderer
+- **Side effect isolation.** `mechanism.diagnostics`, `mechanism.assertions`,
+  `printability.wall`, `printability.overhangs`, and `diff.py` are pure —
+  take data, return data. File I/O lives in `export.py`, `render.py`,
+  `mechanism.check`, `printability.inspect`, and the CLI. Viewer and renderer
   pushes are gated on module-level toggles set by the CLI command, so user
   scripts stay identical across `build`/`view`/`render`/`check`.
 - **Error handling at the boundary.** Uncaught exceptions from user
-  scripts are caught at the CLI and written to `diagnostics.json` with
+  scripts are caught at the CLI and written to `mechanism.json` with
   `status: "error"` and the traceback in `error`. Never crash without
-  leaving a diagnostic behind. Inside `core/`, trust inputs — no
+  leaving a diagnostic behind. Inside the library, trust inputs — no
   defensive checks.
 - **Assertions collect, don't short-circuit.** Evaluate every assertion
   and record all results; the agent wants every failure at once.

@@ -1,7 +1,7 @@
 from build123d import Box, BuildPart, Location
 
-from cad_khana.core.assembly import Assembly
-from cad_khana.core.assertions import evaluate
+from cad_khana.mechanism.assembly import Assembly
+from cad_khana.mechanism.assertions import evaluate
 
 
 def _cube(size: float = 10):
@@ -124,35 +124,6 @@ def test_multiple_assertions_all_evaluated_in_order():
     results = evaluate(a)
     assert [r.name for r in results] == ["first", "second"]
     assert all(r.passed for r in results)
-
-
-def test_min_wall_passes_for_thick_part():
-    a = (
-        Assembly()
-        .add("block", _cube(10))
-        .assert_min_wall("block", min_mm=2.0)
-    )
-    result = evaluate(a)[0]
-    assert result.passed
-    assert result.detail is None
-
-
-def test_min_wall_fails_for_thin_part():
-    with BuildPart() as p:
-        Box(20, 20, 1)
-    a = Assembly().add("plate", p.part).assert_min_wall("plate", min_mm=2.0)
-    result = evaluate(a)[0]
-    assert not result.passed
-    assert "min wall" in result.detail.lower()
-
-
-def test_min_wall_custom_name_is_respected():
-    a = (
-        Assembly()
-        .add("block", _cube(10))
-        .assert_min_wall("block", min_mm=2.0, name="wall_rule")
-    )
-    assert evaluate(a)[0].name == "wall_rule"
 
 
 def test_failures_and_passes_coexist():

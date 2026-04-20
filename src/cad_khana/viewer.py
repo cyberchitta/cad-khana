@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from ocp_vscode import show
 
-from cad_khana.core.assembly import Assembly
+from cad_khana.mechanism.assembly import Assembly
 
 _auto_enabled = False
 
