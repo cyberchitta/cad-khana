@@ -95,6 +95,18 @@ a stateful or imported part should still work without friction.
   four-bar, cam, snap-fit) recur often enough to justify a helper? Track
   in `references/examples/` as we build them.
 
+## Known bugs / gotchas
+
+- **`a & b` returns `None` for empty intersections.** Build123d's `&`
+  operator returns `None` (not an empty `Part`) when two solids do not
+  overlap — including concave cases where parts nestle together without
+  sharing volume, e.g. a tang in a clevis slot. The v0
+  `NoInterference.evaluate` assumed the result is always a `Part` and
+  crashed with `AttributeError: 'NoneType' object has no attribute
+  'volume'`. Fixed in `assertions.py` by treating `None` as zero-volume
+  (no overlap = assertion passes). Surfaced while modeling a
+  yoke-and-tang pivot in the sorted-studs `ramp_mechanism`.
+
 ## Things considered and rejected
 
 - **Semantic primitives (Shaft, Gear) as v0 API.** Deferred; may earn their

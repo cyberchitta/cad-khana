@@ -157,6 +157,8 @@ def _part_diagnostics(shape: Part) -> PartDiagnostics:
 
 def _interference(a: PlacedPart, b: PlacedPart) -> Interference | None:
     inter = _placed(a) & _placed(b)
+    if inter is None:
+        return None
     volume = inter.volume
     if volume <= INTERFERENCE_VOLUME_EPSILON_MM3:
         return None

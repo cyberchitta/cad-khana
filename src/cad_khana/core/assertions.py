@@ -22,7 +22,8 @@ class NoInterference:
     name: str
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
-        volume = (parts[self.a] & parts[self.b]).volume
+        intersection = parts[self.a] & parts[self.b]
+        volume = intersection.volume if intersection is not None else 0.0
         passed = volume <= INTERFERENCE_VOLUME_EPSILON_MM3
         detail = None if passed else f"interference volume {volume:.4f}mm^3"
         return AssertionResult(self.name, passed, detail)
