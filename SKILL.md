@@ -179,6 +179,20 @@ bump a parameter and the design updates consistently.
 - **Inspect only the parts you will actually print.** Stand-ins
   (extrusion stubs, shafts, fixed hardware) don't need `inspect()`;
   they are bought, not printed.
+- **Document the coordinate frame in the module docstring** whenever
+  the axes carry non-trivial meaning (radial vs tangential, hinge
+  axis, floor datum, etc.). Without this, the next reader has to
+  reverse-engineer axis conventions from the part math, and will
+  often guess wrong. A 3-to-5-line block is enough:
+
+  ```text
+  Coordinate frame:
+      origin = column axis ∩ floor datum
+      +X     = radial outward toward the exit opening
+      +Y     = tangent at the opening (hinge axis)
+      +Z     = up
+      z=0    = bearing/spider base
+  ```
 
 ## Available mechanism assertions
 
@@ -190,9 +204,17 @@ every problem in one pass, not just the first.
 |---|---|
 | `.assert_no_interference(a, b)` | Parts `a` and `b` don't overlap (intersection volume ≤ 0.001 mm³). |
 | `.assert_clearance(a, b, min_mm=…)` | Minimum distance between `a` and `b` is at least `min_mm`. |
+| `.assert_interference(a, b, reason=…)` | Parts `a` and `b` **do** overlap (intersection volume > 0.001 mm³). Regression alarm for a documented, accepted overlap — fails if the overlap disappears, forcing the assertion to be removed when the design gap gets fixed. |
 
 Give assertions a `name=` when you'd benefit from a specific label in
 the diagnostics; otherwise they get an auto-generated one.
+
+`assert_interference` is the exception, not the rule. Use it only when
+a real design constraint leaves an overlap that hasn't been resolved
+yet (e.g., a junction whose bracket hasn't been designed). The
+`reason=` string is included in the failure message when the overlap
+goes away, so a future reader understands what the assertion was
+guarding against. Default to `assert_no_interference` everywhere else.
 
 ## Printability: `inspect(part, method=…)`
 
