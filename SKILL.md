@@ -41,7 +41,7 @@ then calls `inspect()` once per printed part.
 ```
 khana build  <script>          # run script, export STL/STEP, write JSON diagnostics
 khana check  <script>          # run script, write JSON diagnostics only (no export)
-khana view   <script>          # build, then push assembly to the OCP VS Code viewer
+khana view   <script>          # build, then push assembly to the OCP viewer (socket)
 khana render <script>          # build, then write PNG views under <out>/views/
 khana diff   <before> <after>  # diff two JSON files (mechanism or printability)
 khana --version
@@ -54,6 +54,51 @@ exports on disk.
 JSON diagnostics are always written to `--out` (default `outputs/`),
 even on failure — read them to diagnose errors. Exit code is nonzero
 on any assertion failure or script exception.
+
+**CWD matters.** `--out` is resolved relative to the current
+directory, so `outputs/` lands wherever you invoked `khana` from. Run
+`khana` from the module directory (the one containing the script), or
+pass an explicit `--out <module>/outputs`, so artifacts live next to
+the script rather than at the repo root. The `out=` argument to
+`check()` / `inspect()` inside the script's `__main__` block is
+CWD-relative for the same reason.
+
+### Viewer: no editor required
+
+`khana view` calls `ocp_vscode.show(...)`, which pushes geometry over
+a local socket (default port 3939). The listener can be either the
+**OCP CAD Viewer** VS Code extension *or* the **standalone viewer
+server** that ships with `ocp_vscode`:
+
+```
+uv run python -m ocp_vscode          # opens a browser tab, listens on 3939
+uv run khana view assembly.py        # pushes geometry to whichever listener is up
+```
+
+So you can drive the full `view` loop from any editor (or none at
+all). For **Zed**, the pattern that matches the VS Code UX is a pair
+of workspace tasks in `.zed/tasks.json` — one to start the viewer
+server, one to push the current file to it:
+
+```json
+[
+  {
+    "label": "OCP viewer: start",
+    "command": "uv",
+    "args": ["run", "python", "-m", "ocp_vscode"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "khana view (current file)",
+    "command": "uv",
+    "args": ["run", "khana", "view", "$ZED_FILENAME"],
+    "cwd": "$ZED_DIRNAME"
+  }
+]
+```
+
+`cwd: $ZED_DIRNAME` is what keeps `outputs/` next to the script.
 
 ## Script structure
 
