@@ -1,6 +1,6 @@
 ---
 name: cad-khana
-description: Diagnostics-first CAD wrapper around Build123d. Use when you need to design 3D-printable mechanisms (hinges, clasps, brackets, enclosures with moving parts), produce STL/STEP exports, or iterate on a design against measurable constraints (no interference, minimum clearance, minimum wall thickness, overhang detection). Write a Python script that declares parts and an `Assembly`, run `khana build`, read `diagnostics.json`, iterate.
+description: Diagnostics-first CAD wrapper around Build123d: assembly-level interference/clearance assertions plus optional per-part printability checks. Load BEFORE running any `khana` command or editing an `assembly.py` that uses the wrapper — SKILL.md has conventions (CWD-relative `outputs/`, diagnostic JSON keys) the scripts rely on but don't restate. TRIGGER: about to run `khana check`/`build`/`view`/`render`, or editing a file that imports `cad_khana` or calls `Assembly()`/`check()`/`inspect()`.
 ---
 
 # cad-khana
