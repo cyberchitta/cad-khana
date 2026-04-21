@@ -91,14 +91,10 @@ server, one to push the current file to it:
   },
   {
     "label": "khana view (current file)",
-    "command": "uv",
-    "args": ["run", "khana", "view", "$ZED_FILENAME"],
-    "cwd": "$ZED_DIRNAME"
+    "command": "cd \"$ZED_DIRNAME\" && uv run khana view \"$ZED_FILE\""
   }
 ]
 ```
-
-`cwd: $ZED_DIRNAME` is what keeps `outputs/` next to the script.
 
 ## Script structure
 
