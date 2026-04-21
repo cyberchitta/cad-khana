@@ -4,7 +4,12 @@ from dataclasses import dataclass, replace
 
 from build123d import Compound, Location, Part
 
-from cad_khana.mechanism.assertions import Assertion, Clearance, NoInterference
+from cad_khana.mechanism.assertions import (
+    Assertion,
+    Clearance,
+    ExpectedInterference,
+    NoInterference,
+)
 
 
 @dataclass(frozen=True)
@@ -48,6 +53,28 @@ class Assembly:
             b=b,
             min_mm=min_mm,
             name=name or f"clearance:{a}/{b}>={min_mm}",
+        )
+        return replace(self, assertions=self.assertions + (assertion,))
+
+    def assert_interference(
+        self,
+        a: str,
+        b: str,
+        reason: str | None = None,
+        name: str | None = None,
+    ) -> "Assembly":
+        """Assert that `a` and `b` DO interfere — a regression alarm
+        for a known, accepted overlap. Fails if the overlap disappears
+        (volume ≤ epsilon), which forces this assertion to be removed
+        when the underlying design gap gets fixed. Prefer
+        `assert_no_interference` by default; reach for this only when
+        an overlap is documented and expected.
+        """
+        assertion = ExpectedInterference(
+            a=a,
+            b=b,
+            name=name or f"interference:{a}/{b}",
+            reason=reason,
         )
         return replace(self, assertions=self.assertions + (assertion,))
 

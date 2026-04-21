@@ -62,6 +62,13 @@ def test_assert_clearance_returns_new_assembly():
     assert len(extended.assertions) == 1
 
 
+def test_assert_interference_returns_new_assembly():
+    original = Assembly()
+    extended = original.assert_interference("a", "b", reason="pending")
+    assert original.assertions == ()
+    assert len(extended.assertions) == 1
+
+
 def test_chained_assertions_preserve_order():
     assembly = (
         Assembly()

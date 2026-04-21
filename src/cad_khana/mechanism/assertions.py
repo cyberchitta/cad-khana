@@ -46,7 +46,33 @@ class Clearance:
         return AssertionResult(self.name, passed, detail)
 
 
-Assertion = NoInterference | Clearance
+@dataclass(frozen=True)
+class ExpectedInterference:
+    """Assert that two parts DO interfere — a regression alarm for a
+    known, accepted overlap. Fails if the overlap disappears, so the
+    assertion can't go stale once the underlying design gap is fixed.
+    Use sparingly: the default is `assert_no_interference`; reach for
+    this only when a real-world design constraint leaves a documented
+    overlap that hasn't been resolved yet.
+    """
+    a: str
+    b: str
+    name: str
+    reason: str | None = None
+
+    def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
+        intersection = parts[self.a] & parts[self.b]
+        volume = intersection.volume if intersection is not None else 0.0
+        passed = volume > INTERFERENCE_VOLUME_EPSILON_MM3
+        if passed:
+            detail = None
+        else:
+            base = f"expected interference absent (volume {volume:.4f}mm^3)"
+            detail = f"{base}; reason: {self.reason}" if self.reason else base
+        return AssertionResult(self.name, passed, detail)
+
+
+Assertion = NoInterference | Clearance | ExpectedInterference
 
 
 def _placed(p: PlacedPart) -> Part:
