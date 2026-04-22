@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from build123d import Compound, Location, Part
+from build123d import Color, Compound, Location, Part
 
 from cad_khana.mechanism.assertions import (
     Assertion,
@@ -17,6 +17,7 @@ class PlacedPart:
     name: str
     part: Part
     location: Location
+    color: Color | None = None
 
 
 @dataclass(frozen=True)
@@ -29,8 +30,9 @@ class Assembly:
         name: str,
         part: Part,
         location: Location | None = None,
+        color: Color | None = None,
     ) -> "Assembly":
-        placed = PlacedPart(name, part, location or Location())
+        placed = PlacedPart(name, part, location or Location(), color)
         return replace(self, parts=self.parts + (placed,))
 
     def assert_no_interference(

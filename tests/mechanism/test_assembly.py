@@ -1,4 +1,4 @@
-from build123d import Box, BuildPart, Location
+from build123d import Box, BuildPart, Color, Location
 
 from cad_khana.mechanism.assembly import Assembly
 
@@ -80,3 +80,20 @@ def test_chained_assertions_preserve_order():
 
 def test_assembly_has_no_min_wall_method():
     assert not hasattr(Assembly(), "assert_min_wall")
+
+
+def test_default_color_is_none():
+    assembly = Assembly().add("a", _cube())
+    assert assembly.parts[0].color is None
+
+
+def test_add_accepts_per_placement_color():
+    bracket = _cube()
+    assembly = (
+        Assembly()
+        .add("a", bracket, color=Color("red"))
+        .add("b", bracket, location=Location((0, 0, 20)), color=Color("blue"))
+    )
+    assert assembly.parts[0].color is not None
+    assert assembly.parts[1].color is not None
+    assert assembly.parts[0].part is assembly.parts[1].part

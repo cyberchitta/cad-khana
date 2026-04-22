@@ -167,6 +167,14 @@ bump a parameter and the design updates consistently.
 - **Use `Location` on `.add()` for placement, not inside the part.**
   Part functions build geometry at a canonical pose (typically centered
   on origin); the assembly places each part in world coordinates.
+- **Colors are a viewer/render aid, set at the placement.** `.add()`
+  takes an optional `color=Color(...)` that `khana view` honors. Set it
+  at the placement when the same part function is reused multiple times
+  with different colors (e.g. four identical brackets, one red per
+  corner); set `part.color` inside the part function only when the
+  geometry has one intrinsic color everywhere it's used. Colors do not
+  affect diagnostics and are ignored by `khana render`'s hidden-line
+  PNGs and by STEP export.
 - **Algebraic mode operators (`+`, `-`, `*`, `Pos`, `Rot`) read more
   cleanly than `BuildPart` for short shapes** — prefer them unless the
   BuildPart context buys something (sketches, workplanes, patterns).
