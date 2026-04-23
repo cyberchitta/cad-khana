@@ -74,10 +74,21 @@ def _interference(a: PlacedPart, b: PlacedPart) -> Interference | None:
     inter = _placed(a) & _placed(b)
     if inter is None:
         return None
-    volume = inter.volume
+    # `a & b` can return a `ShapeList` when one of the inputs is a
+    # multi-body compound. Sum sub-volumes; pick the largest
+    # sub-shape's centroid as a representative location.
+    if hasattr(inter, "volume"):
+        volume = inter.volume
+        centroid_shape = inter
+    else:
+        shapes = list(inter)
+        if not shapes:
+            return None
+        volume = sum(s.volume for s in shapes)
+        centroid_shape = max(shapes, key=lambda s: s.volume)
     if volume <= INTERFERENCE_VOLUME_EPSILON_MM3:
         return None
-    c = inter.center()
+    c = centroid_shape.center()
     return Interference(
         a=a.name,
         b=b.name,

@@ -14,6 +14,24 @@ if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
 
 
+def _intersection_volume(a: Part, b: Part) -> float:
+    """Volume of the boolean intersection `a & b`, tolerant to the
+    several shapes build123d can return:
+      - `None`                  — no overlap (new API, some versions).
+      - A single `Shape`/`Part` — single-component intersection.
+      - A `ShapeList` / iterable — multi-component intersection, or an
+        empty list when one of the inputs is itself a multi-body
+        compound. Sum the volumes.
+    """
+    intersection = a & b
+    if intersection is None:
+        return 0.0
+    if hasattr(intersection, "volume"):
+        return intersection.volume
+    # ShapeList or other iterable container of shapes.
+    return sum(s.volume for s in intersection)
+
+
 @dataclass(frozen=True)
 class NoInterference:
     a: str
@@ -21,8 +39,7 @@ class NoInterference:
     name: str
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
-        intersection = parts[self.a] & parts[self.b]
-        volume = intersection.volume if intersection is not None else 0.0
+        volume = _intersection_volume(parts[self.a], parts[self.b])
         passed = volume <= INTERFERENCE_VOLUME_EPSILON_MM3
         detail = None if passed else f"interference volume {volume:.4f}mm^3"
         return AssertionResult(self.name, passed, detail)
@@ -61,8 +78,7 @@ class ExpectedInterference:
     reason: str | None = None
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
-        intersection = parts[self.a] & parts[self.b]
-        volume = intersection.volume if intersection is not None else 0.0
+        volume = _intersection_volume(parts[self.a], parts[self.b])
         passed = volume > INTERFERENCE_VOLUME_EPSILON_MM3
         if passed:
             detail = None
