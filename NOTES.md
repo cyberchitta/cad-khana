@@ -102,6 +102,14 @@ a stateful or imported part should still work without friction.
 - **Min wall thickness accuracy.** Ray-cast point-sampling is the v0
   approximation. When does it fail badly enough to need a real medial-axis
   implementation? Record failure cases here as they come up.
+  - 2026-04-25 — sorted-studs ran into sub-mm artifacts on multiple
+    parts: 0.09 mm at faceted-frustum star-ridges (`m02 rotor`), 0.17–
+    0.20 mm at thin annular bearing/spider edges (`m05 ramp_mechanism`),
+    0.10 mm at a 45°-V-cone inner edge (`m02 stator`). All real walls
+    were ≥ 1.5 mm by construction. Frequency was high enough that the
+    project developed a local waiver pattern (see `field-notes.md`
+    2026-04-25 entry). Suggests the FDM threshold ergonomics deserve
+    first-class waiver support before medial-axis becomes priority.
 - **Overhang threshold.** 45° default, but this is printer- and
   material-specific. Probably needs to become a per-build parameter (CLI
   flag or assembly-level setting) once we hit a case where the default is
