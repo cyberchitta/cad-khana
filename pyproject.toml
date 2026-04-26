@@ -19,6 +19,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
+    "bd-warehouse>=0.2.0",
     "build123d>=0.8",
     "ocp-vscode>=2.7",
     "pillow>=10",

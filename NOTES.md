@@ -97,6 +97,18 @@ functions, declarative assemblies, derived dimensions) because the agent
 will be the primary author and functional scripts are more re-editable. But
 a stateful or imported part should still work without friction.
 
+**`bd_warehouse` bundled as a default dependency.** It's the Build123d-native
+companion library for standard parts (fasteners, bearings, threads, gears,
+V-slot extrusions, OpenBuilds hardware). The install cost is one
+pure-Python package with no extra transitive deps beyond what `build123d`
+already pulls in, and the whole point of cad-khana is friction-free agent
+CAD — "agent stops mid-design to figure out installation" is exactly the
+friction we want to avoid. cad-khana itself does not import it; user
+scripts do. Idiom: wrap a `bd_warehouse` class call in a thin pure part
+function so the script style stays consistent. The class-based parametric-
+component idiom of `bd_warehouse` is fine to *consume* but not to
+propagate into user scripts.
+
 ## Open questions
 
 - **Min wall thickness accuracy.** Ray-cast point-sampling is the v0
@@ -136,6 +148,12 @@ a stateful or imported part should still work without friction.
 
 - **Semantic primitives (Shaft, Gear) as v0 API.** Deferred; may earn their
   place once patterns emerge.
+- **`cq_gears` as a default dependency.** Considered alongside `bd_warehouse`,
+  rejected for v0. It's CadQuery-based, so consuming it from Build123d
+  involves shape conversion and mismatched location semantics — interop
+  cost without a concrete need. `bd_warehouse.gear` already covers
+  involute spur gears, which is enough until a real use case forces the
+  question.
 - **MCP server as primary surface.** Deferred; CLI is sufficient and simpler
   for current agent harnesses.
 - **Rust or Go CLI for distribution.** `uv tool install` removes the

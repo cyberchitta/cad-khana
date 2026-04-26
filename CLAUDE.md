@@ -259,6 +259,10 @@ convenience.
 ## Key dependencies
 
 - `build123d` — CAD kernel (wraps OCCT)
+- `bd_warehouse` — Build123d-native parametric standard parts (fasteners,
+  bearings, threads, gears, V-slot extrusions, etc.). Bundled by default
+  so user scripts can import standard hardware without setup. The library
+  itself does not import it; user scripts do.
 - `ocp_vscode` — viewer client (Python side only; VS Code extension is a
   human prerequisite, documented separately)
 - `typer` — CLI

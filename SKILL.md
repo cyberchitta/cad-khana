@@ -198,6 +198,59 @@ bump a parameter and the design updates consistently.
       z=0    = bearing/spider base
   ```
 
+## Parametric standard parts: bd_warehouse
+
+`bd_warehouse` is a Build123d-native companion library bundled as a
+default dependency. Reach for it before hand-rolling any standard
+hardware:
+
+- `fastener` — screws, nuts, washers (ISO/DIN/imperial), tapped holes
+- `bearing` — deep-groove / angular / cylindrical / tapered ball+roller
+  bearings, plus `PressFitHole`
+- `thread` — `IsoThread`, `AcmeThread`, `MetricTrapezoidalThread` for
+  modeled (turnable) threads
+- `gear` — `InvoluteToothProfile`, `SpurGear`
+- `sprocket`, `pipe`, `flange` — chain sprockets, NPS pipes, raised-face
+  flanges
+- `open_builds` — V-slot / C-beam extrusions, gantry plates, eccentric
+  spacers, lead screws, flexible couplers (OpenBuilds CNC parts)
+
+`bd_warehouse` classes subclass build123d's `BasePartObject`, so an
+instance *is* a `Part`. Wrap it in a thin pure part function to keep the
+script style consistent:
+
+```python
+from bd_warehouse.fastener import HexNut
+
+def lock_nut(size: str = "M8-1.25") -> Part:
+    return HexNut(size=size, fastener_type="iso4032")
+
+assembly.add("nut", lock_nut(), location=Location((0, 0, 10)))
+```
+
+Size strings are specific (`"M8-1.25"` is M8 × 1.25 mm pitch). Pass an
+invalid one and `bd_warehouse` raises `ValueError` listing every legal
+option for that fastener type — read the error, pick from the list.
+
+Don't `inspect()` parts that come from `bd_warehouse` — they're bought,
+not printed.
+
+### Discovering what's available
+
+The installed source is the authoritative API list — read it before
+inventing a wrapper:
+
+```bash
+ls .venv/lib/python*/site-packages/bd_warehouse/                       # submodules
+grep -nE "^class " .venv/lib/python*/site-packages/bd_warehouse/fastener.py
+```
+
+Each class's docstring documents the legal `size` strings,
+`fastener_type` codes, and other parameters — read it before
+instantiation. The [bd_warehouse docs](https://bd-warehouse.readthedocs.io/en/latest/)
+are the better source for *usage examples and idioms*; the installed
+source is the better source for *does this class exist*.
+
 ## Available mechanism assertions
 
 Every assertion records a result in `mechanism.json`. If any fail,
