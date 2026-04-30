@@ -93,13 +93,18 @@ uv tool install git+https://github.com/cyberchitta/cad-khana
 
 ## Viewer setup (for humans)
 
-Geometry previews render in VS Code via the
-[OCP CAD Viewer](https://marketplace.visualstudio.com/items?itemName=bernhard-42.ocp-cad-viewer)
-extension. Install it once, open the viewer pane, and `khana view`
-will push assemblies to it.
+`khana view` pushes geometry to the OCP CAD Viewer, a standalone web
+server. The easiest host is the
+[VS Code extension](https://marketplace.visualstudio.com/items?itemName=bernhard-42.ocp-cad-viewer),
+which embeds the viewer in an editor pane.
 
-The VS Code extension is not required for `khana build` or
-`khana check`; only `khana view` needs it.
+Any editor that can launch a task and open a browser tab also works:
+run `python -m ocp_vscode` (from the cad-khana environment) to start
+the viewer, then bind `khana view` to a task (e.g. a Zed
+`tasks.json`).
+
+The viewer is only needed for `khana view`; `khana build`, `khana
+check`, and `khana render` work without it.
 
 ## Example
 
