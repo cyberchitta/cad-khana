@@ -155,6 +155,11 @@ if __name__ == "__main__":
 These conventions make a script **re-editable** — the next session can
 bump a parameter and the design updates consistently.
 
+For build123d's selector operators (`>`, `<`, `>>`, `<<`, `|`, `@`, `%`,
+`^`), algebraic-vs-Builder choice, and the implicit type conversions
+(tuples for `VectorLike` / `RotationLike`), load
+`references/build123d_quickref.md`.
+
 - **Parameters at the top, derived just below.** One logical source of
   truth. Never inline a dimension inside a part function when a named
   constant would do.
@@ -333,3 +338,5 @@ printed part.
   detection work, and where they're unreliable.
 - `references/standard_parts.md` — bd_warehouse contents and how to
   discover available classes, parameters, and valid type/size strings.
+- `references/build123d_quickref.md` — selector operators, algebraic
+  vs Builder mode, type-conversion shortcuts.

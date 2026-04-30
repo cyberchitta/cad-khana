@@ -1,6 +1,6 @@
 [project]
 name = "cad-khana"
-version = "0.0.1"
+version = "0.0.2"
 description = "Claude Code skill and diagnostics-first Build123d wrapper for LLM-driven CAD iteration."
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
