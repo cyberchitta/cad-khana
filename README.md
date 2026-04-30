@@ -50,6 +50,30 @@ khana diff <old> <new>  # diff two diagnostics.json files
 
 ## Install
 
+### Claude Code skill (recommended for agent use)
+
+Copy both skills into your project (loads only in this project's context):
+
+```bash
+git clone --depth=1 https://github.com/cyberchitta/cad-khana /tmp/cad-khana
+cp -r /tmp/cad-khana/skills/cad-khana .claude/skills/
+cp -r /tmp/cad-khana/skills/cad-khana-setup .claude/skills/
+rm -rf /tmp/cad-khana
+```
+
+Or for all projects (loads everywhere):
+
+```bash
+git clone --depth=1 https://github.com/cyberchitta/cad-khana /tmp/cad-khana
+cp -r /tmp/cad-khana/skills/cad-khana ~/.claude/skills/
+cp -r /tmp/cad-khana/skills/cad-khana-setup ~/.claude/skills/
+rm -rf /tmp/cad-khana
+```
+
+Then ask Claude to run `/cad-khana-setup` — it installs the `khana` CLI via `uv tool install` and removes itself. After that, the `cad-khana` skill is loaded automatically when you ask Claude for CAD work.
+
+### Manual install
+
 From a local checkout (for development):
 
 ```bash
@@ -60,7 +84,7 @@ uv run khana build assembly.py
 As a global tool from GitHub:
 
 ```bash
-uv tool install git+https://github.com/restlessronin/cad-khana
+uv tool install git+https://github.com/cyberchitta/cad-khana
 ```
 
 ## Viewer setup (for humans)
