@@ -4,6 +4,10 @@ A CLI tool and agent skill for designing 3D-printable mechanisms in
 [Build123d](https://build123d.readthedocs.io/), built for LLM-driven
 iteration.
 
+*khana* (ख़ाना) is a Hindustani suffix meaning "house" or "workshop"
+— as in *kar-khana* (factory) or *dawa-khana* (pharmacy). cad-khana
+is a place for CAD.
+
 **Status:** early. API may still churn.
 
 ## What it does

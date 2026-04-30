@@ -1,7 +1,7 @@
 [project]
 name = "cad-khana"
 version = "0.0.1"
-description = "Diagnostics-first CAD wrapper around Build123d, built for LLM-driven iteration."
+description = "Claude Code skill and diagnostics-first Build123d wrapper for LLM-driven CAD iteration."
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 license = "Apache-2.0"
@@ -30,8 +30,8 @@ dependencies = [
 khana = "cad_khana.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/restlessronin/cad-khana"
-Issues = "https://github.com/restlessronin/cad-khana/issues"
+Homepage = "https://github.com/cyberchitta/cad-khana"
+Issues = "https://github.com/cyberchitta/cad-khana/issues"
 
 [build-system]
 requires = ["hatchling"]
