@@ -12,7 +12,7 @@ slot, and a pin passing through both. The design shows the workflow
 * mechanism assertions (no interference, clearance) and per-part
   printability checks (``inspect(..., method=FDM())``).
 
-Run ``khana build references/examples/pin_hinge/assembly.py`` to regenerate
+Run ``khana build skills/cad-khana/references/examples/pin_hinge/assembly.py`` to regenerate
 ``outputs/assembly.stl``, ``outputs/assembly.step``,
 ``outputs/mechanism.json``, and one ``*-printability.json`` per printed
 part (``clevis``, ``tang``; the pin is assumed stock hardware).

@@ -3,8 +3,8 @@
 Canonical cad-khana example: a three-part pin hinge (clevis + tang + pin).
 
 ```
-khana build references/examples/pin_hinge/assembly.py
-khana view  references/examples/pin_hinge/assembly.py
+khana build skills/cad-khana/references/examples/pin_hinge/assembly.py
+khana view  skills/cad-khana/references/examples/pin_hinge/assembly.py
 ```
 
 `assembly.py` demonstrates the full recommended pattern — parameters

@@ -49,11 +49,20 @@ humans.
 
 ```
 cad-khana/
-  SKILL.md                    # agent-facing instructions for using the tool
   README.md                   # human-facing install + viewer setup
   CLAUDE.md                   # this file
   NOTES.md                    # design rationale, open questions, history
   pyproject.toml              # uv-managed, entry point: khana = cad_khana.cli:main
+  skills/
+    cad-khana/
+      SKILL.md                # agent-facing instructions for using the tool
+      references/
+        printability.md       # design rules baked into printability checks
+        standard_parts.md     # bd_warehouse contents and discovery
+        examples/
+          pin_hinge/          # canonical reference project (clevis-tang-pin)
+    cad-khana-setup/
+      SKILL.md                # one-shot installer; self-deletes after install
   src/
     cad_khana/                # PEP 420 namespace package, no __init__.py
       mechanism/
@@ -74,10 +83,6 @@ cad-khana/
       diff.py                 # dispatches on file kind (mechanism/printability)
       cli.py                  # typer CLI — thin dispatcher
       # mcp.py                # future: MCP server over the same primitives
-  references/
-    printability.md           # design rules baked into printability checks
-    examples/
-      pin_hinge/              # canonical reference project (clevis-tang-pin)
   tests/
     mechanism/                # per-module tests for mechanism.*
     printability/             # per-module tests for printability.*

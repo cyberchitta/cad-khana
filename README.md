@@ -111,7 +111,8 @@ build(assembly, out="outputs/")
 - `CLAUDE.md` — operational instructions for agents working on this
   repo.
 - `NOTES.md` — design rationale, key decisions, open questions.
-- `SKILL.md` — agent-facing guide to using the tool.
+- `skills/cad-khana/SKILL.md` — agent-facing guide to using the tool.
+- `skills/cad-khana-setup/SKILL.md` — one-shot installer skill that self-deletes after running `uv tool install`.
 
 ## License
 
