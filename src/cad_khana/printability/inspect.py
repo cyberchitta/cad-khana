@@ -6,6 +6,7 @@ from pathlib import Path
 
 from build123d import Part
 
+from cad_khana._paths import resolve_out
 from cad_khana.mechanism.diagnostics import (
     SCHEMA_VERSION,
     AssertionResult,
@@ -69,7 +70,7 @@ def inspect(
     out: str | Path = "outputs",
     name: str = "part",
 ) -> PrintabilityDiagnostics:
-    out_path = Path(out)
+    out_path = resolve_out(out)
     out_path.mkdir(parents=True, exist_ok=True)
     wall = min_wall_mm(part)
     overhang = detect_overhang(

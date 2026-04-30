@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from cad_khana import render, viewer
+from cad_khana._paths import resolve_out
 from cad_khana.export import export_assembly
 from cad_khana.mechanism.assembly import Assembly
 from cad_khana.mechanism.assertions import evaluate as evaluate_assertions
@@ -31,7 +32,7 @@ def check(
     *,
     export: bool | None = None,
 ) -> CheckResult:
-    out_path = Path(out)
+    out_path = resolve_out(out)
     out_path.mkdir(parents=True, exist_ok=True)
     do_export = _export_default if export is None else export
     exports = export_assembly(assembly, out_path) if do_export else ()

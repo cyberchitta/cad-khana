@@ -184,3 +184,71 @@ def test_inspect_runs_from_script(tmp_path: Path):
     assert result.exit_code == 0, result.output
     assert (out / "mechanism.json").exists()
     assert (out / "cube-printability.json").exists()
+
+
+def test_relative_out_anchors_to_script_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A script's relative ``out=`` lands next to the script, not in cwd."""
+    script_dir = tmp_path / "module"
+    script_dir.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    script = script_dir / "asm.py"
+    script.write_text(
+        "from build123d import Box, BuildPart\n"
+        "from cad_khana.mechanism.assembly import Assembly\n"
+        "from cad_khana.mechanism.check import check\n"
+        "from cad_khana.printability.inspect import inspect\n"
+        "from cad_khana.printability.methods import FDM\n"
+        "\n"
+        "with BuildPart() as p:\n"
+        "    Box(10, 10, 10)\n"
+        "check(Assembly().add('cube', p.part), out='outputs')\n"
+        "inspect(p.part, method=FDM(wall_min_mm=1.0, overhang_max_deg=95.0),"
+        " out='outputs', name='cube')\n"
+    )
+    result = runner.invoke(app, ["check", str(script)])
+    assert result.exit_code == 0, result.output
+    assert (script_dir / "outputs" / "mechanism.json").exists()
+    assert (script_dir / "outputs" / "cube-printability.json").exists()
+    assert not (elsewhere / "outputs").exists()
+
+
+def test_cli_default_error_diagnostics_anchored_to_script(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """``khana build`` without ``--out`` writes error diagnostics next to the script."""
+    script_dir = tmp_path / "module"
+    script_dir.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    script = script_dir / "bad.py"
+    script.write_text("raise RuntimeError('kaboom')\n")
+    result = runner.invoke(app, ["build", str(script)])
+    assert result.exit_code == 1
+    data = json.loads((script_dir / "outputs" / "mechanism.json").read_text())
+    assert data["status"] == "error"
+    assert "kaboom" in data["error"]
+    assert not (elsewhere / "outputs").exists()
+
+
+def test_cli_explicit_out_stays_cwd_relative(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """An explicit ``--out custom`` is taken cwd-relative (user-typed)."""
+    script_dir = tmp_path / "module"
+    script_dir.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    script = script_dir / "bad.py"
+    script.write_text("raise RuntimeError('kaboom')\n")
+    result = runner.invoke(app, ["build", str(script), "--out", "custom"])
+    assert result.exit_code == 1
+    assert (elsewhere / "custom" / "mechanism.json").exists()

@@ -1,6 +1,6 @@
 ---
 name: cad-khana
-description: Diagnostics-first CAD wrapper around Build123d: assembly-level interference/clearance assertions plus optional per-part printability checks. Load BEFORE running any `khana` command or editing an `assembly.py` that uses the wrapper — SKILL.md has conventions (CWD-relative `outputs/`, diagnostic JSON keys) the scripts rely on but don't restate. TRIGGER: about to run `khana check`/`build`/`view`/`render`, or editing a file that imports `cad_khana` or calls `Assembly()`/`check()`/`inspect()`.
+description: Diagnostics-first CAD wrapper around Build123d: assembly-level interference/clearance assertions plus optional per-part printability checks. Load BEFORE editing an `assembly.py` that uses the wrapper or interpreting its diagnostic JSON — SKILL.md has conventions the scripts rely on but don't restate. TRIGGER: about to run `khana check`/`build`/`view`/`render`, or editing a file that imports `cad_khana` or calls `Assembly()`/`check()`/`inspect()`.
 ---
 
 # cad-khana
@@ -55,13 +55,13 @@ JSON diagnostics are always written to `--out` (default `outputs/`),
 even on failure — read them to diagnose errors. Exit code is nonzero
 on any assertion failure or script exception.
 
-**CWD matters.** `--out` is resolved relative to the current
-directory, so `outputs/` lands wherever you invoked `khana` from. Run
-`khana` from the module directory (the one containing the script), or
-pass an explicit `--out <module>/outputs`, so artifacts live next to
-the script rather than at the repo root. The `out=` argument to
-`check()` / `inspect()` inside the script's `__main__` block is
-CWD-relative for the same reason.
+**Output location.** A relative `out=` passed to `check()` / `inspect()`
+inside a script is anchored to the script file's directory, so
+`out="outputs"` lands next to the script regardless of the cwd you
+invoked `khana` from. Same for `khana`'s default `--out` (used for
+error diagnostics if the script crashes before reaching `check()`).
+Pass an absolute path, or an explicit `--out <dir>` (cwd-relative,
+because you typed it), to override.
 
 ### Viewer: no editor required
 

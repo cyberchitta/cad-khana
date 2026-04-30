@@ -63,15 +63,21 @@ ScriptArg = Annotated[
 ]
 
 OutOpt = Annotated[
-    Path,
+    Path | None,
     typer.Option(
         "--out",
-        help="Directory to write error diagnostics if the script fails.",
+        help=(
+            "Directory to write error diagnostics if the script fails. "
+            "Defaults to <script-dir>/outputs; an explicit value is taken "
+            "as cwd-relative."
+        ),
     ),
 ]
 
 
-def _run_script(script: Path, out: Path, command: str) -> None:
+def _run_script(script: Path, out: Path | None, command: str) -> None:
+    if out is None:
+        out = script.resolve().parent / "outputs"
     try:
         runpy.run_path(str(script), run_name="__main__")
     except (SystemExit, typer.Exit):
@@ -85,13 +91,13 @@ def _run_script(script: Path, out: Path, command: str) -> None:
 
 
 @app.command()
-def build(script: ScriptArg, out: OutOpt = Path("outputs")) -> None:
+def build(script: ScriptArg, out: OutOpt = None) -> None:
     """Run a user script to compose an assembly and export geometry."""
     _run_script(script, out, "build")
 
 
 @app.command()
-def check(script: ScriptArg, out: OutOpt = Path("outputs")) -> None:
+def check(script: ScriptArg, out: OutOpt = None) -> None:
     """Run a user script and write diagnostics only (no STL/STEP export)."""
     _set_export_default(False)
     try:
@@ -101,7 +107,7 @@ def check(script: ScriptArg, out: OutOpt = Path("outputs")) -> None:
 
 
 @app.command()
-def view(script: ScriptArg, out: OutOpt = Path("outputs")) -> None:
+def view(script: ScriptArg, out: OutOpt = None) -> None:
     """Run a user script and push the resulting assembly to the OCP viewer."""
     viewer.set_auto(True)
     try:
@@ -113,7 +119,7 @@ def view(script: ScriptArg, out: OutOpt = Path("outputs")) -> None:
 @app.command()
 def render(
     script: ScriptArg,
-    out: OutOpt = Path("outputs"),
+    out: OutOpt = None,
     views_dir: Annotated[
         Path | None,
         typer.Option(
