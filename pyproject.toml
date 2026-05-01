@@ -3,7 +3,7 @@ name = "cad-khana"
 version = "0.0.2"
 description = "Claude Code skill and diagnostics-first Build123d wrapper for LLM-driven CAD iteration."
 readme = "README.md"
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.13,<3.14"
 license = "Apache-2.0"
 authors = [
     { name = "cad-khana contributors" },
@@ -13,8 +13,7 @@ classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
