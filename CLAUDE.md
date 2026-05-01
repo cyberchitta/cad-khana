@@ -321,3 +321,45 @@ for end-user install, `uvx khana ...` for ephemeral use.
 - Don't add dependencies casually. Every dep is a support burden.
 - Don't reproduce copyrighted code from other projects. Write originals.
 
+## Field-notes promotion policy
+
+`field-notes.md` (uncommitted, gitignored) collects real-use friction
+from consumer sessions — anything an agent flagged as awkward, buggy,
+missing, or surprising while using cad-khana. The SKILL.md "Feedback"
+section tells consumers to log freely without self-filtering, so
+expect entries to be a mix of one-off project quirks, half-formed
+observations, and genuine patterns. Triage it when working in this
+repo.
+
+A pattern is a pattern when the same observation lands **2–3 times in
+separate contexts**. When that threshold is met, promote the fix into
+the appropriate surface and delete the matched field-notes entries:
+
+- `src/cad_khana/mechanism/` — Assembly API, assertion semantics, or
+  diagnostics fields (new assertion type, new `mechanism.json` field,
+  changed default tolerance).
+- `src/cad_khana/printability/` — `FDM` defaults, new method dataclass,
+  wall/overhang algorithm tweaks, new printability assertion.
+- `src/cad_khana/core/` — shared tessellation tolerances or mesh
+  utilities used by both wall and overhang checks.
+- `src/cad_khana/render.py` — default views, projection style, framing
+  heuristics for hidden-line PNGs.
+- `src/cad_khana/cli.py` — flag changes, default `--out` resolution,
+  or new subcommands. Keep logic in the library; the CLI stays a thin
+  dispatcher.
+- `skills/cad-khana/SKILL.md` body — conventions consumers should
+  follow when authoring scripts (parameter layout, naming, coordinate
+  frames, multi-sub-assembly composition).
+- `NOTES.md` — design rationale (why a default exists, a trade-off
+  taken, an open question).
+
+The 2–3-occurrence threshold matters because every line in SKILL.md
+costs context for every future check, and every default change is
+hard to walk back. One-offs may be project-specific quirks; only
+patterns earn promotion.
+
+**Bugs skip the threshold.** A single-occurrence observation that is
+unambiguously a bug — crash, incorrect output, broken invariant
+documented in this file — gets fixed immediately. The threshold is
+for shaping defaults and conventions, not for delaying bug fixes.
+
