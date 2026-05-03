@@ -180,6 +180,20 @@ For build123d's selector operators (`>`, `<`, `>>`, `<<`, `|`, `@`, `%`,
   geometry has one intrinsic color everywhere it's used. Colors do not
   affect diagnostics and are ignored by `khana render`'s hidden-line
   PNGs and by STEP export.
+- **Material is a first-class field on `PlacedPart`, parallel to
+  color.** `.add()` takes an optional `material="<token>"` string that
+  downstream consumers (chitra-cad's photo-real renderer; future FEA /
+  kinematics) resolve against their own catalogs. Same intrinsic-vs-
+  placement rule as color: set it at the `.add()` site when the same
+  part body gets placed with different materials (or when the parent
+  is the natural place to bind it); push it inside the part-builder
+  only if the part has one intrinsic material everywhere it's used;
+  leave unset (`None`) when the answer is genuinely open and let the
+  consumer's override layer supply the current best guess. For
+  cross-consumer experiments (render + FEA both reading from the same
+  assembly), use `Assembly.with_materials({name: token})`. For
+  render-only sweeps, use the consumer's own override (e.g.
+  chitra-cad's `Scene.with_materials({...})`).
 - **Algebraic mode operators (`+`, `-`, `*`, `Pos`, `Rot`) read more
   cleanly than `BuildPart` for short shapes** — prefer them unless the
   BuildPart context buys something (sketches, workplanes, patterns).

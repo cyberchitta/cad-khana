@@ -18,6 +18,7 @@ class PlacedPart:
     part: Part
     location: Location
     color: Color | None = None
+    material: str | None = None
 
 
 @dataclass(frozen=True)
@@ -31,9 +32,23 @@ class Assembly:
         part: Part,
         location: Location | None = None,
         color: Color | None = None,
+        material: str | None = None,
     ) -> "Assembly":
-        placed = PlacedPart(name, part, location or Location(), color)
+        placed = PlacedPart(name, part, location or Location(), color, material)
         return replace(self, parts=self.parts + (placed,))
+
+    def with_materials(self, mapping: dict[str, str]) -> "Assembly":
+        """Return a copy with each named part's material replaced by the
+        value in ``mapping``. Parts not in the mapping are unchanged.
+
+        Symmetric to ``chitra_cad.Scene.with_materials``: use this layer
+        for cross-consumer experiments (render + FEA both read from the
+        ``Assembly``); use the ``Scene`` layer for render-only sweeps.
+        """
+        updated = tuple(
+            replace(p, material=mapping.get(p.name, p.material)) for p in self.parts
+        )
+        return replace(self, parts=updated)
 
     def assert_no_interference(
         self, a: str, b: str, name: str | None = None

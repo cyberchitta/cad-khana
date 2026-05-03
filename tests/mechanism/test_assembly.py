@@ -97,3 +97,29 @@ def test_add_accepts_per_placement_color():
     assert assembly.parts[0].color is not None
     assert assembly.parts[1].color is not None
     assert assembly.parts[0].part is assembly.parts[1].part
+
+
+def test_default_material_is_none():
+    assembly = Assembly().add("a", _cube())
+    assert assembly.parts[0].material is None
+
+
+def test_add_accepts_material():
+    assembly = Assembly().add("a", _cube(), material="aluminium_anodized")
+    assert assembly.parts[0].material == "aluminium_anodized"
+
+
+def test_with_materials_overrides_named_parts():
+    assembly = (
+        Assembly()
+        .add("a", _cube(), material="plastic_matte")
+        .add("b", _cube(), material="plastic_matte")
+        .add("c", _cube())
+    )
+    overridden = assembly.with_materials({"a": "steel", "c": "aluminium_anodized"})
+    assert overridden.parts[0].material == "steel"
+    assert overridden.parts[1].material == "plastic_matte"
+    assert overridden.parts[2].material == "aluminium_anodized"
+    # original is unchanged
+    assert assembly.parts[0].material == "plastic_matte"
+    assert assembly.parts[2].material is None
