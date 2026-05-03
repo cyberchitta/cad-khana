@@ -194,6 +194,30 @@ For build123d's selector operators (`>`, `<`, `>>`, `<<`, `|`, `@`, `%`,
   assembly), use `Assembly.with_materials({name: token})`. For
   render-only sweeps, use the consumer's own override (e.g.
   chitra-cad's `Scene.with_materials({...})`).
+- **Two fidelity tiers — keep cheap geometry in the assembly,
+  apply detail as an override layer.** The geometric-iteration
+  loop (interference, clearance, printability) runs on cheap
+  primitives — `Box(20, 20, L)` for a 2020 extrusion, no
+  fasteners. That's the right model for assertions: it's fast to
+  tessellate, and a real V-slot profile is a strict subset of a
+  solid 20×20 so any clearance the cheap model passes the detailed
+  one passes too. Detailed geometry (real `bd_warehouse` profiles,
+  fasteners, finished shapes) lives in a `<module>/detail_variations.py`
+  module as named bundles and applies via
+  `Assembly.with_detailed_geometry(BUNDLE)` before the consumer
+  (render / FEA / kinematics) reads the assembly. The override map
+  handles **both swaps and additions**: a key matching an existing
+  `PlacedPart.name` swaps the part shape (placement / material /
+  color preserved); a key with no match appends a new `PlacedPart`
+  from a `DetailOverride(part=…, location=…, material=…)`.
+  Fasteners that the cheap model never created enter via additions
+  — and each new fastener earns its own clearance assertion at the
+  sub-assembly that owns the joint. Same intrinsic-vs-placement
+  rule as materials: stable detail facts can move into the
+  part-builder when they earn it; live as override entries until
+  then. The two override layers (`with_materials`,
+  `with_detailed_geometry`) compose — call them in either order
+  before handing the assembly to the consumer.
 - **Algebraic mode operators (`+`, `-`, `*`, `Pos`, `Rot`) read more
   cleanly than `BuildPart` for short shapes** — prefer them unless the
   BuildPart context buys something (sketches, workplanes, patterns).

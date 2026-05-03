@@ -1,6 +1,7 @@
+import pytest
 from build123d import Box, BuildPart, Color, Location
 
-from cad_khana.mechanism.assembly import Assembly
+from cad_khana.mechanism.assembly import Assembly, DetailOverride
 
 
 def _cube(size: float = 10):
@@ -123,3 +124,64 @@ def test_with_materials_overrides_named_parts():
     # original is unchanged
     assert assembly.parts[0].material == "plastic_matte"
     assert assembly.parts[2].material is None
+
+
+def test_with_detailed_geometry_empty_mapping_is_noop():
+    assembly = Assembly().add("a", _cube(), material="plastic_matte")
+    result = assembly.with_detailed_geometry({})
+    assert result.parts == assembly.parts
+
+
+def test_with_detailed_geometry_swap_preserves_placement_and_material():
+    loc = Location((1, 2, 3))
+    assembly = Assembly().add(
+        "a",
+        _cube(10),
+        location=loc,
+        material="plastic_matte",
+        color=Color("red"),
+    )
+    detailed = _cube(20)
+    result = assembly.with_detailed_geometry({"a": detailed})
+    assert result.parts[0].part is detailed
+    assert result.parts[0].location.position == loc.position
+    assert result.parts[0].material == "plastic_matte"
+    assert result.parts[0].color is not None
+
+
+def test_with_detailed_geometry_swap_accepts_detail_override():
+    assembly = Assembly().add("a", _cube(10), material="plastic_matte")
+    detailed = _cube(20)
+    result = assembly.with_detailed_geometry(
+        {"a": DetailOverride(part=detailed, material="steel")}
+    )
+    assert result.parts[0].part is detailed
+    assert result.parts[0].material == "steel"
+
+
+def test_with_detailed_geometry_addition_appends_placed_part():
+    assembly = Assembly().add("rail", _cube(10))
+    bolt = _cube(2)
+    result = assembly.with_detailed_geometry(
+        {
+            "bolt": DetailOverride(
+                part=bolt, location=Location((5, 0, 0)), material="steel"
+            )
+        }
+    )
+    assert [p.name for p in result.parts] == ["rail", "bolt"]
+    assert result.parts[1].part is bolt
+    assert result.parts[1].location.position == Location((5, 0, 0)).position
+    assert result.parts[1].material == "steel"
+
+
+def test_with_detailed_geometry_addition_without_location_raises():
+    assembly = Assembly().add("rail", _cube(10))
+    with pytest.raises(ValueError, match="requires an explicit location"):
+        assembly.with_detailed_geometry({"bolt": _cube(2)})
+
+
+def test_with_detailed_geometry_returns_new_assembly():
+    original = Assembly().add("a", _cube())
+    result = original.with_detailed_geometry({"a": _cube(20)})
+    assert original.parts[0].part is not result.parts[0].part
