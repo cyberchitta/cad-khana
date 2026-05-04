@@ -37,6 +37,102 @@ for the agent first; humans have the OCP viewer.
   community effort to build a training dataset for LLM CAD generation.
   Signals the community knows LLMs matter; work is on training, not runtime
   tooling.
+- **llmcad** (pypi.org/project/llmcad/, GitHub URL currently 404; source
+  read from `llmcad-0.3.0` sdist, ~1.4k LOC). Closest peer in shape — a
+  minimal Python CAD library for LLMs, wrapping OCP directly. Bets purely
+  on multimodal vision: zero structured diagnostics, no interference
+  checks, no assertions; the entire feedback channel is `snapshot()` PNGs
+  plus `print()`. That's a meaningful philosophical divergence — they
+  trust the model's eyes; we trust cheap scalars first, vision second.
+  Their existence is mild validation that the LLM-CAD-library category is
+  real; their omission of diagnostics is mild validation that our bet is
+  differentiated. Specific ideas worth revisiting if patterns emerge in
+  field-notes:
+  - **Multi-view 2x2 PNG with view-name overlays, 3-light Phong, parallel
+    projection, edges sampled from topology.** `llmcad/_render.py`,
+    `debug.py:snapshot`. Concrete polish for `khana render`; `--views 4`
+    already exists, this is shape-for-shape what they do, just better-lit.
+  - **Face-local `offset(dx, dy)` / `inset(dx, dy)` on a `Position` that
+    knows its parent face's `(x_dir, y_dir, normal)`.** `llmcad/position.py`,
+    `face.py`. Build123d has the primitives (`Plane`, `Location`) but
+    requires explicit construction; this is strictly more ergonomic.
+    Doesn't violate the no-semantic-primitives stance — it's a coordinate
+    helper, not a domain abstraction. Candidate for a `mechanism.frame`
+    helper if 2–3 user scripts hit awkward global-coord math.
+  - **Named-faces convention** (`top`, `bottom`, `wall`, `_start`, `_end`)
+    with auto-transfer through booleans (`llmcad/_naming.py`,
+    `body.py:transfer_face_names`). The naming convention is borrowable;
+    the transfer machinery probably isn't, because Build123d already has
+    `face.sort_by(Axis.Z)[-1]` / `filter_by(Plane.XY)`. If this becomes a
+    pattern, it belongs in SKILL.md as a scripting convention, not in the
+    library.
+  - **`measure(a, b)` print-and-return helper.** Trivial; only worth
+    adding if scripts repeatedly want it.
+
+  Skipped: their `RevoluteJoint` is a fields-only stub with no kinematics
+  (violates no-semantic-primitives anyway); their `Box(diameter=, height=)`
+  parameter renames clash with Build123d conventions our users know;
+  operator booleans (`+`, `-`, `&`) are already in Build123d.
+- **CADialogue** (github.com/Hiram31/CADialogue, doi 10.1016/j.cad.2025.104006)
+  — chat-UI assistant for FreeCAD. Reviewed for prompt ideas; their
+  system prompts are one-liners with no CAD-domain conventions, and
+  their reported success rate comes from the self-refinement loop + image
+  fallback (both harness concerns) rather than prompt sophistication.
+  Nothing borrowable for SKILL.md. Logging the negative result so we
+  don't re-mine.
+- **FreeCAD AI** (github.com/ghbalf/freecad-ai) — most-developed of the
+  chat-UI shortlist (workbench plugin, plan/act, vision, tool calling).
+  Reviewed; most of their CAD content is FreeCAD/PartDesign-API footgun
+  documentation (Body-required-before-PartDesign, Sketcher
+  over-constraint, Revolution-with-full-circle, coplanar-boolean
+  offsets) that build123d's algebraic mode simply doesn't need.
+  Single weak candidate worth noting: a **`list_faces`-style helper**
+  (`freecad_tools.py:1756-1885`) that returns faces by human label
+  ("top", "front", "cylindrical R=10.0") so an agent can reference them
+  without guessing edge indices. Build123d already supports the
+  selection; the borrowable bit is the labeling layer. Defer until
+  consumer scripts hit awkward face-selection.
+- **TalkCAD** (github.com/outerreaches/talkcad) — Electron app for
+  conversational OpenSCAD modeling. Substantially more substantive than
+  the other chat UIs; ahead of us on intent capture, behind on
+  diagnostic structure — the two are complementary. Concrete ideas
+  worth revisiting if patterns emerge:
+  - **Value-level spec record** (`agent-definitions.ts:281-305`,
+    `verification.ts`). `set_spec(key, value, unit, critical, note)` with
+    dotted-key namespaces (`internal_thread.diameter`,
+    `body.shape`) records every named dimension as a traceable claim,
+    not just as a value buried in the script. Would slot cleanly into
+    `mechanism.json` as a `specs` array; orthogonal to our relational
+    assertions and our per-part `inspect()` calls. Most actionable
+    single idea from the whole prior-art scan.
+  - **`critical=` flag on assertions** so scripts can mark
+    structural-must-pass vs nice-to-have without changing exit
+    semantics, and `khana diff` can surface critical regressions first.
+  - **`note=` / `reason=` extension across all assertions and printability
+    calls.** We already have `reason=` on the interference-allowance
+    path; generalizing the pattern is a tiny API change with high
+    traceability value.
+  - **`FDM(material="PLA")` deriving a default `clearance_mm`** from a
+    shrinkage table (PLA 0.3 % / PETG 0.5 % / ABS 0.8 % / TPU 1–2 %,
+    `resources/skills/design-rules/fdm-printing.md`). Better default than
+    "you must pass `min_mm` explicitly".
+  - **Spatial-vocabulary translation block** for the agent-facing side
+    of SKILL.md (`agent-definitions.ts:196-237`): an explicit axis
+    diagram + a "user says X → axis Y" table so the agent can ground
+    "front near bottom right" without re-deriving it. Our existing
+    coordinate-frame guidance is for *user scripts*; this is the
+    inverse, for the *agent reading user requests*.
+
+  Skipped: their negotiation personalities (chat UX), researcher/builder
+  agent split (driven by their web-scraping for components, which we
+  delegate to `bd_warehouse`), OpenSCAD-specific footguns
+  (`$fn`/`$fa`/`$fs`, epsilon overshoot), and the ISO 273 clearance-hole
+  table (covered by `bd_warehouse` for fasteners; not worth duplicating).
+- **CQAsk** (github.com/OpenOrion/CQAsk) — web UI + CadQuery generation,
+  ~2024. Reviewed; their entire prompt is a CadQuery API cheat sheet
+  with no parameter conventions, units guidance, sketch discipline, or
+  structuring rules. Behind our SKILL.md on every axis. Nothing
+  borrowable. Logged so we don't re-mine.
 
 ## Key decisions
 

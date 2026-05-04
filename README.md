@@ -139,6 +139,45 @@ assembly = (
 build(assembly, out="outputs/")
 ```
 
+## Related work
+
+The LLM-aided-CAD space is active. Where cad-khana sits:
+
+**Direct peer.** [`llmcad`](https://pypi.org/project/llmcad/) is the closest
+in shape: a minimal Python CAD library designed for LLMs to drive. It wraps
+OCP (the OCCT Python bindings) directly rather than going through Build123d,
+and its LLM-ergonomic bet is named faces/edges, face-local coordinates, and
+multi-view PNG snapshots — no structured diagnostics or assertions.
+cad-khana's bet is a different one — diagnostics JSON plus assertions on top
+of an existing Build123d API, with renders as a complementary channel — so
+the two are worth reading side by side.
+
+**End-user CAD apps with chat UIs** — different category, not alternatives.
+[FreeCAD AI](https://github.com/ghbalf/freecad-ai),
+[TalkCAD](https://github.com/outerreaches/talkcad),
+[CQAsk](https://github.com/OpenOrion/CQAsk), and
+[CADialogue](https://github.com/Hiram31/CADialogue) are products a human opens
+and chats with. cad-khana is a library an agent harness drives from a script;
+there's no GUI and no chat surface.
+
+**Substrate, not alternatives.**
+[Build123d](https://build123d.readthedocs.io/) is what cad-khana wraps;
+[CadQuery](https://cadquery.readthedocs.io/) and
+[OpenSCAD](https://openscad.org/) are the obvious other code-CAD substrates a
+similar tool could be built on.
+
+**Different problem — text/image to CAD model weights.**
+[CAD-Coder](https://github.com/AndresGuzman-Arenas/CAD-Coder),
+[CADmium](https://github.com/CADmium-Co/CADmium), and
+[BlenderLLM](https://github.com/FreedomIntelligence/BlenderLLM) train or
+fine-tune models that emit CAD. cad-khana is tooling for the inference loop,
+not a model — orthogonal work.
+
+**Survey.**
+[LLMs-CAD-Survey-Taxonomy](https://github.com/lichengzhanguom/LLMs-CAD-Survey-Taxonomy)
+([arXiv:2505.08137](https://arxiv.org/abs/2505.08137)) is a reasonable map of
+the broader landscape.
+
 ## Project documents
 
 - `CLAUDE.md` — operational instructions for agents working on this
