@@ -73,6 +73,41 @@ for the agent first; humans have the OCP viewer.
   (violates no-semantic-primitives anyway); their `Box(diameter=, height=)`
   parameter renames clash with Build123d conventions our users know;
   operator booleans (`+`, `-`, `&`) are already in Build123d.
+- **build123d-mcp** (github.com/pzfreo/build123d-mcp) — MCP server exposing build123d
+  as 19 tools; the closest peer to cad-khana in goal and library choice. Two architectural
+  divergences separate them from us:
+  (1) **MCP as primary surface.** They chose MCP for v0; we chose CLI. Their transport adds
+  complexity (multiprocessing isolation, security sandbox, session serialization) that a CLI
+  avoids.
+  (2) **Persistent-session execution model.** Agent writes small code snippets via
+  `execute()`; objects accumulate in a Python namespace across calls; `show(name)` registers
+  named shapes. This enables incremental construction but requires transactional rollback
+  (failed snippet must not corrupt the session), session restart on crash, and snapshot
+  machinery. Our full-script-per-invocation model sidesteps all of this — the "session"
+  is the file on disk.
+  They have interference and clearance measurement tools but no assertion system (assertions
+  that fail the build) and no printability layer. Concrete ideas worth revisiting if patterns
+  emerge in field-notes:
+  - **SVG HLR fallback** (`tools/render.py`): when VTK/PNG fails on headless Linux, fall
+    back to build123d's Hidden Line Removal SVG projection, which works without a display
+    backend. Directly applicable to `render.py`; candidate if headless rendering comes up
+    in field-notes.
+  - **Repair hints** (`tools/repair_hints.py`): 11-entry pattern table matching common
+    build123d exceptions to human-readable fix suggestions (NoneType → missing `.part`,
+    CadQuery-style `.translate()` → `Location`, fillet edge-selection rules, etc.). Could
+    be a `hint` sub-field in the `error` object of `mechanism.json`. Low cost, high value
+    for iterating agents.
+  - **Topology counts** (face/edge/vertex per part): they surface these after every
+    `execute()` as the cheapest verification that a boolean changed geometry. Adding them
+    to the `parts` entries in `mechanism.json` would let agents verify boolean operations
+    without rendering.
+  - **Worker-process isolation** (multiprocessing.Pipe): OCCT/TBB state is confined to a
+    child process; parent handles MCP protocol; child restarts cleanly on crash. Relevant
+    when we add the MCP surface — OCCT is not thread-safe.
+
+  Skipped: transactional rollback (only needed in persistent-session models), `show(name)`
+  accumulation (our `Assembly` handles multi-part naming declaratively), and the security
+  sandbox (`khana build` runs the user's own scripts, not code sent over a wire).
 - **CADialogue** (github.com/Hiram31/CADialogue, doi 10.1016/j.cad.2025.104006)
   — chat-UI assistant for FreeCAD. Reviewed for prompt ideas; their
   system prompts are one-liners with no CAD-domain conventions, and

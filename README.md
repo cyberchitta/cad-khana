@@ -143,14 +143,23 @@ build(assembly, out="outputs/")
 
 The LLM-aided-CAD space is active. Where cad-khana sits:
 
-**Direct peer.** [`llmcad`](https://pypi.org/project/llmcad/) is the closest
-in shape: a minimal Python CAD library designed for LLMs to drive. It wraps
-OCP (the OCCT Python bindings) directly rather than going through Build123d,
-and its LLM-ergonomic bet is named faces/edges, face-local coordinates, and
-multi-view PNG snapshots — no structured diagnostics or assertions.
-cad-khana's bet is a different one — diagnostics JSON plus assertions on top
-of an existing Build123d API, with renders as a complementary channel — so
-the two are worth reading side by side.
+**Direct peers.** Two runtime tools share the same problem space — LLMs
+driving Build123d code toward valid geometry, with structured feedback
+closing the loop.
+
+[`build123d-mcp`](https://github.com/pzfreo/build123d-mcp) exposes Build123d
+as an MCP server (19 tools). Its model is incremental: the agent writes small
+code snippets that accumulate in a persistent Python session; `execute()`,
+`measure()`, and `render_view()` form the feedback loop. No assertion system
+and no printability layer. Worth reading side by side — the MCP surface and
+the persistent-session model are meaningfully different bets than the
+khana CLI + full-script-per-run approach.
+
+[`llmcad`](https://pypi.org/project/llmcad/) wraps OCP (the raw OCCT Python
+bindings) directly, not Build123d. Its ergonomic bets are named faces,
+face-local coordinates, and multi-view PNG snapshots — no structured
+diagnostics or assertions. A different philosophy: trust the model's eyes;
+cad-khana trusts cheap scalars first, vision second.
 
 **End-user CAD apps with chat UIs** — different category, not alternatives.
 [FreeCAD AI](https://github.com/ghbalf/freecad-ai),
