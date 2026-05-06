@@ -42,7 +42,7 @@ then calls `inspect()` once per printed part.
 khana build  <script>          # run script, export STL/STEP, write JSON diagnostics
 khana check  <script>          # run script, write JSON diagnostics only (no export)
 khana view   <script>          # build, then push assembly to the OCP viewer (socket)
-khana render <script>          # build, then write PNG views under <out>/views/
+khana render <script> [--format png|svg|both]  # build, then write views under <out>/views/
 khana diff   <before> <after>  # diff two JSON files (mechanism or printability)
 khana --version
 ```
@@ -312,8 +312,14 @@ printed part.
 
 - `status` — `"ok"`, `"error"`, or `"assertion_failed"`.
 - `error` — traceback string if the script itself crashed.
+- `hint` — short pattern-matched repair suggestion when `status` is
+  `"error"`; `null` otherwise. Read this first before parsing the
+  traceback — it resolves the most common errors in one line.
 - `parts[name].volume_mm3` — sanity-check a part is not empty.
 - `parts[name].bbox` — sanity-check on size and placement.
+- `parts[name].face_count` / `edge_count` / `vertex_count` — cheapest
+  way to verify a boolean operation changed geometry: counts shift on
+  success, stay the same on a silent no-op or OCCT failure.
 - `interferences` — list of overlapping part pairs with volume + centroid.
 - `assertions` — one entry per declared assertion; `passed` + `detail`.
 
@@ -348,7 +354,8 @@ printed part.
 1. Write the script. Use the canonical example as a template.
 2. `khana check path/to/script.py`
 3. Read `outputs/mechanism.json` and each `outputs/<name>-printability.json`.
-   - `status: "error"` → fix the Python error reported in `error`.
+   - `status: "error"` → check `hint` first; if non-null it resolves the
+     most common cases without reading the full traceback in `error`.
    - `status: "assertion_failed"` in mechanism → read `assertions` for
      failing entries. `interferences` often points directly at the
      root cause.
@@ -361,9 +368,11 @@ printed part.
 4. Edit parameters or geometry. Re-run. Repeat.
 5. When a question is shape-level rather than scalar ("is the tang
    pointing the right way", "did that cut land where I expected"), run
-   `khana render path/to/script.py` and read the PNGs under
+   `khana render path/to/script.py` and read the views under
    `outputs/views/`. Four views (`front`, `top`, `right`, `iso`) are
-   produced as hidden-line engineering drawings.
+   produced as hidden-line engineering drawings. Default format is PNG;
+   pass `--format svg` for lossless vector output (diffable, inspectable
+   as text), or `--format both` to get both.
 6. When diagnostics are clean, ask the human to view it via
    `khana view path/to/script.py` (which pushes to the OCP VS Code
    viewer).

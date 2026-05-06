@@ -252,3 +252,73 @@ def test_cli_explicit_out_stays_cwd_relative(
     result = runner.invoke(app, ["build", str(script), "--out", "custom"])
     assert result.exit_code == 1
     assert (elsewhere / "custom" / "mechanism.json").exists()
+
+
+def _cube_script(out: Path) -> str:
+    return (
+        "from build123d import Box, BuildPart\n"
+        "from cad_khana.mechanism.assembly import Assembly\n"
+        "from cad_khana.mechanism.check import check\n"
+        "\n"
+        "with BuildPart() as p:\n"
+        "    Box(10, 10, 10)\n"
+        f"check(Assembly().add('cube', p.part), out=r'{out}')\n"
+    )
+
+
+def test_render_svg_format_writes_svg_views(tmp_path: Path):
+    out = tmp_path / "out"
+    views = tmp_path / "views"
+    script = tmp_path / "asm.py"
+    script.write_text(_cube_script(out))
+    result = runner.invoke(
+        app, ["render", str(script), "--views-dir", str(views), "--format", "svg"]
+    )
+    assert result.exit_code == 0, result.output
+    expected = {"front.svg", "top.svg", "right.svg", "iso.svg"}
+    actual = {p.name for p in views.iterdir()}
+    assert expected.issubset(actual)
+    assert not any(p.suffix == ".png" for p in views.iterdir())
+
+
+def test_render_svg_files_are_valid_xml(tmp_path: Path):
+    import xml.etree.ElementTree as ET
+
+    out = tmp_path / "out"
+    views = tmp_path / "views"
+    script = tmp_path / "asm.py"
+    script.write_text(_cube_script(out))
+    runner.invoke(
+        app, ["render", str(script), "--views-dir", str(views), "--format", "svg"]
+    )
+    for svg_file in views.glob("*.svg"):
+        ET.parse(svg_file)  # raises if invalid XML
+
+
+def test_render_both_format_writes_png_and_svg(tmp_path: Path):
+    out = tmp_path / "out"
+    views = tmp_path / "views"
+    script = tmp_path / "asm.py"
+    script.write_text(_cube_script(out))
+    result = runner.invoke(
+        app, ["render", str(script), "--views-dir", str(views), "--format", "both"]
+    )
+    assert result.exit_code == 0, result.output
+    names = {p.name for p in views.iterdir()}
+    for view in ("front", "top", "right", "iso"):
+        assert f"{view}.png" in names
+        assert f"{view}.svg" in names
+
+
+def test_render_default_format_unchanged(tmp_path: Path):
+    out = tmp_path / "out"
+    views = tmp_path / "views"
+    script = tmp_path / "asm.py"
+    script.write_text(_cube_script(out))
+    result = runner.invoke(
+        app, ["render", str(script), "--views-dir", str(views)]
+    )
+    assert result.exit_code == 0, result.output
+    names = {p.name for p in views.iterdir()}
+    assert {"front.png", "top.png", "right.png", "iso.png"}.issubset(names)
+    assert not any(n.endswith(".svg") for n in names)

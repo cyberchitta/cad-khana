@@ -145,7 +145,7 @@ and `mechanism.json`, and exits nonzero if any assertion failed.
 khana build <path>              # run script, export, write diagnostics JSON
 khana check <path>              # diagnostics only, no export
 khana view <path>               # build + push to OCP viewer
-khana render <path> --views 4   # orthographic/iso PNGs for the agent to read
+khana render <path> --format png|svg|both   # orthographic/iso views for the agent to read
 khana diff <old> <new>          # diff two diagnostics JSON files
 ```
 
@@ -165,10 +165,14 @@ Version these from day one. Agents depend on field stability.
   "schema_version": "0.1",
   "status": "ok | error | assertion_failed",
   "error": null,
+  "hint": "Missing .part accessor — use `with BuildPart() as p: ...; return p.part`.",
   "parts": {
     "<name>": {
       "bbox": {"min": [x,y,z], "max": [x,y,z]},
-      "volume_mm3": 12403.2
+      "volume_mm3": 12403.2,
+      "face_count": 6,
+      "edge_count": 12,
+      "vertex_count": 8
     }
   },
   "interferences": [

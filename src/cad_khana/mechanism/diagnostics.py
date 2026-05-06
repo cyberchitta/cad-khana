@@ -23,6 +23,9 @@ class BBox:
 class PartDiagnostics:
     bbox: BBox
     volume_mm3: float
+    face_count: int
+    edge_count: int
+    vertex_count: int
 
 
 @dataclass(frozen=True)
@@ -45,6 +48,7 @@ class Diagnostics:
     schema_version: str = SCHEMA_VERSION
     status: str = "ok"
     error: str | None = None
+    hint: str | None = None
     parts: dict[str, PartDiagnostics] = field(default_factory=dict)
     interferences: tuple[Interference, ...] = ()
     assertions: tuple[AssertionResult, ...] = ()
@@ -67,6 +71,9 @@ def _part_diagnostics(shape: Part) -> PartDiagnostics:
     return PartDiagnostics(
         bbox=_bbox(shape),
         volume_mm3=shape.volume,
+        face_count=len(shape.faces()),
+        edge_count=len(shape.edges()),
+        vertex_count=len(shape.vertices()),
     )
 
 

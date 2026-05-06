@@ -50,7 +50,7 @@ def check(
     if viewer.auto_enabled():
         viewer.push(assembly)
     if render.auto_enabled():
-        render.render(assembly, render.auto_out() or out_path / "views")
+        render.render(assembly, render.auto_out() or out_path / "views", format=render.auto_fmt())
     result = CheckResult(exports=exports, diagnostics=diagnostics)
     if failed:
         raise SystemExit(1)

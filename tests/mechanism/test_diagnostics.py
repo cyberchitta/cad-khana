@@ -92,3 +92,35 @@ def test_interference_pairs_are_unordered_combinations():
 
 def test_assertions_default_empty():
     assert compute(Assembly().add("cube", _cube())).assertions == ()
+
+
+def test_box_topology_counts():
+    d = compute(Assembly().add("cube", _cube(10)))
+    p = d.parts["cube"]
+    assert p.face_count == 6
+    assert p.edge_count == 12
+    assert p.vertex_count == 8
+
+
+def test_fused_box_topology_differs_from_single_box():
+    from build123d import Box, BuildPart, Locations
+
+    # L-shape: two overlapping boxes at offset positions
+    with BuildPart() as p:
+        Box(20, 10, 10)
+        with Locations((5, 8, 0)):
+            Box(10, 6, 10)
+    fused = p.part
+
+    single = _cube(10)
+    d_fused = compute(Assembly().add("fused", fused))
+    d_single = compute(Assembly().add("single", single))
+    assert (
+        d_fused.parts["fused"].face_count,
+        d_fused.parts["fused"].edge_count,
+        d_fused.parts["fused"].vertex_count,
+    ) != (
+        d_single.parts["single"].face_count,
+        d_single.parts["single"].edge_count,
+        d_single.parts["single"].vertex_count,
+    )

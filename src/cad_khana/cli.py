@@ -44,8 +44,9 @@ def _root(
 
 
 def _write_error_diagnostics(out: Path, error: str) -> None:
+    from cad_khana.mechanism.hints import match_hint
     out.mkdir(parents=True, exist_ok=True)
-    diag = Diagnostics(status="error", error=error)
+    diag = Diagnostics(status="error", error=error, hint=match_hint(error))
     (out / "mechanism.json").write_text(
         json.dumps(asdict(diag), indent=2) + "\n"
     )
@@ -124,12 +125,16 @@ def render(
         Path | None,
         typer.Option(
             "--views-dir",
-            help="Directory to write PNG views. Defaults to <out>/views.",
+            help="Directory to write views. Defaults to <out>/views.",
         ),
     ] = None,
+    format: Annotated[
+        str,
+        typer.Option("--format", help="Output format: png, svg, or both. Default: png."),
+    ] = "png",
 ) -> None:
-    """Run a user script and write orthographic + isometric PNG views."""
-    _render.set_auto(True, views_dir)
+    """Run a user script and write orthographic + isometric views."""
+    _render.set_auto(True, views_dir, format)
     try:
         _run_script(script, out, "render")
     finally:
