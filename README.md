@@ -141,57 +141,19 @@ build(assembly, out="outputs/")
 
 ## Related work
 
-The LLM-aided-CAD space is active. Where cad-khana sits:
+The LLM-aided-CAD space is active. For a structured map see
+[Vibe cad-ing: 25 Alternatives to CAD Khana](https://www.cyberchitta.cc/articles/cad-llm-tools.html)
+(May 2026), which categorises the landscape along two axes: feedback loop
+structure (agent-driven vs. human-directed) and CAD knowledge required.
 
-**Direct peers.** Two runtime tools share the same problem space — LLMs
-driving Build123d code toward valid geometry, with structured feedback
-closing the loop.
-
-[`build123d-mcp`](https://github.com/pzfreo/build123d-mcp) exposes Build123d
-as an MCP server (19 tools). Its model is incremental: the agent writes small
-code snippets that accumulate in a persistent Python session; `execute()`,
-`measure()`, and `render_view()` form the feedback loop. No assertion system
-and no printability layer. Worth reading side by side — the MCP surface and
-the persistent-session model are meaningfully different bets than the
-khana CLI + full-script-per-run approach.
-
-[`llmcad`](https://pypi.org/project/llmcad/) wraps OCP (the raw OCCT Python
-bindings) directly, not Build123d. Its ergonomic bets are named faces,
-face-local coordinates, and multi-view PNG snapshots — no structured
-diagnostics or assertions. A different philosophy: trust the model's eyes;
-cad-khana trusts cheap scalars first, vision second.
-
-**End-user CAD apps with chat UIs** — different category, not alternatives.
-[FreeCAD AI](https://github.com/ghbalf/freecad-ai),
-[TalkCAD](https://github.com/outerreaches/talkcad),
-[CQAsk](https://github.com/OpenOrion/CQAsk), and
-[CADialogue](https://github.com/Hiram31/CADialogue) are products a human opens
-and chats with. cad-khana is a library an agent harness drives from a script;
-there's no GUI and no chat surface.
-
-**Substrate, not alternatives.**
-[Build123d](https://build123d.readthedocs.io/) is what cad-khana wraps;
-[CadQuery](https://cadquery.readthedocs.io/) and
-[OpenSCAD](https://openscad.org/) are the obvious other code-CAD substrates a
-similar tool could be built on.
-
-**Different problem — text/image to CAD model weights.**
-[CAD-Coder](https://github.com/AndresGuzman-Arenas/CAD-Coder),
-[CADmium](https://github.com/CADmium-Co/CADmium), and
-[BlenderLLM](https://github.com/FreedomIntelligence/BlenderLLM) train or
-fine-tune models that emit CAD. cad-khana is tooling for the inference loop,
-not a model — orthogonal work.
-
-**Survey.**
-[LLMs-CAD-Survey-Taxonomy](https://github.com/lichengzhanguom/LLMs-CAD-Survey-Taxonomy)
-([arXiv:2505.08137](https://arxiv.org/abs/2505.08137)) is a reasonable map of
-the broader landscape.
+cad-khana sits in the agent-driven, knowledge-free quadrant: structured JSON
+diagnostics let an LLM iterate without human review; Build123d requires no
+prior CAD experience.
 
 ## Project documents
 
 - `CLAUDE.md` — operational instructions for agents working on this
   repo.
-- `NOTES.md` — design rationale, key decisions, open questions.
 - `skills/cad-khana/SKILL.md` — agent-facing guide to using the tool.
 - `skills/cad-khana-setup/SKILL.md` — one-shot installer skill that self-deletes after running `uv tool install`.
 

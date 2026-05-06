@@ -73,3 +73,8 @@ desktop.ini
 # Working files (commit message drafts, field notes, etc.)
 .commit-msg
 field-notes.md
+NOTES.md
+research-mcp-servers.md
+ResearchPrompt.md
+draft-sessions-*.md
+deferred-repos.md
