@@ -142,13 +142,13 @@ build(assembly, out="outputs/")
 ## Related work
 
 The LLM-aided-CAD space is active. For a structured map see
-[Vibe cad-ing: 25 Alternatives to CAD Khana](https://www.cyberchitta.cc/articles/cad-llm-tools.html)
-(May 2026), which categorises the landscape along two axes: feedback loop
-structure (agent-driven vs. human-directed) and CAD knowledge required.
+[25 Alternatives to CAD Khana](https://www.cyberchitta.cc/articles/cad-llm-tools.html)
+(May 2026), which splits the landscape by who closes the feedback loop:
+agent-driven (the LLM iterates on structured diagnostics) vs.
+human-directed (you inspect renders and steer).
 
-cad-khana sits in the agent-driven, knowledge-free quadrant: structured JSON
-diagnostics let an LLM iterate without human review; Build123d requires no
-prior CAD experience.
+cad-khana sits in the agent-driven half: structured JSON diagnostics let
+an LLM iterate without human review.
 
 ## Project documents
 
