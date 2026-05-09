@@ -140,7 +140,7 @@ build(assembly, out="outputs/")
 ## Related work
 
 The LLM-aided-CAD space is active. For a structured map see
-[25 Alternatives to CAD Khana](https://www.cyberchitta.cc/articles/cad-llm-tools.html)
+[60 Alternatives to CAD Khana](https://www.cyberchitta.cc/articles/cad-llm-tools.html)
 (May 2026), which splits the landscape by who closes the feedback loop:
 agent-driven (the LLM iterates on structured diagnostics) vs.
 human-directed (you inspect renders and steer).
