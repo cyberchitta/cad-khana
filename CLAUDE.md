@@ -57,12 +57,11 @@ cad-khana/
     cad-khana/
       SKILL.md                # agent-facing instructions for using the tool
       references/
+        install.md            # one-shot install steps, linked from SKILL.md
         printability.md       # design rules baked into printability checks
         standard_parts.md     # bd_warehouse contents and discovery
         examples/
           pin_hinge/          # canonical reference project (clevis-tang-pin)
-    cad-khana-setup/
-      SKILL.md                # one-shot installer; self-deletes after install
   src/
     cad_khana/                # PEP 420 namespace package, no __init__.py
       mechanism/

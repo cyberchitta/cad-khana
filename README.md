@@ -56,12 +56,11 @@ khana diff <old> <new>  # diff two diagnostics.json files
 
 ### Claude Code skill (recommended for agent use)
 
-Copy both skills into your project (loads only in this project's context):
+Copy the skill into your project (loads only in this project's context):
 
 ```bash
 git clone --depth=1 https://github.com/cyberchitta/cad-khana /tmp/cad-khana
 cp -r /tmp/cad-khana/skills/cad-khana .claude/skills/
-cp -r /tmp/cad-khana/skills/cad-khana-setup .claude/skills/
 rm -rf /tmp/cad-khana
 ```
 
@@ -70,11 +69,10 @@ Or for all projects (loads everywhere):
 ```bash
 git clone --depth=1 https://github.com/cyberchitta/cad-khana /tmp/cad-khana
 cp -r /tmp/cad-khana/skills/cad-khana ~/.claude/skills/
-cp -r /tmp/cad-khana/skills/cad-khana-setup ~/.claude/skills/
 rm -rf /tmp/cad-khana
 ```
 
-Then ask Claude to run `/cad-khana-setup` — it installs the `khana` CLI via `uv tool install` and removes itself. After that, the `cad-khana` skill is loaded automatically when you ask Claude for CAD work.
+The first time you ask Claude for CAD work, the skill notices `khana` isn't installed yet and follows `references/install.md` to run `uv tool install` once. After that, the skill loads automatically whenever you ask for CAD work.
 
 ### Manual install
 
@@ -155,7 +153,7 @@ an LLM iterate without human review.
 - `CLAUDE.md` — operational instructions for agents working on this
   repo.
 - `skills/cad-khana/SKILL.md` — agent-facing guide to using the tool.
-- `skills/cad-khana-setup/SKILL.md` — one-shot installer skill that self-deletes after running `uv tool install`.
+- `skills/cad-khana/references/install.md` — one-shot install steps the skill follows on first use.
 
 ## License
 

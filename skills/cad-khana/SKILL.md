@@ -17,6 +17,11 @@ cad-khana splits geometric reasoning into two workflows:
 A script typically does both: composes an `Assembly`, calls `check()`,
 then calls `inspect()` once per printed part.
 
+## Setup
+
+If `khana --version` fails, follow `references/install.md` once before
+proceeding.
+
 ## When to use this tool
 
 - Designing a **multi-part mechanical assembly** that needs to fit
