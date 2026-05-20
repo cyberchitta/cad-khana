@@ -9,7 +9,7 @@ from typing import Callable, Sequence
 from build123d import Rot, export_step, export_stl
 from OCP.BRepMesh import BRepMesh_IncrementalMesh
 from OCP.Message import Message_ProgressRange
-from OCP.Quantity import Quantity_Color, Quantity_TypeOfColor
+from OCP.Quantity import Quantity_Color, Quantity_ColorRGBA, Quantity_TypeOfColor
 from OCP.RWGltf import RWGltf_CafWriter
 from OCP.TCollection import TCollection_AsciiString, TCollection_ExtendedString
 from OCP.TColStd import TColStd_IndexedDataMapOfStringString
@@ -99,9 +99,10 @@ def export_glb(
         label = shape_tool.AddShape(shape, False)
         TDataStd_Name.Set_s(label, TCollection_ExtendedString(placed.name))
         if placed.color is not None:
-            r, g, b, _a = tuple(placed.color)
-            q = Quantity_Color(r, g, b, Quantity_TypeOfColor.Quantity_TOC_sRGB)
-            color_tool.SetColor(label, q, XCAFDoc_ColorType.XCAFDoc_ColorSurf)
+            r, g, b, a = tuple(placed.color)
+            rgb = Quantity_Color(r, g, b, Quantity_TypeOfColor.Quantity_TOC_sRGB)
+            rgba = Quantity_ColorRGBA(rgb, a)
+            color_tool.SetColor(label, rgba, XCAFDoc_ColorType.XCAFDoc_ColorSurf)
 
     writer = RWGltf_CafWriter(TCollection_AsciiString(str(glb_path)), True)
     ok = writer.Perform(
