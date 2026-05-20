@@ -206,6 +206,58 @@ def export_animated_glb(
         raise ValueError("export_animated_glb requires len(ts) >= 2")
 
     ref_assembly = factory(ts_list[0])
+
+    # Per-frame TRS samplers extract only PlacedPart.location, so any
+    # transform attached to the *part itself* (the build123d Part's
+    # internal Location) is silently dropped from the animation. Static
+    # frame 0 renders correctly via export_glb's
+    # ``placed.part.moved(placed.location)``, but every animation
+    # sampler thereafter overwrites the node TRS with placed.location
+    # alone — producing animations with quietly wrong geometry.
+    #
+    # Only flag *dynamic* parts (those whose placed.location varies
+    # across frames). Static parts get no animation channel — their
+    # frame-0 TRS carries them — so part-internal location is harmless
+    # there. Probe with the middle frame; ts_list[-1] would loop back
+    # to ts_list[0] for cyclic animations, missing motion entirely.
+    # Numerical comparison: OCP's TopLoc_Location.IsIdentity() on a
+    # compose-inverse product is fooled by floating-point noise even
+    # when locations are mathematically identical.
+    def _moved(l_ref, l_probe, tol: float = 1e-6) -> bool:
+        pr, pp = l_ref.position, l_probe.position
+        orr, op = l_ref.orientation, l_probe.orientation
+        return (
+            abs(pr.X - pp.X) > tol or abs(pr.Y - pp.Y) > tol or abs(pr.Z - pp.Z) > tol
+            or abs(orr.X - op.X) > tol or abs(orr.Y - op.Y) > tol or abs(orr.Z - op.Z) > tol
+        )
+
+    ref_locs = {p.name: p.location for p in ref_assembly.parts}
+    probe = factory(ts_list[len(ts_list) // 2])
+    dynamic = {
+        p.name for p in probe.parts
+        if p.name in ref_locs and _moved(ref_locs[p.name], p.location)
+    }
+    violators = [
+        (p.name, str(p.part.location))
+        for p in ref_assembly.parts
+        if p.name in dynamic and not p.part.location.wrapped.IsIdentity()
+    ]
+    if violators:
+        names = ", ".join(n for n, _ in violators[:3])
+        extra = f" (+{len(violators) - 3} more)" if len(violators) > 3 else ""
+        raise ValueError(
+            f"export_animated_glb: {len(violators)} dynamic part(s) have "
+            f"non-identity part-internal Location ({names}{extra}). Per-frame "
+            f"TRS samplers extract only PlacedPart.location, so any transform "
+            f"attached to the part itself is silently dropped — producing "
+            f"animations with quietly wrong geometry past frame 0. Fix: factor "
+            f"the transform out of the part-creation function and into the "
+            f"assembly placement. e.g. for `def thing(): return Rot(0, 20, 0) "
+            f"* Box(L, W, T)`, return a plain `Box(L, W, T)` and bake the "
+            f"`Rot` into `location=` at `.add(...)`. First offender: "
+            f"{violators[0][0]!r} has part.location = {violators[0][1]}."
+        )
+
     glb_path = export_glb(
         ref_assembly,
         out=out,
