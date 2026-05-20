@@ -117,6 +117,37 @@ Keep four sections, in order:
 See `references/examples/pin_hinge/assembly.py` for the canonical
 example.
 
+## Designing a new mechanism
+
+When starting from a blank file, do these steps **in this order**.
+Out-of-order work — most often, rendering before scalars are clean —
+burns cycles on geometry that the diagnostics would have rejected for
+free.
+
+1. **Declare parts as pure functions.** One function per distinct
+   printed body, taking parameters with defaults. No globals, no
+   placement inside the function.
+2. **Wire the assembly with explicit `Location`s.** Compose with
+   `Assembly().add(name, part(), location=…)`. Names are stable IDs
+   the assertions and diagnostics reference.
+3. **Add `assert_no_interference` between *every* candidate-overlap
+   pair immediately** — before any clearance work. The cost of
+   asserting a pair that will never collide is one line; the cost of
+   *not* asserting a pair that silently overlaps is a printed part
+   you can't assemble. Default to over-asserting.
+4. **Add `assert_clearance(a, b, min_mm=…)` between every pair of
+   parts that move relative to each other.** Pick a real number
+   (≥ 0.2 mm for FDM at 0.4 mm nozzle) — not a placeholder you mean
+   to revisit.
+5. **Run `khana check` and iterate until all scalars are green.**
+   Reading `mechanism.json` is the primary loop; do not render yet.
+6. **Then** `khana render` for shape-level verification. See
+   **Reading renders** for which view answers which kind of question.
+
+The first pass at a new mechanism is the moment to be liberal with
+assertions; pruning later (because one is provably redundant) is
+cheap, but discovering a missing one downstream is expensive.
+
 ## Minimal skeleton
 
 ```python
@@ -306,6 +337,23 @@ FDM(
 )
 ```
 
+**Why these defaults.** Tuned for the common case — 0.4 mm nozzle,
+PLA, default cooling — so a script with no overrides reflects real
+printability constraints rather than placeholders:
+
+- `wall_min_mm=1.5` ≈ three perimeter widths at a 0.4 mm nozzle. Thinner
+  walls slice as one or two perimeters with no infill room, which
+  under-extrude into single-ribbon walls or fail to bond. Bump up for a
+  0.6 mm nozzle (≈ 2.0 mm) or rigid load-bearing parts; bump down only
+  after a printed test wall confirms the slicer/printer combo holds
+  together at the new floor.
+- `overhang_max_deg=45.0` is the long-standing PLA-with-cooling rule of
+  thumb — steeper faces need support or active bridging. Materials with
+  weaker cooling (ABS, PETG without a part fan) want a tighter threshold
+  (35–40°); ASA / a well-cooled PLA / a slicer with aggressive overhang
+  modifiers can go to 50–55°. Adjust intentionally per material, don't
+  default-loosen to silence the check.
+
 `inspect(part, method=FDM(), out="outputs", name="bracket")` writes
 `outputs/bracket-printability.json` and raises `SystemExit(1)` on
 failure. Each call is independent — pass a different `name=` per
@@ -386,6 +434,41 @@ printed part.
 6. When diagnostics are clean, ask the human to view it via
    `khana view path/to/script.py` (which pushes to the OCP VS Code
    viewer).
+
+## When to stop iterating
+
+Bounded loop: cap the repair cycle at **3–5 attempts** on the same
+failure before stepping out. The cost of looping past that point is
+context drift — earlier reasoning falls off, fixes start contradicting
+each other, and the agent burns tokens re-deriving state it already
+had.
+
+Inside the loop, **feed the failure back into the next attempt**.
+On a retry, the next prompt should carry forward the previous failing
+script, the relevant `mechanism.json` (or `<name>-printability.json`)
+slice, and the original task statement. Don't restart from scratch —
+each iteration should be strictly more informed than the last.
+
+When you hit the cap without convergence, **stop and escalate**: emit
+a single line of the form
+
+```
+HUMAN_REVIEW: <one-sentence why> — last failure: <assertion or error>
+```
+
+and exit. Looping silently past 5 attempts wastes the human's
+turnaround time and produces a worse handoff than a clean
+"stuck-here-because-X" message. Common reasons to escalate:
+
+- The same assertion fails after three substantive geometry edits
+  (the constraint may be infeasible, or the spec needs to change).
+- `status: "error"` repeats with the same `hint` after the suggested
+  fix has been applied (the hint may be wrong for this case).
+- Two assertions trade off against each other — fixing one breaks the
+  other — and no clearance/wall budget exists that satisfies both.
+
+Escalation is a feature, not a failure mode. A clean stop with
+context beats a long thrash every time.
 
 ## Reading renders
 
