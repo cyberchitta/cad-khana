@@ -298,12 +298,24 @@ def export_animated_glb(
                 "disappearing parts not yet supported."
             )
 
-    _align_quaternion_hemispheres(samples)
+    for ss in samples.values():
+        _align_quaternion_hemispheres(ss)
+
+    # Group parts whose relative-trajectory (T[i]·T[0]⁻¹) matches across
+    # frames. Each group becomes a single parent node carrying the
+    # animation, with children inheriting the parent's slerp'd rotation —
+    # eliminating the chord-vs-arc drift that per-channel TRS lerp
+    # produces on orbiting parts at low frame counts.
+    groups, group_trajectories = _classify_and_group(samples, eps_pos_mm, eps_quat)
+    for traj in group_trajectories:
+        _align_quaternion_hemispheres(traj)
 
     times_s = [i * duration_s / (len(ts_list) - 1) for i in range(len(ts_list))]
     _inject_animation_into_glb(
         glb_path,
         samples=samples,
+        groups=groups,
+        group_trajectories=group_trajectories,
         times_s=times_s,
         eps_pos_mm=eps_pos_mm,
         eps_quat=eps_quat,
@@ -316,7 +328,7 @@ def export_animated_glb(
 
 
 def _align_quaternion_hemispheres(
-    samples: dict[str, list[tuple[tuple[float, ...], tuple[float, ...]]]],
+    trajectory: list[tuple[tuple[float, ...], tuple[float, ...]]],
 ) -> None:
     """Flip signs in place so consecutive quaternions share a hemisphere.
 
@@ -324,25 +336,162 @@ def _align_quaternion_hemispheres(
     LINEAR sampling on rotation channels (defined to slerp) still benefits
     from a consistent sign, otherwise some viewers spin the long way.
     """
-    for name, ss in samples.items():
-        for i in range(1, len(ss)):
-            prev_q = ss[i - 1][1]
-            cur_q = ss[i][1]
-            dot = sum(a * b for a, b in zip(prev_q, cur_q))
-            if dot < 0.0:
-                ss[i] = (ss[i][0], tuple(-c for c in cur_q))
+    for i in range(1, len(trajectory)):
+        prev_q = trajectory[i - 1][1]
+        cur_q = trajectory[i][1]
+        dot = sum(a * b for a, b in zip(prev_q, cur_q))
+        if dot < 0.0:
+            trajectory[i] = (trajectory[i][0], tuple(-c for c in cur_q))
+
+
+def _quat_mul(
+    a: tuple[float, float, float, float],
+    b: tuple[float, float, float, float],
+) -> tuple[float, float, float, float]:
+    """Hamilton product of two quaternions in (x, y, z, w) order."""
+    ax, ay, az, aw = a
+    bx, by, bz, bw = b
+    return (
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+        aw * bw - ax * bx - ay * by - az * bz,
+    )
+
+
+def _quat_rotate(
+    q: tuple[float, float, float, float],
+    v: tuple[float, float, float],
+) -> tuple[float, float, float]:
+    """Rotate 3-vector ``v`` by unit quaternion ``q`` (xyzw)."""
+    qx, qy, qz, qw = q
+    vx, vy, vz = v
+    cx = qy * vz - qz * vy
+    cy = qz * vx - qx * vz
+    cz = qx * vy - qy * vx
+    tx = cx + qw * vx
+    ty = cy + qw * vy
+    tz = cz + qw * vz
+    rx = qy * tz - qz * ty
+    ry = qz * tx - qx * tz
+    rz = qx * ty - qy * tx
+    return (vx + 2 * rx, vy + 2 * ry, vz + 2 * rz)
+
+
+def _relative_trajectory(
+    samples_for_part: list[tuple[tuple[float, float, float], tuple[float, float, float, float]]],
+) -> list[tuple[tuple[float, float, float], tuple[float, float, float, float]]]:
+    """Compute T[i]·T[0]⁻¹ frame-by-frame in (translation, quaternion) form.
+
+    The first entry is the identity transform by construction. When applied
+    on top of the frame-0 absolute pose, this trajectory reproduces the
+    original per-frame absolute pose: ``relative[i] · sampled[0] == sampled[i]``.
+    """
+    p0, q0 = samples_for_part[0]
+    q0_inv = (-q0[0], -q0[1], -q0[2], q0[3])
+    out: list[tuple[tuple[float, float, float], tuple[float, float, float, float]]] = []
+    for p, q in samples_for_part:
+        q_rel = _quat_mul(q, q0_inv)
+        rotated_p0 = _quat_rotate(q_rel, p0)
+        p_rel = (p[0] - rotated_p0[0], p[1] - rotated_p0[1], p[2] - rotated_p0[2])
+        out.append((p_rel, q_rel))
+    return out
+
+
+def _classify_and_group(
+    samples: dict[str, list[tuple[tuple[float, float, float], tuple[float, float, float, float]]]],
+    eps_pos_mm: float,
+    eps_quat: float,
+) -> tuple[
+    list[list[str]],
+    list[list[tuple[tuple[float, float, float], tuple[float, float, float, float]]]],
+]:
+    """Group parts whose absolute pose varies in BOTH translation and
+    orientation, by identical relative trajectory.
+
+    Chord drift on per-channel TRS lerp only shows up when a part's
+    world-space origin follows a curved path — i.e. when both its
+    rotation AND translation vary across frames. Parts that only
+    translate (linear motion = lerp is exact) or only rotate in place
+    (constant translation = no chord) are left to the per-part TRS
+    path, which handles them correctly. Static parts are likewise
+    ignored.
+
+    Two parts share a group when their relative-trajectory entries
+    agree frame-by-frame within ``eps_pos_mm`` / ``eps_quat``. The
+    quaternion match accounts for the ``q ~ -q`` ambiguity.
+
+    Returns ``(groups, group_trajectories)`` where each group is a list
+    of part names and ``group_trajectories[i]`` is the relative
+    trajectory shared by ``groups[i]`` (taken from its first member).
+    """
+
+    def _moves_trans(ss: list[tuple[tuple[float, ...], tuple[float, ...]]]) -> bool:
+        p0 = ss[0][0]
+        return any(
+            abs(p[k] - p0[k]) > eps_pos_mm for p, _ in ss[1:] for k in range(3)
+        )
+
+    def _moves_rot(ss: list[tuple[tuple[float, ...], tuple[float, ...]]]) -> bool:
+        q0 = ss[0][1]
+        return any(
+            sum((q[k] - q0[k]) ** 2 for k in range(4)) > eps_quat
+            for _, q in ss[1:]
+        )
+
+    candidates = [
+        name for name, ss in samples.items()
+        if _moves_trans(ss) and _moves_rot(ss)
+    ]
+    relatives = {name: _relative_trajectory(samples[name]) for name in candidates}
+
+    def _trajectories_match(
+        a: list[tuple[tuple[float, ...], tuple[float, ...]]],
+        b: list[tuple[tuple[float, ...], tuple[float, ...]]],
+    ) -> bool:
+        for (p_a, q_a), (p_b, q_b) in zip(a, b):
+            if any(abs(p_a[k] - p_b[k]) > eps_pos_mm for k in range(3)):
+                return False
+            dot = sum(q_a[k] * q_b[k] for k in range(4))
+            if 1.0 - abs(dot) > eps_quat:
+                return False
+        return True
+
+    groups: list[list[str]] = []
+    group_trajectories: list[list[tuple[tuple[float, ...], tuple[float, ...]]]] = []
+    for name in candidates:
+        rel = relatives[name]
+        for g, g_rel in zip(groups, group_trajectories):
+            if _trajectories_match(rel, g_rel):
+                g.append(name)
+                break
+        else:
+            groups.append([name])
+            group_trajectories.append(rel)
+    return groups, group_trajectories
 
 
 def _inject_animation_into_glb(
     glb_path: Path,
     samples: dict[str, list[tuple[tuple[float, ...], tuple[float, ...]]]],
+    groups: list[list[str]],
+    group_trajectories: list[list[tuple[tuple[float, ...], tuple[float, ...]]]],
     times_s: list[float],
     eps_pos_mm: float,
     eps_quat: float,
     animation_name: str,
 ) -> None:
     """Append an ``animation`` block to an existing GLB written by
-    ``export_glb``. Locates target nodes by ``PlacedPart.name``."""
+    ``export_glb``. Locates target nodes by ``PlacedPart.name``.
+
+    Parts in ``groups`` are re-parented under a freshly inserted scene
+    node that carries the shared relative-trajectory animation —
+    children inherit the parent's slerp'd rotation and so trace the
+    correct arc between keyframes. Parts not in any group fall through
+    to per-part TRS samplers (correct for static, pure-translation, and
+    in-place-rotation parts; only orbital motion would chord-drift
+    there, and that's exactly what grouping pulls out).
+    """
     import pygltflib
 
     gltf = pygltflib.GLTF2().load(str(glb_path))
@@ -408,8 +557,62 @@ def _inject_animation_into_glb(
     samplers: list[pygltflib.AnimationSampler] = []
     channels: list[pygltflib.AnimationChannel] = []
 
+    def _add_sampler_channel(
+        flat: list[float], node_idx: int, path: str, type_: str, components: int
+    ) -> None:
+        offset, length = _append_floats(flat)
+        bv = _add_buffer_view(offset, length)
+        acc = _add_accessor(bv, len(flat) // components, pygltflib.FLOAT, type_)
+        samplers.append(
+            pygltflib.AnimationSampler(
+                input=time_acc, output=acc, interpolation="LINEAR"
+            )
+        )
+        channels.append(
+            pygltflib.AnimationChannel(
+                sampler=len(samplers) - 1,
+                target=pygltflib.AnimationChannelTarget(node=node_idx, path=path),
+            )
+        )
+
+    # Re-parent grouped parts under a fresh animated node per group.
+    # The child's existing static TRS (= frame-0 absolute pose) is left
+    # alone — combined with parent's R[i] animation, the child reaches
+    # sampled[i] at every keyframe and slerps along the true arc in
+    # between.
+    grouped_parts: set[str] = set()
+    scene_root_ids = list(gltf.scenes[0].nodes)
+    for group_idx, (members, traj) in enumerate(zip(groups, group_trajectories)):
+        child_ids = [name_to_node[m] for m in members if m in name_to_node]
+        if not child_ids or len(traj) != n_frames:
+            continue
+        parent_idx = len(gltf.nodes)
+        gltf.nodes.append(
+            pygltflib.Node(name=f"animgroup_{group_idx}", children=child_ids)
+        )
+        child_id_set = set(child_ids)
+        scene_root_ids = [i for i in scene_root_ids if i not in child_id_set]
+        scene_root_ids.append(parent_idx)
+        grouped_parts.update(members)
+
+        _add_sampler_channel(
+            [c for _, q in traj for c in q],
+            parent_idx, "rotation", pygltflib.VEC4, 4,
+        )
+        p0_rel = traj[0][0]
+        rel_moves_trans = any(
+            abs(p[k] - p0_rel[k]) > eps_pos_mm for p, _ in traj[1:] for k in range(3)
+        )
+        if rel_moves_trans:
+            _add_sampler_channel(
+                [c for p, _ in traj for c in p],
+                parent_idx, "translation", pygltflib.VEC3, 3,
+            )
+
+    gltf.scenes[0].nodes = scene_root_ids
+
     for part_name, node_idx in name_to_node.items():
-        if part_name not in samples:
+        if part_name in grouped_parts or part_name not in samples:
             continue
         ss = samples[part_name]
         if len(ss) != n_frames:
@@ -425,41 +628,14 @@ def _inject_animation_into_glb(
         )
 
         if moves_trans:
-            flat = [c for pos, _ in ss for c in pos]
-            offset, length = _append_floats(flat)
-            bv = _add_buffer_view(offset, length)
-            acc = _add_accessor(bv, n_frames, pygltflib.FLOAT, pygltflib.VEC3)
-            samplers.append(
-                pygltflib.AnimationSampler(
-                    input=time_acc, output=acc, interpolation="LINEAR"
-                )
+            _add_sampler_channel(
+                [c for pos, _ in ss for c in pos],
+                node_idx, "translation", pygltflib.VEC3, 3,
             )
-            channels.append(
-                pygltflib.AnimationChannel(
-                    sampler=len(samplers) - 1,
-                    target=pygltflib.AnimationChannelTarget(
-                        node=node_idx, path="translation"
-                    ),
-                )
-            )
-
         if moves_rot:
-            flat = [c for _, q in ss for c in q]
-            offset, length = _append_floats(flat)
-            bv = _add_buffer_view(offset, length)
-            acc = _add_accessor(bv, n_frames, pygltflib.FLOAT, pygltflib.VEC4)
-            samplers.append(
-                pygltflib.AnimationSampler(
-                    input=time_acc, output=acc, interpolation="LINEAR"
-                )
-            )
-            channels.append(
-                pygltflib.AnimationChannel(
-                    sampler=len(samplers) - 1,
-                    target=pygltflib.AnimationChannelTarget(
-                        node=node_idx, path="rotation"
-                    ),
-                )
+            _add_sampler_channel(
+                [c for _, q in ss for c in q],
+                node_idx, "rotation", pygltflib.VEC4, 4,
             )
 
     if not samplers:
