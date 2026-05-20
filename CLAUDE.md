@@ -17,10 +17,11 @@ provides that through two channels:
 1. **Computed diagnostics** — interferences, clearances, wall thickness,
    overhangs — returned as structured JSON the agent reads after every
    build. Cheap, scalar, and the primary iteration signal.
-2. **Rendered views** — orthographic and isometric PNGs produced by
-   `khana render` on demand. Multimodal harnesses feed these back to the
-   model for shape-level questions that scalars express poorly ("is the
-   tang pointing the right way", "did that cut land where I expected").
+2. **Engineering drawings** — orthographic and isometric HLR line-art
+   PNGs (and optional SVG) produced by `khana draw` on demand.
+   Multimodal harnesses feed these back to the model for shape-level
+   questions that scalars express poorly ("is the tang pointing the
+   right way", "did that cut land where I expected").
 
 Assertions make geometric constraints first-class: a failed assertion is
 a build failure, not a silent geometry bug.
@@ -77,7 +78,7 @@ cad-khana/
       core/
         tessellation.py       # shared mesh utilities (wall + overhangs)
       export.py               # STL, STEP (used by mechanism check)
-      render.py               # PNG rendering (mechanism-level)
+      draw.py                 # HLR engineering drawings (PNG + SVG)
       viewer.py               # ocp_vscode push (used by `khana view`)
       diff.py                 # dispatches on file kind (mechanism/printability)
       cli.py                  # typer CLI — thin dispatcher
@@ -144,7 +145,7 @@ and `mechanism.json`, and exits nonzero if any assertion failed.
 khana build <path>              # run script, export, write diagnostics JSON
 khana check <path>              # diagnostics only, no export
 khana view <path>               # build + push to OCP viewer
-khana render <path> --format png|svg|both   # orthographic/iso views for the agent to read
+khana draw <path> --format png|svg|both     # orthographic/iso engineering drawings (HLR line-art)
 khana diff <old> <new>          # diff two diagnostics JSON files
 ```
 
@@ -313,10 +314,10 @@ for end-user install, `uvx khana ...` for ephemeral use.
 
 - **Side effect isolation.** `mechanism.diagnostics`, `mechanism.assertions`,
   `printability.wall`, `printability.overhangs`, and `diff.py` are pure —
-  take data, return data. File I/O lives in `export.py`, `render.py`,
-  `mechanism.check`, `printability.inspect`, and the CLI. Viewer and renderer
+  take data, return data. File I/O lives in `export.py`, `draw.py`,
+  `mechanism.check`, `printability.inspect`, and the CLI. Viewer and draw
   pushes are gated on module-level toggles set by the CLI command, so user
-  scripts stay identical across `build`/`view`/`render`/`check`.
+  scripts stay identical across `build`/`view`/`draw`/`check`.
 - **Error handling at the boundary.** Uncaught exceptions from user
   scripts are caught at the CLI and written to `mechanism.json` with
   `status: "error"` and the traceback in `error`. Never crash without
@@ -372,8 +373,8 @@ the appropriate surface and delete the matched field-notes entries:
   wall/overhang algorithm tweaks, new printability assertion.
 - `src/cad_khana/core/` — shared tessellation tolerances or mesh
   utilities used by both wall and overhang checks.
-- `src/cad_khana/render.py` — default views, projection style, framing
-  heuristics for hidden-line PNGs.
+- `src/cad_khana/draw.py` — default views, projection style, framing
+  heuristics for hidden-line PNGs/SVGs.
 - `src/cad_khana/cli.py` — flag changes, default `--out` resolution,
   or new subcommands. Keep logic in the library; the CLI stays a thin
   dispatcher.

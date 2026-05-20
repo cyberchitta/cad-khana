@@ -482,7 +482,7 @@ def _drawing(
     )
 
 
-def _render_view(
+def _draw_view(
     compound: Compound,
     view: View,
     center: tuple[float, float, float],
@@ -498,7 +498,7 @@ def _render_view(
     return path
 
 
-def _render_view_svg(
+def _draw_view_svg(
     compound: Compound,
     view: View,
     center: tuple[float, float, float],
@@ -515,7 +515,7 @@ def _render_view_svg(
     return path
 
 
-def render(
+def draw(
     assembly: Assembly,
     out: Path,
     views: tuple[str, ...] | None = None,
@@ -523,6 +523,13 @@ def render(
     format: str = "png",
     themeable: bool = False,
 ) -> tuple[Path, ...]:
+    """Write orthographic + isometric engineering drawings (HLR
+    line-art, no fills or shading) for ``assembly`` under ``out``.
+
+    For shaded photo-real PNGs use ``chitra_cad.render.render`` instead;
+    for an interactive shape-truth view use ``export_glb`` and serve the
+    GLB in ``<model-viewer>``.
+    """
     out.mkdir(parents=True, exist_ok=True)
     compound = _scoped_compound(assembly, part)
     center, extent = _bbox_extent(compound)
@@ -530,7 +537,7 @@ def render(
     paths: list[Path] = []
     for v in selected:
         if format in ("png", "both"):
-            paths.append(_render_view(compound, v, center, extent, out))
+            paths.append(_draw_view(compound, v, center, extent, out))
         if format in ("svg", "both"):
-            paths.append(_render_view_svg(compound, v, center, extent, out, themeable=themeable))
+            paths.append(_draw_view_svg(compound, v, center, extent, out, themeable=themeable))
     return tuple(paths)

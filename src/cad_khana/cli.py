@@ -9,7 +9,7 @@ from typing import Annotated
 import typer
 
 from cad_khana import environment
-from cad_khana import render as _render
+from cad_khana import draw as _draw
 from cad_khana import viewer
 from cad_khana.diff import diff as compute_diff
 from cad_khana.mechanism.check import _set_export_default
@@ -119,7 +119,7 @@ def view(script: ScriptArg, out: OutOpt = None) -> None:
 
 
 @app.command()
-def render(
+def draw(
     script: ScriptArg,
     out: OutOpt = None,
     views_dir: Annotated[
@@ -161,30 +161,32 @@ def render(
         typer.Option(
             "--part",
             help=(
-                "Name of a single part in the assembly to scope rendering and "
-                "framing to. Default: render the whole assembly."
+                "Name of a single part in the assembly to scope drawing and "
+                "framing to. Default: draw the whole assembly."
             ),
         ),
     ] = None,
 ) -> None:
-    """Run a user script and write orthographic + isometric views."""
+    """Run a user script and write orthographic + isometric engineering
+    drawings (HLR line-art). For shaded photo-real PNGs use chitra-cad's
+    `render` instead."""
     views = tuple(v.strip() for v in view.split(",")) if view else None
     if views is not None:
-        unknown = tuple(v for v in views if v not in _render.VIEW_PRESETS)
+        unknown = tuple(v for v in views if v not in _draw.VIEW_PRESETS)
         if unknown:
-            known = ", ".join(_render.VIEW_PRESETS.keys())
+            known = ", ".join(_draw.VIEW_PRESETS.keys())
             typer.echo(
                 f"error: unknown --view name(s): {', '.join(unknown)}; known: {known}",
                 err=True,
             )
             raise typer.Exit(code=2)
-    _render.set_auto(
+    _draw.set_auto(
         True, views_dir, format, themeable=themeable, views=views, part=part
     )
     try:
-        _run_script(script, out, "render")
+        _run_script(script, out, "draw")
     finally:
-        _render.set_auto(False)
+        _draw.set_auto(False)
 
 
 DiagArg = Annotated[

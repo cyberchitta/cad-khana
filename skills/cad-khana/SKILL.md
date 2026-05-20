@@ -1,6 +1,6 @@
 ---
 name: cad-khana
-description: Diagnostics-first CAD wrapper around Build123d: assembly-level interference/clearance assertions plus optional per-part printability checks. Load BEFORE editing an `assembly.py` that uses the wrapper or interpreting its diagnostic JSON — SKILL.md has conventions the scripts rely on but don't restate. TRIGGER: about to run `khana check`/`build`/`view`/`render`, or editing a file that imports `cad_khana` or calls `Assembly()`/`check()`/`inspect()`.
+description: Diagnostics-first CAD wrapper around Build123d: assembly-level interference/clearance assertions plus optional per-part printability checks. Load BEFORE editing an `assembly.py` that uses the wrapper or interpreting its diagnostic JSON — SKILL.md has conventions the scripts rely on but don't restate. TRIGGER: about to run `khana check`/`build`/`view`/`draw`, or editing a file that imports `cad_khana` or calls `Assembly()`/`check()`/`inspect()`.
 ---
 
 # cad-khana
@@ -30,8 +30,9 @@ proceeding.
 - Producing **printable geometry** where wall thickness, clearance, and
   overhangs matter.
 - Iterating under **agent control** — the JSON diagnostics are the
-  primary signal; `khana render` supplements it with PNGs you can read
-  directly when shape-level questions come up.
+  primary signal; `khana draw` supplements it with engineering-drawing
+  PNGs (HLR line-art) you can read directly when shape-level questions
+  come up.
 
 ## When not to use it
 
@@ -47,7 +48,7 @@ proceeding.
 khana build  <script>          # run script, export STL/STEP, write JSON diagnostics
 khana check  <script>          # run script, write JSON diagnostics only (no export)
 khana view   <script>          # build, then push assembly to the OCP viewer (socket)
-khana render <script> [--view <names>] [--part <name>] [--format png|svg|both] [--themeable]  # build, then write views under <out>/views/
+khana draw   <script> [--view <names>] [--part <name>] [--format png|svg|both] [--themeable]  # build, then write engineering drawings under <out>/views/
 khana diff   <before> <after>  # diff two JSON files (mechanism or printability)
 khana status                   # JSON probe of versions + viewer reachability; exit nonzero if degraded
 khana --version
@@ -121,7 +122,7 @@ example.
 ## Designing a new mechanism
 
 When starting from a blank file, do these steps **in this order**.
-Out-of-order work — most often, rendering before scalars are clean —
+Out-of-order work — most often, drawing before scalars are clean —
 burns cycles on geometry that the diagnostics would have rejected for
 free.
 
@@ -141,9 +142,9 @@ free.
    (≥ 0.2 mm for FDM at 0.4 mm nozzle) — not a placeholder you mean
    to revisit.
 5. **Run `khana check` and iterate until all scalars are green.**
-   Reading `mechanism.json` is the primary loop; do not render yet.
-6. **Then** `khana render` for shape-level verification. See
-   **Reading renders** for which view answers which kind of question.
+   Reading `mechanism.json` is the primary loop; do not draw yet.
+6. **Then** `khana draw` for shape-level verification. See
+   **Reading drawings** for which view answers which kind of question.
 
 The first pass at a new mechanism is the moment to be liberal with
 assertions; pruning later (because one is provably redundant) is
@@ -215,8 +216,8 @@ For build123d's selector operators (`>`, `<`, `>>`, `<<`, `|`, `@`, `%`,
   with different colors (e.g. four identical brackets, one red per
   corner); set `part.color` inside the part function only when the
   geometry has one intrinsic color everywhere it's used. Colors do not
-  affect diagnostics and are ignored by `khana render`'s hidden-line
-  PNGs and by STEP export.
+  affect diagnostics and are ignored by `khana draw`'s hidden-line
+  drawings and by STEP export.
 - **Material is a first-class field on `PlacedPart`, parallel to
   color.** `.add()` takes an optional `material="<token>"` string that
   downstream consumers (chitra-cad's photo-real renderer; future FEA /
@@ -422,8 +423,8 @@ printed part.
 4. Edit parameters or geometry. Re-run. Repeat.
 5. When a question is shape-level rather than scalar ("is the tang
    pointing the right way", "did that cut land where I expected"), run
-   `khana render path/to/script.py` and read the views under
-   `outputs/views/`. See **Reading renders** below for which view
+   `khana draw path/to/script.py` and read the views under
+   `outputs/views/`. See **Reading drawings** below for which view
    answers which kind of question. Default format is PNG; pass
    `--format svg` for lossless vector output (diffable, inspectable
    as text), or `--format both` to get both. Pass `--themeable` with
@@ -471,9 +472,9 @@ turnaround time and produces a worse handoff than a clean
 Escalation is a feature, not a failure mode. A clean stop with
 context beats a long thrash every time.
 
-## Reading renders
+## Reading drawings
 
-`khana render <path>` writes ten views to `outputs/views/`: six
+`khana draw <path>` writes ten views to `outputs/views/`: six
 orthographic (`top`, `bottom`, `front`, `back`, `left`, `right`) and
 four isometric (`iso_ne`, `iso_nw`, `iso_se`, `iso_sw`, named by the
 camera octant in +Z-up / +Y-forward space). They're hidden-line

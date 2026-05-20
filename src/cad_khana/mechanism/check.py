@@ -4,7 +4,7 @@ import json
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
-from cad_khana import render, viewer
+from cad_khana import draw, viewer
 from cad_khana._paths import resolve_out
 from cad_khana.export import export_assembly
 from cad_khana.mechanism.assembly import Assembly
@@ -49,14 +49,14 @@ def check(
     )
     if viewer.auto_enabled():
         viewer.push(assembly)
-    if render.auto_enabled():
-        render.render(
+    if draw.auto_enabled():
+        draw.draw(
             assembly,
-            render.auto_out() or out_path / "views",
-            views=render.auto_views(),
-            part=render.auto_part(),
-            format=render.auto_fmt(),
-            themeable=render.auto_themeable(),
+            draw.auto_out() or out_path / "views",
+            views=draw.auto_views(),
+            part=draw.auto_part(),
+            format=draw.auto_fmt(),
+            themeable=draw.auto_themeable(),
         )
     result = CheckResult(exports=exports, diagnostics=diagnostics)
     if failed:

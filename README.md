@@ -23,8 +23,9 @@ hoped for.
 The tool is designed to close a specific gap: LLMs can reason about
 CAD geometry from code but need explicit feedback on the things a
 human would catch visually. Computed diagnostics cover the scalar
-questions; `khana render` produces PNGs a multimodal agent can read
-for shape-level questions that numbers don't express well.
+questions; `khana draw` produces engineering-drawing PNGs (HLR
+line-art) a multimodal agent can read for shape-level questions that
+numbers don't express well.
 
 ## Why it exists
 
@@ -36,7 +37,7 @@ feedback loop works better:
 2. `khana build` runs it, exports geometry, writes diagnostics.
 3. Agent reads diagnostics, edits the script, repeats.
 4. When a shape-level question arises that diagnostics can't answer,
-   the agent runs `khana render` and reads the PNGs directly.
+   the agent runs `khana draw` and reads the PNGs directly.
 5. When the design is clean, a human reviews it in the OCP viewer.
 
 Humans stay in the loop for taste and physical-world validation;
@@ -48,7 +49,7 @@ correctness iteration happens in code.
 khana build <path>      # run script, export, write diagnostics.json
 khana check <path>      # diagnostics only, no export
 khana view <path>       # build + push to OCP viewer
-khana render <path>     # orthographic/iso PNGs for the agent to read
+khana draw <path>       # orthographic/iso engineering drawings (HLR line-art)
 khana diff <old> <new>  # diff two diagnostics.json files
 ```
 
@@ -126,7 +127,7 @@ the viewer, then bind `khana view` to a task (e.g. a Zed
 `tasks.json`).
 
 The viewer is only needed for `khana view`; `khana build`, `khana
-check`, and `khana render` work without it.
+check`, and `khana draw` work without it.
 
 ## Example
 
