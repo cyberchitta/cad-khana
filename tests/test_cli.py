@@ -351,3 +351,98 @@ def test_render_svg_default_no_classes(tmp_path: Path):
     )
     svg = (views / "front.svg").read_text()
     assert "class=" not in svg
+
+
+def _cylinder_script(out: Path) -> str:
+    return (
+        "from build123d import BuildPart, Cylinder\n"
+        "from cad_khana.mechanism.assembly import Assembly\n"
+        "from cad_khana.mechanism.check import check\n"
+        "\n"
+        "with BuildPart() as p:\n"
+        "    Cylinder(radius=5, height=10)\n"
+        f"check(Assembly().add('cyl', p.part), out=r'{out}')\n"
+    )
+
+
+def test_render_svg_cube_has_no_arcs(tmp_path: Path):
+    out = tmp_path / "out"
+    views = tmp_path / "views"
+    script = tmp_path / "asm.py"
+    script.write_text(_cube_script(out))
+    runner.invoke(
+        app, ["render", str(script), "--views-dir", str(views), "--format", "svg"]
+    )
+    svg = (views / "iso.svg").read_text()
+    assert "<polyline" in svg
+    assert "<path" not in svg
+
+
+def test_render_svg_cylinder_emits_arc_paths(tmp_path: Path):
+    out = tmp_path / "out"
+    views = tmp_path / "views"
+    script = tmp_path / "asm.py"
+    script.write_text(_cylinder_script(out))
+    result = runner.invoke(
+        app, ["render", str(script), "--views-dir", str(views), "--format", "svg"]
+    )
+    assert result.exit_code == 0, result.output
+    iso = (views / "iso.svg").read_text()
+    assert "<path d=" in iso
+    assert " A " in iso
+
+
+def test_render_svg_cylinder_top_view_is_full_circle(tmp_path: Path):
+    out = tmp_path / "out"
+    views = tmp_path / "views"
+    script = tmp_path / "asm.py"
+    script.write_text(_cylinder_script(out))
+    runner.invoke(
+        app, ["render", str(script), "--views-dir", str(views), "--format", "svg"]
+    )
+    top = (views / "top.svg").read_text()
+    import re
+
+    paths = re.findall(r'<path d="([^"]+)"', top)
+    assert paths, "top view of a cylinder should contain at least one arc path"
+    full_circles = [d for d in paths if d.count(" A ") == 2]
+    assert full_circles, (
+        f"expected at least one two-arc full circle in top view, got: {paths}"
+    )
+
+
+def test_render_svg_top_view_dedupes_silhouette(tmp_path: Path):
+    """HLR emits the cylinder rim as both visible and hidden when looking
+    down the axis; the renderer must drop the hidden duplicate."""
+    out = tmp_path / "out"
+    views = tmp_path / "views"
+    script = tmp_path / "asm.py"
+    script.write_text(_cylinder_script(out))
+    runner.invoke(
+        app, ["render", str(script), "--views-dir", str(views), "--format", "svg"]
+    )
+    top = (views / "top.svg").read_text()
+    import re
+
+    paths = re.findall(r'<path d="([^"]+)"', top)
+    # The cylinder's top rim is one closed circle; with dedupe we should
+    # see exactly one path for it, not two coincident copies.
+    assert len(paths) == 1, f"expected 1 deduped silhouette path, got {len(paths)}"
+
+
+def test_render_svg_cylinder_themeable_classes_on_paths(tmp_path: Path):
+    out = tmp_path / "out"
+    views = tmp_path / "views"
+    script = tmp_path / "asm.py"
+    script.write_text(_cylinder_script(out))
+    runner.invoke(
+        app,
+        ["render", str(script), "--views-dir", str(views),
+         "--format", "svg", "--themeable"],
+    )
+    svg = (views / "iso.svg").read_text()
+    assert '<path' in svg
+    import re
+
+    for path_tag in re.findall(r"<path[^/]*/>", svg):
+        assert 'class="cad-' in path_tag, path_tag

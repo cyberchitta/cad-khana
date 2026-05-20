@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -67,6 +68,7 @@ LINE_WIDTH_PX = 2
 CURVE_SAMPLES = 48
 
 Segment = tuple[tuple[float, float], ...]
+Point = tuple[float, float]
 
 
 def _sample(edge: Edge) -> Segment:
@@ -76,6 +78,140 @@ def _sample(edge: Edge) -> Segment:
 
 def _segments(compound: Compound) -> tuple[Segment, ...]:
     return tuple(_sample(e) for e in compound.edges())
+
+
+def _edge_key(e: Edge) -> tuple:
+    """Orientation-invariant fingerprint for HLR-produced edges.
+
+    For circles/ellipses we key off the underlying geometry (center +
+    radii) so different parameterizations of the same conic collapse to
+    one entry; partial conic arcs include length + midpoint to keep the
+    short and long arcs distinct.
+    """
+    gt = e.geom_type
+    if gt in (GeomType.CIRCLE, GeomType.ELLIPSE):
+        adaptor = e.geom_adaptor()
+        if gt == GeomType.CIRCLE:
+            c = adaptor.Circle()
+            loc = c.Location()
+            geom = ("CIRCLE", round(loc.X(), 4), round(loc.Y(), 4), round(c.Radius(), 4))
+        else:
+            el = adaptor.Ellipse()
+            loc = el.Location()
+            xd = el.XAxis().Direction()
+            geom = (
+                "ELLIPSE",
+                round(loc.X(), 4),
+                round(loc.Y(), 4),
+                round(el.MajorRadius(), 4),
+                round(el.MinorRadius(), 4),
+                round(xd.X(), 4),
+                round(xd.Y(), 4),
+            )
+        if adaptor.IsClosed():
+            return (*geom, "closed")
+        pm = e @ 0.5
+        return (
+            *geom,
+            (round(pm.X, 4), round(pm.Y, 4)),
+            round(e.length, 4),
+        )
+    p0 = e @ 0
+    p1 = e @ 1
+    pm = e @ 0.5
+    k0 = (round(p0.X, 4), round(p0.Y, 4))
+    k1 = (round(p1.X, 4), round(p1.Y, 4))
+    return (str(gt), frozenset((k0, k1)), (round(pm.X, 4), round(pm.Y, 4)))
+
+
+def _split_edges(drawing: Drawing) -> tuple[list[Edge], list[Edge]]:
+    """Visible and hidden edges from an HLR Drawing, with duplicates
+    collapsed both within each set and across sets (visible wins)."""
+    seen: set = set()
+    visible: list[Edge] = []
+    for e in drawing.visible_lines.edges():
+        k = _edge_key(e)
+        if k in seen:
+            continue
+        seen.add(k)
+        visible.append(e)
+    hidden: list[Edge] = []
+    for e in drawing.hidden_lines.edges():
+        k = _edge_key(e)
+        if k in seen:
+            continue
+        seen.add(k)
+        hidden.append(e)
+    return visible, hidden
+
+
+@dataclass(frozen=True)
+class _Polyline:
+    samples: Segment
+
+
+@dataclass(frozen=True)
+class _EllipseArc:
+    """Math-frame (y-up) description of a circular or elliptical arc."""
+
+    center: Point
+    rx: float
+    ry: float
+    rotation_rad: float
+    start: Point
+    end: Point
+    mid: Point
+    quarter: Point
+    three_quarter: Point
+    closed: bool
+    samples: Segment
+
+
+_Primitive = _Polyline | _EllipseArc
+
+
+def _arc_primitive(edge: Edge) -> _EllipseArc:
+    curve = edge.geom_adaptor()
+    if edge.geom_type == GeomType.CIRCLE:
+        c = curve.Circle()
+        rx = ry = c.Radius()
+        loc = c.Location()
+        x_dir = c.XAxis().Direction()
+    else:
+        e = curve.Ellipse()
+        rx = e.MajorRadius()
+        ry = e.MinorRadius()
+        loc = e.Location()
+        x_dir = e.XAxis().Direction()
+    p_start = edge @ 0
+    p_quarter = edge @ 0.25
+    p_mid = edge @ 0.5
+    p_three_quarter = edge @ 0.75
+    p_end = edge @ 1
+    closed = math.hypot(p_start.X - p_end.X, p_start.Y - p_end.Y) < 1e-7
+    return _EllipseArc(
+        center=(loc.X(), loc.Y()),
+        rx=rx,
+        ry=ry,
+        rotation_rad=math.atan2(x_dir.Y(), x_dir.X()),
+        start=(p_start.X, p_start.Y),
+        end=(p_end.X, p_end.Y),
+        mid=(p_mid.X, p_mid.Y),
+        quarter=(p_quarter.X, p_quarter.Y),
+        three_quarter=(p_three_quarter.X, p_three_quarter.Y),
+        closed=closed,
+        samples=_sample(edge),
+    )
+
+
+def _primitive(edge: Edge) -> _Primitive:
+    if edge.geom_type in (GeomType.CIRCLE, GeomType.ELLIPSE):
+        return _arc_primitive(edge)
+    return _Polyline(samples=_sample(edge))
+
+
+def _primitives(compound: Compound) -> tuple[_Primitive, ...]:
+    return tuple(_primitive(e) for e in compound.edges())
 
 
 def _bounds(segments: tuple[Segment, ...]) -> tuple[float, float, float, float]:
@@ -136,40 +272,118 @@ def _rasterize(
     return img.resize((IMAGE_SIZE_PX, IMAGE_SIZE_PX), Image.LANCZOS)
 
 
+def _classify_arc(
+    start: Point,
+    ref: Point,
+    end: Point,
+    center: Point,
+    rx: float,
+    ry: float,
+    rotation_rad: float,
+) -> tuple[int, int]:
+    """SVG (large_arc_flag, sweep_flag) for an arc passing through ``ref``.
+
+    All inputs are in the same pixel coordinate frame; rotation is the
+    angle of the ellipse's major axis from +x in that frame.
+    """
+    c, s = math.cos(-rotation_rad), math.sin(-rotation_rad)
+
+    def u(p: Point) -> float:
+        dx = p[0] - center[0]
+        dy = p[1] - center[1]
+        lx = dx * c - dy * s
+        ly = dx * s + dy * c
+        return math.atan2(ly / ry, lx / rx)
+
+    two_pi = 2 * math.pi
+    du_ref = (u(ref) - u(start)) % two_pi
+    du_end = (u(end) - u(start)) % two_pi
+    if du_ref < du_end:
+        return (1 if du_end > math.pi else 0, 1)
+    return (1 if (two_pi - du_end) > math.pi else 0, 0)
+
+
+def _arc_d(arc: _EllipseArc, scale: float, ox: float, oy: float, canvas_px: int) -> str:
+    rx_px = arc.rx * scale
+    ry_px = arc.ry * scale
+    rot_px_rad = -arc.rotation_rad
+    rot_deg = math.degrees(rot_px_rad)
+    start = _to_px(arc.start, scale, ox, oy, canvas_px)
+    end = _to_px(arc.end, scale, ox, oy, canvas_px)
+    mid = _to_px(arc.mid, scale, ox, oy, canvas_px)
+    center = _to_px(arc.center, scale, ox, oy, canvas_px)
+    if arc.closed:
+        quarter = _to_px(arc.quarter, scale, ox, oy, canvas_px)
+        three_q = _to_px(arc.three_quarter, scale, ox, oy, canvas_px)
+        _, sweep_a = _classify_arc(start, quarter, mid, center, rx_px, ry_px, rot_px_rad)
+        _, sweep_b = _classify_arc(mid, three_q, end, center, rx_px, ry_px, rot_px_rad)
+        return (
+            f"M {start[0]:.2f} {start[1]:.2f} "
+            f"A {rx_px:.2f} {ry_px:.2f} {rot_deg:.2f} 0 {sweep_a} "
+            f"{mid[0]:.2f} {mid[1]:.2f} "
+            f"A {rx_px:.2f} {ry_px:.2f} {rot_deg:.2f} 0 {sweep_b} "
+            f"{end[0]:.2f} {end[1]:.2f}"
+        )
+    large, sweep = _classify_arc(start, mid, end, center, rx_px, ry_px, rot_px_rad)
+    return (
+        f"M {start[0]:.2f} {start[1]:.2f} "
+        f"A {rx_px:.2f} {ry_px:.2f} {rot_deg:.2f} {large} {sweep} "
+        f"{end[0]:.2f} {end[1]:.2f}"
+    )
+
+
+def _polyline_points(samples: Segment, scale: float, ox: float, oy: float, canvas_px: int) -> str:
+    return " ".join(
+        f"{px[0]:.2f},{px[1]:.2f}"
+        for px in (_to_px(p, scale, ox, oy, canvas_px) for p in samples)
+    )
+
+
+def _emit_svg_element(
+    prim: _Primitive,
+    category: str,
+    themeable: bool,
+    scale: float,
+    ox: float,
+    oy: float,
+    canvas_px: int,
+) -> str:
+    stroke, width = (
+        ("rgb(0,0,0)", "1.5") if category == "visible" else ("rgb(170,170,170)", "1")
+    )
+    cls = f' class="cad-{category}"' if themeable else ""
+    if isinstance(prim, _EllipseArc):
+        d = _arc_d(prim, scale, ox, oy, canvas_px)
+        return (
+            f'  <path d="{d}"{cls} stroke="{stroke}" '
+            f'stroke-width="{width}" fill="none"/>'
+        )
+    pts = _polyline_points(prim.samples, scale, ox, oy, canvas_px)
+    return (
+        f'  <polyline points="{pts}"{cls} stroke="{stroke}" '
+        f'stroke-width="{width}" fill="none"/>'
+    )
+
+
 def _to_svg(
-    visible: tuple[Segment, ...],
-    hidden: tuple[Segment, ...],
+    visible: tuple[_Primitive, ...],
+    hidden: tuple[_Primitive, ...],
     themeable: bool = False,
 ) -> str:
     size = IMAGE_SIZE_PX
-    all_segs = visible + hidden
-    if not all_segs:
+    all_prims = visible + hidden
+    if not all_prims:
         return (
             '<?xml version="1.0" encoding="utf-8"?>'
             f'<svg xmlns="http://www.w3.org/2000/svg" '
             f'width="{size}" height="{size}" viewBox="0 0 {size} {size}"/>'
         )
-    scale, ox, oy = _transform(all_segs, size)
-
-    def pts(seg: Segment) -> str:
-        return " ".join(
-            f"{_to_px(p, scale, ox, oy, size)[0]:.2f},"
-            f"{_to_px(p, scale, ox, oy, size)[1]:.2f}"
-            for p in seg
-        )
-
-    hidden_class = ' class="cad-hidden"' if themeable else ""
-    visible_class = ' class="cad-visible"' if themeable else ""
-
+    scale, ox, oy = _transform(tuple(p.samples for p in all_prims), size)
     hidden_lines = "\n".join(
-        f'  <polyline points="{pts(s)}"{hidden_class} '
-        f'stroke="rgb(170,170,170)" stroke-width="1" fill="none"/>'
-        for s in hidden
+        _emit_svg_element(p, "hidden", themeable, scale, ox, oy, size) for p in hidden
     )
     visible_lines = "\n".join(
-        f'  <polyline points="{pts(s)}"{visible_class} '
-        f'stroke="rgb(0,0,0)" stroke-width="1.5" fill="none"/>'
-        for s in visible
+        _emit_svg_element(p, "visible", themeable, scale, ox, oy, size) for p in visible
     )
     return (
         '<?xml version="1.0" encoding="utf-8"?>\n'
@@ -186,8 +400,9 @@ def _render_view(compound: Compound, view: View, out: Path) -> Path:
         look_up=view.look_up,
         with_hidden=True,
     )
-    visible = _segments(drawing.visible_lines)
-    hidden = _segments(drawing.hidden_lines)
+    vis_edges, hid_edges = _split_edges(drawing)
+    visible = tuple(_sample(e) for e in vis_edges)
+    hidden = tuple(_sample(e) for e in hid_edges)
     path = out / f"{view.name}.png"
     _rasterize(visible, hidden).save(path)
     return path
@@ -205,8 +420,9 @@ def _render_view_svg(
         look_up=view.look_up,
         with_hidden=True,
     )
-    visible = _segments(drawing.visible_lines)
-    hidden = _segments(drawing.hidden_lines)
+    vis_edges, hid_edges = _split_edges(drawing)
+    visible = tuple(_primitive(e) for e in vis_edges)
+    hidden = tuple(_primitive(e) for e in hid_edges)
     path = out / f"{view.name}.svg"
     path.write_text(_to_svg(visible, hidden, themeable=themeable))
     return path
