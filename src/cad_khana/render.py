@@ -12,13 +12,20 @@ from cad_khana.mechanism.assembly import Assembly
 _auto_enabled = False
 _auto_out: Path | None = None
 _auto_fmt: str = "png"
+_auto_themeable: bool = False
 
 
-def set_auto(enabled: bool, out: Path | None = None, fmt: str = "png") -> None:
-    global _auto_enabled, _auto_out, _auto_fmt
+def set_auto(
+    enabled: bool,
+    out: Path | None = None,
+    fmt: str = "png",
+    themeable: bool = False,
+) -> None:
+    global _auto_enabled, _auto_out, _auto_fmt, _auto_themeable
     _auto_enabled = enabled
     _auto_out = out
     _auto_fmt = fmt
+    _auto_themeable = themeable
 
 
 def auto_enabled() -> bool:
@@ -31,6 +38,10 @@ def auto_out() -> Path | None:
 
 def auto_fmt() -> str:
     return _auto_fmt
+
+
+def auto_themeable() -> bool:
+    return _auto_themeable
 
 
 @dataclass(frozen=True)
@@ -128,6 +139,7 @@ def _rasterize(
 def _to_svg(
     visible: tuple[Segment, ...],
     hidden: tuple[Segment, ...],
+    themeable: bool = False,
 ) -> str:
     size = IMAGE_SIZE_PX
     all_segs = visible + hidden
@@ -146,13 +158,16 @@ def _to_svg(
             for p in seg
         )
 
+    hidden_class = ' class="cad-hidden"' if themeable else ""
+    visible_class = ' class="cad-visible"' if themeable else ""
+
     hidden_lines = "\n".join(
-        f'  <polyline points="{pts(s)}" '
+        f'  <polyline points="{pts(s)}"{hidden_class} '
         f'stroke="rgb(170,170,170)" stroke-width="1" fill="none"/>'
         for s in hidden
     )
     visible_lines = "\n".join(
-        f'  <polyline points="{pts(s)}" '
+        f'  <polyline points="{pts(s)}"{visible_class} '
         f'stroke="rgb(0,0,0)" stroke-width="1.5" fill="none"/>'
         for s in visible
     )
@@ -178,7 +193,12 @@ def _render_view(compound: Compound, view: View, out: Path) -> Path:
     return path
 
 
-def _render_view_svg(compound: Compound, view: View, out: Path) -> Path:
+def _render_view_svg(
+    compound: Compound,
+    view: View,
+    out: Path,
+    themeable: bool = False,
+) -> Path:
     drawing = Drawing(
         compound,
         look_from=view.look_from,
@@ -188,7 +208,7 @@ def _render_view_svg(compound: Compound, view: View, out: Path) -> Path:
     visible = _segments(drawing.visible_lines)
     hidden = _segments(drawing.hidden_lines)
     path = out / f"{view.name}.svg"
-    path.write_text(_to_svg(visible, hidden))
+    path.write_text(_to_svg(visible, hidden, themeable=themeable))
     return path
 
 
@@ -197,6 +217,7 @@ def render(
     out: Path,
     views: tuple[View, ...] = STANDARD_VIEWS,
     format: str = "png",
+    themeable: bool = False,
 ) -> tuple[Path, ...]:
     out.mkdir(parents=True, exist_ok=True)
     compound = assembly.compound
@@ -205,5 +226,5 @@ def render(
         if format in ("png", "both"):
             paths.append(_render_view(compound, v, out))
         if format in ("svg", "both"):
-            paths.append(_render_view_svg(compound, v, out))
+            paths.append(_render_view_svg(compound, v, out, themeable=themeable))
     return tuple(paths)

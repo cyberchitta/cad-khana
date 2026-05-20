@@ -47,7 +47,7 @@ proceeding.
 khana build  <script>          # run script, export STL/STEP, write JSON diagnostics
 khana check  <script>          # run script, write JSON diagnostics only (no export)
 khana view   <script>          # build, then push assembly to the OCP viewer (socket)
-khana render <script> [--format png|svg|both]  # build, then write views under <out>/views/
+khana render <script> [--format png|svg|both] [--themeable]  # build, then write views under <out>/views/
 khana diff   <before> <after>  # diff two JSON files (mechanism or printability)
 khana --version
 ```
@@ -377,7 +377,12 @@ printed part.
    `outputs/views/`. Four views (`front`, `top`, `right`, `iso`) are
    produced as hidden-line engineering drawings. Default format is PNG;
    pass `--format svg` for lossless vector output (diffable, inspectable
-   as text), or `--format both` to get both.
+   as text), or `--format both` to get both. Pass `--themeable` with
+   `svg`/`both` to additionally tag polylines with
+   `class="cad-visible"` / `class="cad-hidden"`; the default inline
+   stroke stays as a fallback, so non-CSS renderers see the same
+   drawing while a CSS consumer (e.g. a website embedding the SVG
+   inline) can restyle the two classes for dark-mode or brand colors.
 6. When diagnostics are clean, ask the human to view it via
    `khana view path/to/script.py` (which pushes to the OCP VS Code
    viewer).

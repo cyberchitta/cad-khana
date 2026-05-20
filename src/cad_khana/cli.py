@@ -132,9 +132,21 @@ def render(
         str,
         typer.Option("--format", help="Output format: png, svg, or both. Default: png."),
     ] = "png",
+    themeable: Annotated[
+        bool,
+        typer.Option(
+            "--themeable",
+            help=(
+                "SVG only: tag polylines with class='cad-visible'/'cad-hidden' "
+                "alongside the default stroke. Lets consumer CSS recolor lines "
+                "(e.g. for dark-mode theming) while non-CSS renderers fall back "
+                "to the inline stroke."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Run a user script and write orthographic + isometric views."""
-    _render.set_auto(True, views_dir, format)
+    _render.set_auto(True, views_dir, format, themeable=themeable)
     try:
         _run_script(script, out, "render")
     finally:

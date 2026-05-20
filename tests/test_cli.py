@@ -322,3 +322,32 @@ def test_render_default_format_unchanged(tmp_path: Path):
     names = {p.name for p in views.iterdir()}
     assert {"front.png", "top.png", "right.png", "iso.png"}.issubset(names)
     assert not any(n.endswith(".svg") for n in names)
+
+
+def test_render_svg_themeable_adds_classes(tmp_path: Path):
+    out = tmp_path / "out"
+    views = tmp_path / "views"
+    script = tmp_path / "asm.py"
+    script.write_text(_cube_script(out))
+    result = runner.invoke(
+        app,
+        ["render", str(script), "--views-dir", str(views),
+         "--format", "svg", "--themeable"],
+    )
+    assert result.exit_code == 0, result.output
+    svg = (views / "front.svg").read_text()
+    assert 'class="cad-visible"' in svg
+    # Inline stroke must remain as a fallback for non-CSS renderers.
+    assert 'stroke="rgb(0,0,0)"' in svg
+
+
+def test_render_svg_default_no_classes(tmp_path: Path):
+    out = tmp_path / "out"
+    views = tmp_path / "views"
+    script = tmp_path / "asm.py"
+    script.write_text(_cube_script(out))
+    runner.invoke(
+        app, ["render", str(script), "--views-dir", str(views), "--format", "svg"]
+    )
+    svg = (views / "front.svg").read_text()
+    assert "class=" not in svg
