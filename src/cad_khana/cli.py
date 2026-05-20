@@ -8,6 +8,7 @@ from typing import Annotated
 
 import typer
 
+from cad_khana import environment
 from cad_khana import render as _render
 from cad_khana import viewer
 from cad_khana.diff import diff as compute_diff
@@ -196,6 +197,15 @@ DiagArg = Annotated[
         help="Path to a mechanism.json or *-printability.json file.",
     ),
 ]
+
+
+@app.command()
+def status() -> None:
+    """Print environment + viewer reachability as JSON; exit nonzero if degraded."""
+    report = environment.probe()
+    typer.echo(json.dumps(asdict(report), indent=2))
+    if report.status != "ok":
+        raise typer.Exit(code=1)
 
 
 @app.command()

@@ -49,6 +49,7 @@ khana check  <script>          # run script, write JSON diagnostics only (no exp
 khana view   <script>          # build, then push assembly to the OCP viewer (socket)
 khana render <script> [--view <names>] [--part <name>] [--format png|svg|both] [--themeable]  # build, then write views under <out>/views/
 khana diff   <before> <after>  # diff two JSON files (mechanism or printability)
+khana status                   # JSON probe of versions + viewer reachability; exit nonzero if degraded
 khana --version
 ```
 

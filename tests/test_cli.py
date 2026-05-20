@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from cad_khana import render, viewer
+from cad_khana import environment, render, viewer
 from cad_khana.cli import app
 
 runner = CliRunner()
@@ -533,6 +533,63 @@ def test_render_part_scopes_to_named_part(tmp_path: Path):
     svg_all = (views_all / "front.svg").read_text()
     svg_part = (views_part / "front.svg").read_text()
     assert svg_all != svg_part
+
+
+def _fake_report(viewer_reachable: bool) -> environment.EnvironmentReport:
+    return environment.EnvironmentReport(
+        cad_khana="0.0.0",
+        python="3.13.0",
+        build123d="0.10.0",
+        bd_warehouse="0.2.0",
+        ocp_vscode=environment.ViewerStatus(
+            importable=True,
+            reachable=viewer_reachable,
+            error=None if viewer_reachable else "no listener on port 3939",
+        ),
+        schema_version="0.2",
+        status="ok" if viewer_reachable else "degraded",
+    )
+
+
+def test_status_emits_required_keys(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(environment, "probe", lambda: _fake_report(False))
+    result = runner.invoke(app, ["status"])
+    data = json.loads(result.stdout)
+    assert {
+        "cad_khana", "python", "build123d", "bd_warehouse",
+        "ocp_vscode", "schema_version", "status",
+    } <= data.keys()
+    assert data["status"] in {"ok", "degraded"}
+    assert {"importable", "reachable", "error"} == data["ocp_vscode"].keys()
+
+
+def test_status_exits_zero_when_viewer_reachable(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(environment, "probe", lambda: _fake_report(True))
+    result = runner.invoke(app, ["status"])
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["status"] == "ok"
+
+
+def test_status_exits_nonzero_when_viewer_unreachable(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(environment, "probe", lambda: _fake_report(False))
+    result = runner.invoke(app, ["status"])
+    assert result.exit_code == 1
+    data = json.loads(result.stdout)
+    assert data["status"] == "degraded"
+    assert data["ocp_vscode"]["reachable"] is False
+
+
+def test_status_real_probe_runs_and_returns_json():
+    """Smoke test: actually probe the environment. Viewer probably isn't
+    listening in CI, so exit code may be 1; the JSON must still parse and
+    carry all required keys."""
+    result = runner.invoke(app, ["status"])
+    assert result.exit_code in (0, 1), result.output
+    data = json.loads(result.stdout)
+    assert data["schema_version"] == "0.2"
+    assert isinstance(data["ocp_vscode"]["reachable"], bool)
 
 
 def test_render_part_unknown_name_fails(tmp_path: Path):
