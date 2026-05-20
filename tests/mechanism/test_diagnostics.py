@@ -102,6 +102,28 @@ def test_box_topology_counts():
     assert p.vertex_count == 8
 
 
+def test_part_surface_area_mm2():
+    d = compute(Assembly().add("cube", _cube(10)))
+    assert d.parts["cube"].surface_area_mm2 == approx(600.0)
+
+
+def test_part_center_of_mass_at_origin_for_centered_cube():
+    d = compute(Assembly().add("cube", _cube(10)))
+    com = d.parts["cube"].center_of_mass_mm
+    assert com == approx((0.0, 0.0, 0.0), abs=1e-9)
+
+
+def test_part_center_of_mass_reflects_placement():
+    a = Assembly().add("cube", _cube(10), location=Location((100, 0, 0)))
+    com = compute(a).parts["cube"].center_of_mass_mm
+    assert com == approx((100.0, 0.0, 0.0), abs=1e-9)
+
+
+def test_part_is_valid_true_for_well_formed_solid():
+    d = compute(Assembly().add("cube", _cube(10)))
+    assert d.parts["cube"].is_valid is True
+
+
 def test_fused_box_topology_differs_from_single_box():
     from build123d import Box, BuildPart, Locations
 

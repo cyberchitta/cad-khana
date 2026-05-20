@@ -153,7 +153,7 @@ Use `typer` for the CLI. Every command exits nonzero on failure. `build` and
 `inspect()` call) even on failure, so the agent can always read structured
 error info.
 
-## Diagnostics JSON schemas (v0.1)
+## Diagnostics JSON schemas (v0.2)
 
 Version these from day one. Agents depend on field stability.
 
@@ -161,7 +161,7 @@ Version these from day one. Agents depend on field stability.
 
 ```json
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "status": "ok | error | assertion_failed",
   "error": null,
   "hint": "Missing .part accessor — use `with BuildPart() as p: ...; return p.part`.",
@@ -169,6 +169,9 @@ Version these from day one. Agents depend on field stability.
     "<name>": {
       "bbox": {"min": [x,y,z], "max": [x,y,z]},
       "volume_mm3": 12403.2,
+      "surface_area_mm2": 3210.5,
+      "center_of_mass_mm": [x, y, z],
+      "is_valid": true,
       "face_count": 6,
       "edge_count": 12,
       "vertex_count": 8
@@ -188,13 +191,16 @@ Version these from day one. Agents depend on field stability.
 
 ```json
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "kind": "printability",
   "status": "ok | assertion_failed",
   "name": "housing",
   "method": "FDM",
   "bbox": {"min": [x,y,z], "max": [x,y,z]},
   "volume_mm3": 12403.2,
+  "surface_area_mm2": 3210.5,
+  "center_of_mass_mm": [x, y, z],
+  "is_valid": true,
   "min_wall_mm": 1.8,
   "overhang": {"area_mm2": 42.1, "max_angle_deg": 58},
   "assertions": [
@@ -202,6 +208,12 @@ Version these from day one. Agents depend on field stability.
   ]
 }
 ```
+
+Diagnostic JSONs are **ephemeral**: rewritten in full on every
+`check()` / `inspect()` run. `khana diff` requires both inputs at the
+current `schema_version` and raises on mismatch — regenerate the
+files by re-running the script. No back-compat coercion lives in the
+codebase.
 
 `kind` is absent on mechanism files and `"printability"` on printability
 files — that's how `diff` disambiguates.

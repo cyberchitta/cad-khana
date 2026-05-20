@@ -27,6 +27,9 @@ class PrintabilityDiagnostics:
     method: str = "FDM"
     bbox: BBox | None = None
     volume_mm3: float = 0.0
+    surface_area_mm2: float = 0.0
+    center_of_mass_mm: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    is_valid: bool = True
     min_wall_mm: float | None = None
     overhang: Overhang | None = None
     assertions: tuple[AssertionResult, ...] = field(default_factory=tuple)
@@ -83,11 +86,15 @@ def inspect(
         _overhang_assertion(overhang, method),
     )
     failed = any(not a.passed for a in assertions)
+    com = part.center()
     diagnostics = PrintabilityDiagnostics(
         name=name,
         method=type(method).__name__,
         bbox=_bbox(part),
         volume_mm3=part.volume,
+        surface_area_mm2=part.area,
+        center_of_mass_mm=(com.X, com.Y, com.Z),
+        is_valid=part.is_valid,
         min_wall_mm=wall,
         overhang=overhang,
         assertions=assertions,

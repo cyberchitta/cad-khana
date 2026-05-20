@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from cad_khana.mechanism.diagnostics import SCHEMA_VERSION
+
 Diag = dict[str, Any]
 
 
@@ -29,9 +31,14 @@ def _status_section(old: Diag, new: Diag) -> list[str]:
     )
 
 
-def _schema_warning(old: Diag, new: Diag) -> list[str]:
+def _require_current_schema(old: Diag, new: Diag) -> None:
     ov, nv = old.get("schema_version"), new.get("schema_version")
-    return [f"  schema_version: {ov} → {nv}"] if ov != nv else []
+    if ov != SCHEMA_VERSION or nv != SCHEMA_VERSION:
+        raise ValueError(
+            f"schema mismatch: expected {SCHEMA_VERSION}, "
+            f"got old={ov} new={nv}; "
+            "regenerate by re-running build/check/inspect"
+        )
 
 
 def _assertions_section(old: list[Diag], new: list[Diag]) -> list[str]:
@@ -60,12 +67,27 @@ def _assertions_section(old: list[Diag], new: list[Diag]) -> list[str]:
 # --- Mechanism diff -----------------------------------------------------
 
 
+_PART_SCALAR_FIELDS = ("volume_mm3", "surface_area_mm2")
+
+
 def _mech_part_changes(name: str, old: Diag, new: Diag) -> list[str]:
     scalar_lines = [
-        f"    volume_mm3: {_delta(old.get('volume_mm3'), new.get('volume_mm3'))}"
-    ] if old.get("volume_mm3") != new.get("volume_mm3") else []
+        f"    {f}: {_delta(old.get(f), new.get(f))}"
+        for f in _PART_SCALAR_FIELDS
+        if old.get(f) != new.get(f)
+    ]
     bbox_line = ["    bbox: changed"] if old.get("bbox") != new.get("bbox") else []
-    changes = scalar_lines + bbox_line
+    com_line = (
+        [f"    center_of_mass_mm: {old.get('center_of_mass_mm')} → {new.get('center_of_mass_mm')}"]
+        if old.get("center_of_mass_mm") != new.get("center_of_mass_mm")
+        else []
+    )
+    valid_line = (
+        [f"    is_valid: {old.get('is_valid')} → {new.get('is_valid')}"]
+        if old.get("is_valid") != new.get("is_valid")
+        else []
+    )
+    changes = scalar_lines + bbox_line + com_line + valid_line
     return [f"  changed: {name}", *changes] if changes else []
 
 
@@ -112,7 +134,6 @@ def _interferences_section(old: list[Diag], new: list[Diag]) -> list[str]:
 
 def _diff_mechanism(old: Diag, new: Diag) -> str:
     sections: tuple[tuple[str, list[str]], ...] = (
-        ("schema", _schema_warning(old, new)),
         ("status", _status_section(old, new)),
         ("parts", _mech_parts_section(old.get("parts", {}), new.get("parts", {}))),
         (
@@ -178,8 +199,19 @@ def _diff_printability(old: Diag, new: Diag) -> str:
         if old.get("method") != new.get("method")
         else []
     )
+    com_section = (
+        [
+            f"  {old.get('center_of_mass_mm')} → {new.get('center_of_mass_mm')}"
+        ]
+        if old.get("center_of_mass_mm") != new.get("center_of_mass_mm")
+        else []
+    )
+    valid_section = (
+        [f"  {old.get('is_valid')} → {new.get('is_valid')}"]
+        if old.get("is_valid") != new.get("is_valid")
+        else []
+    )
     sections: tuple[tuple[str, list[str]], ...] = (
-        ("schema", _schema_warning(old, new)),
         ("status", _status_section(old, new)),
         ("name", name_section),
         ("method", method_section),
@@ -188,6 +220,16 @@ def _diff_printability(old: Diag, new: Diag) -> str:
             "volume_mm3",
             _scalar_line("volume_mm3", old.get("volume_mm3"), new.get("volume_mm3")),
         ),
+        (
+            "surface_area_mm2",
+            _scalar_line(
+                "surface_area_mm2",
+                old.get("surface_area_mm2"),
+                new.get("surface_area_mm2"),
+            ),
+        ),
+        ("center_of_mass_mm", com_section),
+        ("is_valid", valid_section),
         (
             "min_wall_mm",
             _scalar_line("min_wall_mm", old.get("min_wall_mm"), new.get("min_wall_mm")),
@@ -215,6 +257,7 @@ def diff(old: Diag, new: Diag) -> str:
             f"cannot diff {old_kind} against {new_kind}; "
             "both files must be the same kind"
         )
+    _require_current_schema(old, new)
     return (
         _diff_printability(old, new)
         if old_kind == "printability"

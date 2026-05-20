@@ -42,6 +42,9 @@ def test_inspect_json_schema(tmp_path: Path):
     assert data["method"] == "FDM"
     assert data["status"] == "ok"
     assert data["volume_mm3"] == approx(1000.0)
+    assert data["surface_area_mm2"] == approx(600.0)
+    assert data["center_of_mass_mm"] == approx([0.0, 0.0, 0.0], abs=1e-9)
+    assert data["is_valid"] is True
     assert data["min_wall_mm"] == approx(10.0, abs=0.05)
     assert "bbox" in data
     assert "assertions" in data

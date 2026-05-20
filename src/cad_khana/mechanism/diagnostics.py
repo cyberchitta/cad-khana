@@ -9,7 +9,7 @@ from build123d import Part
 if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
 
-SCHEMA_VERSION = "0.1"
+SCHEMA_VERSION = "0.2"
 INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
 
 
@@ -23,6 +23,9 @@ class BBox:
 class PartDiagnostics:
     bbox: BBox
     volume_mm3: float
+    surface_area_mm2: float
+    center_of_mass_mm: tuple[float, float, float]
+    is_valid: bool
     face_count: int
     edge_count: int
     vertex_count: int
@@ -68,9 +71,13 @@ def _bbox(part: Part) -> BBox:
 
 
 def _part_diagnostics(shape: Part) -> PartDiagnostics:
+    com = shape.center()
     return PartDiagnostics(
         bbox=_bbox(shape),
         volume_mm3=shape.volume,
+        surface_area_mm2=shape.area,
+        center_of_mass_mm=(com.X, com.Y, com.Z),
+        is_valid=shape.is_valid,
         face_count=len(shape.faces()),
         edge_count=len(shape.edges()),
         vertex_count=len(shape.vertices()),
