@@ -103,6 +103,7 @@ dependencies = [
     { name = "build123d" },
     { name = "ocp-vscode" },
     { name = "pillow" },
+    { name = "pygltflib" },
     { name = "typer" },
 ]
 
@@ -117,6 +118,7 @@ requires-dist = [
     { name = "build123d", specifier = ">=0.8" },
     { name = "ocp-vscode", specifier = ">=2.7" },
     { name = "pillow", specifier = ">=10" },
+    { name = "pygltflib", specifier = ">=1.16" },
     { name = "typer", specifier = ">=0.12" },
 ]
 
