@@ -89,6 +89,30 @@ As a global tool from GitHub:
 uv tool install git+https://github.com/cyberchitta/cad-khana
 ```
 
+### External tools
+
+`export_glb` / `export_animated_glb` shell out to
+[`gltf-transform`](https://gltf-transform.dev) for two post-processing
+passes:
+
+* `join` — merges primitives within each named node. OCP's
+  `RWGltf_CafWriter` emits one primitive per face style (~30 per
+  shape on real assemblies), which inflates the output glTF's JSON
+  to multiples of the binary payload. Joining is mandatory and runs
+  on every export.
+* `draco` — re-encodes mesh attribute buffers with Draco
+  compression. Optional (`draco=False` to skip).
+
+Together they typically shrink a CAD glTF by ~10×. Install:
+
+```bash
+bun install -g @gltf-transform/cli   # or: npm install -g @gltf-transform/cli
+```
+
+Without the tool on `$PATH`, `export_glb` raises a `RuntimeError`
+naming the install command. No Python equivalent exists for the
+join pass — it's the reason we shell out.
+
 ## Viewer setup (for humans)
 
 `khana view` pushes geometry to the OCP CAD Viewer, a standalone web

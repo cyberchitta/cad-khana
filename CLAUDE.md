@@ -285,7 +285,22 @@ convenience.
   itself does not import it; user scripts do.
 - `ocp_vscode` — viewer client (Python side only; VS Code extension is a
   human prerequisite, documented separately)
+- `pygltflib` — JSON-level glTF read/write. Used by
+  `export.py::export_animated_glb` to inject animation samplers onto
+  an existing GLB.
 - `typer` — CLI
+
+External CLI tool (not a Python dep — shelled out to from
+`export.py`):
+
+- `gltf-transform` (`bun install -g @gltf-transform/cli`) — used for
+  `join` (mandatory primitive-merging post-pass) and `draco`
+  (optional mesh compression). The join pass collapses the
+  per-face-style primitive explosion OCP's `RWGltf_CafWriter` writes
+  (~30 primitives per shape), which dominates glTF JSON size.
+  Together: typical ~10× shrink. No Python equivalent for the join
+  pass exists; we'd have to write it ourselves (~100 lines on
+  pygltflib) to drop this dep.
 
 Diagnostics use plain `@dataclass(frozen=True)` + `dataclasses.asdict()` +
 stdlib `json` for serialization. Don't reach for pydantic unless we actually

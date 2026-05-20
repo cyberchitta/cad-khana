@@ -60,12 +60,21 @@ def export_glb(
     ``y_up`` pre-rotates Z-up CAD coordinates to glTF's Y-up convention
     (this OCP build doesn't expose ``RWMesh_CoordinateSystemConverter``).
 
-    ``draco`` enables Draco mesh compression by post-processing the
-    raw GLB with ``gltf-pipeline`` (``npm install -g gltf-pipeline``).
-    OCP exposes ``RWGltf_DracoParameters`` but its fields aren't bound,
-    so the writer itself can't enable Draco — the shell-out is the
-    practical path. ``draco_level`` 0–10 trades encode time for ratio
-    (Cesium's default is 7).
+    Two post-processing passes run via ``gltf-transform``
+    (``bun install -g @gltf-transform/cli``):
+
+    * Always: ``join --keepMeshes true --keepNamed true``. OCP's writer
+      emits one primitive per face-style (~30+ primitives per shape),
+      which inflates the glTF JSON to several × the binary payload.
+      Joining per-node collapses primitives within each named node
+      without merging across nodes (preserves per-PlacedPart names that
+      the animation channels and `<model-viewer>` material switches
+      target).
+    * ``draco`` (optional): re-encodes mesh attribute buffers with
+      Draco. OCP exposes ``RWGltf_DracoParameters`` but its fields
+      aren't bound, so doing it via shell-out is the practical path.
+      ``draco_level`` 0–10 trades encode time for ratio (Cesium's
+      default is 7).
     """
     out.mkdir(parents=True, exist_ok=True)
     glb_path = out / name
@@ -101,39 +110,59 @@ def export_glb(
     if not ok:
         raise RuntimeError(f"RWGltf_CafWriter failed writing {glb_path}")
 
+    _gltf_transform_join(glb_path)
     if draco:
-        _compress_draco(glb_path, level=draco_level)
+        _gltf_transform_draco(glb_path, level=draco_level)
     return glb_path
 
 
-def _compress_draco(glb_path: Path, level: int) -> None:
-    """Re-write ``glb_path`` in place with Draco mesh compression via
-    ``gltf-pipeline``. Raises ``RuntimeError`` if the tool isn't on PATH.
-    """
-    tool = shutil.which("gltf-pipeline")
+def _gltf_transform(args: list[str]) -> None:
+    """Shell out to ``gltf-transform``. Raises if the tool isn't on PATH."""
+    tool = shutil.which("gltf-transform")
     if tool is None:
         raise RuntimeError(
-            "draco compression requires 'gltf-pipeline' on PATH "
-            "(install with `npm install -g gltf-pipeline`). "
-            "Pass draco=False to skip."
+            "gltf-transform not on PATH (install with "
+            "`bun install -g @gltf-transform/cli`)."
         )
-    tmp = glb_path.with_suffix(".draco.glb")
     result = subprocess.run(
-        [
-            tool,
-            "-i", str(glb_path),
-            "-o", str(tmp),
-            "-d",
-            "--draco.compressionLevel", str(level),
-        ],
-        capture_output=True,
-        text=True,
+        [tool, *args], capture_output=True, text=True
     )
     if result.returncode != 0:
         raise RuntimeError(
-            f"gltf-pipeline failed (exit {result.returncode}):\n{result.stderr}"
+            f"gltf-transform {args[0]} failed (exit {result.returncode}):\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
-    tmp.replace(glb_path)
+
+
+def _gltf_transform_join(glb_path: Path) -> None:
+    """Merge primitives per node — collapses OCP's per-face-style
+    primitive explosion (~30× per shape on m03), the main driver of
+    JSON bloat in the output GLB. ``--keepMeshes`` / ``--keepNamed``
+    keep distinct named nodes (the animation channels target them by
+    name; merging across nodes would lose those handles)."""
+    _gltf_transform(
+        [
+            "join",
+            str(glb_path),
+            str(glb_path),
+            "--keepMeshes", "true",
+            "--keepNamed", "true",
+        ]
+    )
+
+
+def _gltf_transform_draco(glb_path: Path, level: int) -> None:
+    """Re-encode mesh attribute buffers with Draco. Lossy on the
+    geometry by design (level controls the loss/ratio trade-off)."""
+    _gltf_transform(
+        [
+            "draco",
+            str(glb_path),
+            str(glb_path),
+            "--encode-speed", str(10 - level),
+            "--decode-speed", "5",
+        ]
+    )
 
 
 def export_animated_glb(
@@ -229,7 +258,7 @@ def export_animated_glb(
     )
 
     if draco:
-        _compress_draco(glb_path, level=draco_level)
+        _gltf_transform_draco(glb_path, level=draco_level)
     return glb_path
 
 
