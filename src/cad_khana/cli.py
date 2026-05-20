@@ -144,9 +144,42 @@ def render(
             ),
         ),
     ] = False,
+    view: Annotated[
+        str | None,
+        typer.Option(
+            "--view",
+            help=(
+                "Comma-separated subset of view names. Default: all ten "
+                "(top, bottom, front, back, left, right, iso_ne, iso_nw, "
+                "iso_se, iso_sw)."
+            ),
+        ),
+    ] = None,
+    part: Annotated[
+        str | None,
+        typer.Option(
+            "--part",
+            help=(
+                "Name of a single part in the assembly to scope rendering and "
+                "framing to. Default: render the whole assembly."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Run a user script and write orthographic + isometric views."""
-    _render.set_auto(True, views_dir, format, themeable=themeable)
+    views = tuple(v.strip() for v in view.split(",")) if view else None
+    if views is not None:
+        unknown = tuple(v for v in views if v not in _render.VIEW_PRESETS)
+        if unknown:
+            known = ", ".join(_render.VIEW_PRESETS.keys())
+            typer.echo(
+                f"error: unknown --view name(s): {', '.join(unknown)}; known: {known}",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+    _render.set_auto(
+        True, views_dir, format, themeable=themeable, views=views, part=part
+    )
     try:
         _run_script(script, out, "render")
     finally:

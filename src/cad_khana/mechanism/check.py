@@ -53,6 +53,8 @@ def check(
         render.render(
             assembly,
             render.auto_out() or out_path / "views",
+            views=render.auto_views(),
+            part=render.auto_part(),
             format=render.auto_fmt(),
             themeable=render.auto_themeable(),
         )

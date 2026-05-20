@@ -148,8 +148,12 @@ def test_render_writes_png_views(tmp_path: Path):
         app, ["render", str(script), "--views-dir", str(views)]
     )
     assert result.exit_code == 0, result.output
-    expected = {"front.png", "top.png", "right.png", "iso.png"}
-    assert expected.issubset({p.name for p in views.iterdir()})
+    expected = {
+        "top.png", "bottom.png", "front.png", "back.png",
+        "left.png", "right.png",
+        "iso_ne.png", "iso_nw.png", "iso_se.png", "iso_sw.png",
+    }
+    assert expected == {p.name for p in views.iterdir()}
     assert not render.auto_enabled(), "render auto toggle must be cleared"
 
 
@@ -275,9 +279,13 @@ def test_render_svg_format_writes_svg_views(tmp_path: Path):
         app, ["render", str(script), "--views-dir", str(views), "--format", "svg"]
     )
     assert result.exit_code == 0, result.output
-    expected = {"front.svg", "top.svg", "right.svg", "iso.svg"}
+    expected = {
+        "top.svg", "bottom.svg", "front.svg", "back.svg",
+        "left.svg", "right.svg",
+        "iso_ne.svg", "iso_nw.svg", "iso_se.svg", "iso_sw.svg",
+    }
     actual = {p.name for p in views.iterdir()}
-    assert expected.issubset(actual)
+    assert expected == actual
     assert not any(p.suffix == ".png" for p in views.iterdir())
 
 
@@ -305,7 +313,10 @@ def test_render_both_format_writes_png_and_svg(tmp_path: Path):
     )
     assert result.exit_code == 0, result.output
     names = {p.name for p in views.iterdir()}
-    for view in ("front", "top", "right", "iso"):
+    for view in (
+        "top", "bottom", "front", "back", "left", "right",
+        "iso_ne", "iso_nw", "iso_se", "iso_sw",
+    ):
         assert f"{view}.png" in names
         assert f"{view}.svg" in names
 
@@ -320,7 +331,7 @@ def test_render_default_format_unchanged(tmp_path: Path):
     )
     assert result.exit_code == 0, result.output
     names = {p.name for p in views.iterdir()}
-    assert {"front.png", "top.png", "right.png", "iso.png"}.issubset(names)
+    assert any(n.endswith(".png") for n in names)
     assert not any(n.endswith(".svg") for n in names)
 
 
@@ -373,7 +384,7 @@ def test_render_svg_cube_has_no_arcs(tmp_path: Path):
     runner.invoke(
         app, ["render", str(script), "--views-dir", str(views), "--format", "svg"]
     )
-    svg = (views / "iso.svg").read_text()
+    svg = (views / "iso_se.svg").read_text()
     assert "<polyline" in svg
     assert "<path" not in svg
 
@@ -387,7 +398,7 @@ def test_render_svg_cylinder_emits_arc_paths(tmp_path: Path):
         app, ["render", str(script), "--views-dir", str(views), "--format", "svg"]
     )
     assert result.exit_code == 0, result.output
-    iso = (views / "iso.svg").read_text()
+    iso = (views / "iso_se.svg").read_text()
     assert "<path d=" in iso
     assert " A " in iso
 
@@ -440,9 +451,102 @@ def test_render_svg_cylinder_themeable_classes_on_paths(tmp_path: Path):
         ["render", str(script), "--views-dir", str(views),
          "--format", "svg", "--themeable"],
     )
-    svg = (views / "iso.svg").read_text()
+    svg = (views / "iso_se.svg").read_text()
     assert '<path' in svg
     import re
 
     for path_tag in re.findall(r"<path[^/]*/>", svg):
         assert 'class="cad-' in path_tag, path_tag
+
+
+def test_render_view_subset_writes_only_requested(tmp_path: Path):
+    out = tmp_path / "out"
+    views = tmp_path / "views"
+    script = tmp_path / "asm.py"
+    script.write_text(_cube_script(out))
+    result = runner.invoke(
+        app,
+        ["render", str(script), "--views-dir", str(views), "--view", "top,iso_ne"],
+    )
+    assert result.exit_code == 0, result.output
+    names = {p.name for p in views.iterdir()}
+    assert names == {"top.png", "iso_ne.png"}
+
+
+def test_render_view_unknown_name_fails(tmp_path: Path):
+    out = tmp_path / "out"
+    views = tmp_path / "views"
+    script = tmp_path / "asm.py"
+    script.write_text(_cube_script(out))
+    result = runner.invoke(
+        app,
+        ["render", str(script), "--views-dir", str(views), "--view", "isometric"],
+    )
+    assert result.exit_code == 2
+    assert "isometric" in result.output
+
+
+def _two_part_script(out: Path) -> str:
+    return (
+        "from build123d import Box, BuildPart, Location\n"
+        "from cad_khana.mechanism.assembly import Assembly\n"
+        "from cad_khana.mechanism.check import check\n"
+        "\n"
+        "with BuildPart() as a:\n"
+        "    Box(40, 40, 40)\n"
+        "with BuildPart() as b:\n"
+        "    Box(2, 2, 2)\n"
+        "check(\n"
+        "    Assembly()\n"
+        "        .add('big', a.part)\n"
+        "        .add('small', b.part, location=Location((100, 0, 0))),\n"
+        f"    out=r'{out}',\n"
+        ")\n"
+    )
+
+
+def test_render_part_scopes_to_named_part(tmp_path: Path):
+    """`--part small` should frame and render only `small`, not the big
+    box 100mm away. The post-projection canvas-fit transform makes this
+    observable: the lines in `small`'s view should occupy most of the
+    canvas instead of a tiny corner."""
+    out = tmp_path / "out"
+    views_all = tmp_path / "views_all"
+    views_part = tmp_path / "views_part"
+    script = tmp_path / "asm.py"
+    script.write_text(_two_part_script(out))
+
+    runner.invoke(
+        app,
+        ["render", str(script), "--views-dir", str(views_all),
+         "--format", "svg", "--view", "front"],
+    )
+    result = runner.invoke(
+        app,
+        ["render", str(script), "--views-dir", str(views_part),
+         "--format", "svg", "--view", "front", "--part", "small"],
+    )
+    assert result.exit_code == 0, result.output
+    # Both runs produce a front.svg; the two SVGs must differ in their
+    # polyline coordinates because one frames a 100mm-wide spread, the
+    # other a 2mm cube.
+    svg_all = (views_all / "front.svg").read_text()
+    svg_part = (views_part / "front.svg").read_text()
+    assert svg_all != svg_part
+
+
+def test_render_part_unknown_name_fails(tmp_path: Path):
+    """An unknown --part is a ValueError from render(), surfaced by the
+    CLI as a nonzero exit. The mechanism diagnostics themselves still
+    landed correctly before the render step ran, so we assert on the
+    CLI failure and the diagnostic message rather than overwritten JSON."""
+    out = tmp_path / "out"
+    views = tmp_path / "views"
+    script = tmp_path / "asm.py"
+    script.write_text(_cube_script(out))
+    result = runner.invoke(
+        app,
+        ["render", str(script), "--views-dir", str(views), "--part", "nope"],
+    )
+    assert result.exit_code == 1
+    assert "nope" in result.output

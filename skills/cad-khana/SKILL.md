@@ -47,7 +47,7 @@ proceeding.
 khana build  <script>          # run script, export STL/STEP, write JSON diagnostics
 khana check  <script>          # run script, write JSON diagnostics only (no export)
 khana view   <script>          # build, then push assembly to the OCP viewer (socket)
-khana render <script> [--format png|svg|both] [--themeable]  # build, then write views under <out>/views/
+khana render <script> [--view <names>] [--part <name>] [--format png|svg|both] [--themeable]  # build, then write views under <out>/views/
 khana diff   <before> <after>  # diff two JSON files (mechanism or printability)
 khana --version
 ```
@@ -374,9 +374,9 @@ printed part.
 5. When a question is shape-level rather than scalar ("is the tang
    pointing the right way", "did that cut land where I expected"), run
    `khana render path/to/script.py` and read the views under
-   `outputs/views/`. Four views (`front`, `top`, `right`, `iso`) are
-   produced as hidden-line engineering drawings. Default format is PNG;
-   pass `--format svg` for lossless vector output (diffable, inspectable
+   `outputs/views/`. See **Reading renders** below for which view
+   answers which kind of question. Default format is PNG; pass
+   `--format svg` for lossless vector output (diffable, inspectable
    as text), or `--format both` to get both. Pass `--themeable` with
    `svg`/`both` to additionally tag polylines with
    `class="cad-visible"` / `class="cad-hidden"`; the default inline
@@ -386,6 +386,39 @@ printed part.
 6. When diagnostics are clean, ask the human to view it via
    `khana view path/to/script.py` (which pushes to the OCP VS Code
    viewer).
+
+## Reading renders
+
+`khana render <path>` writes ten views to `outputs/views/`: six
+orthographic (`top`, `bottom`, `front`, `back`, `left`, `right`) and
+four isometric (`iso_ne`, `iso_nw`, `iso_se`, `iso_sw`, named by the
+camera octant in +Z-up / +Y-forward space). They're hidden-line
+engineering drawings: visible edges in black, hidden in light grey.
+
+The files cost only disk; the token cost is paid when you `Read` one
+into context. So load only the view that answers your question:
+
+- "Is this aligned along Z?" → `top` (or `bottom`).
+- "Did the cut land where I expected?" → the orthographic view
+  perpendicular to the cut axis.
+- "Does the shape look right at a glance?" → one isometric is enough;
+  `iso_ne` is a good default.
+- "Is the underside clean?" → `bottom`, then the relevant side view if
+  something looks off.
+
+Don't load all ten by default. If one view doesn't answer, ask for a
+second — not the whole set.
+
+Two flags trim what gets written when you already know the answer
+won't need ten views:
+
+- `--view <names>` — comma-separated subset, e.g. `--view top,iso_ne`.
+  Generation cost drops linearly; consumption cost only changes if
+  you `Read` fewer files.
+- `--part <name>` — frame and render only that one named part from
+  the assembly (in its assembled position). Useful when one part is
+  small and far from the others and the default whole-assembly framing
+  shrinks it to a few pixels.
 
 ## Reference files
 

@@ -14,6 +14,8 @@ _auto_enabled = False
 _auto_out: Path | None = None
 _auto_fmt: str = "png"
 _auto_themeable: bool = False
+_auto_views: tuple[str, ...] | None = None
+_auto_part: str | None = None
 
 
 def set_auto(
@@ -21,12 +23,17 @@ def set_auto(
     out: Path | None = None,
     fmt: str = "png",
     themeable: bool = False,
+    views: tuple[str, ...] | None = None,
+    part: str | None = None,
 ) -> None:
     global _auto_enabled, _auto_out, _auto_fmt, _auto_themeable
+    global _auto_views, _auto_part
     _auto_enabled = enabled
     _auto_out = out
     _auto_fmt = fmt
     _auto_themeable = themeable
+    _auto_views = views
+    _auto_part = part
 
 
 def auto_enabled() -> bool:
@@ -45,6 +52,14 @@ def auto_themeable() -> bool:
     return _auto_themeable
 
 
+def auto_views() -> tuple[str, ...] | None:
+    return _auto_views
+
+
+def auto_part() -> str | None:
+    return _auto_part
+
+
 @dataclass(frozen=True)
 class View:
     name: str
@@ -52,12 +67,23 @@ class View:
     look_up: tuple[float, float, float]
 
 
-STANDARD_VIEWS: tuple[View, ...] = (
-    View("front", look_from=(0, -1, 0), look_up=(0, 0, 1)),
-    View("top", look_from=(0, 0, 1), look_up=(0, 1, 0)),
-    View("right", look_from=(1, 0, 0), look_up=(0, 0, 1)),
-    View("iso", look_from=(1, -1, 1), look_up=(0, 0, 1)),
-)
+VIEW_PRESETS: dict[str, View] = {
+    "top":    View("top",    look_from=( 0,  0,  1), look_up=( 0,  1,  0)),
+    "bottom": View("bottom", look_from=( 0,  0, -1), look_up=( 0,  1,  0)),
+    "front":  View("front",  look_from=( 0, -1,  0), look_up=( 0,  0,  1)),
+    "back":   View("back",   look_from=( 0,  1,  0), look_up=( 0,  0,  1)),
+    "right":  View("right",  look_from=( 1,  0,  0), look_up=( 0,  0,  1)),
+    "left":   View("left",   look_from=(-1,  0,  0), look_up=( 0,  0,  1)),
+    "iso_ne": View("iso_ne", look_from=( 1,  1,  1), look_up=( 0,  0,  1)),
+    "iso_nw": View("iso_nw", look_from=(-1,  1,  1), look_up=( 0,  0,  1)),
+    "iso_se": View("iso_se", look_from=( 1, -1,  1), look_up=( 0,  0,  1)),
+    "iso_sw": View("iso_sw", look_from=(-1, -1,  1), look_up=( 0,  0,  1)),
+}
+
+DEFAULT_VIEW_NAMES: tuple[str, ...] = tuple(VIEW_PRESETS.keys())
+STANDARD_VIEWS: tuple[View, ...] = tuple(VIEW_PRESETS.values())
+
+CAMERA_DISTANCE_FACTOR = 2.5
 
 IMAGE_SIZE_PX = 1200
 SUPERSAMPLE = 2
@@ -393,13 +419,77 @@ def _to_svg(
     )
 
 
-def _render_view(compound: Compound, view: View, out: Path) -> Path:
-    drawing = Drawing(
+def _scoped_compound(assembly: Assembly, part: str | None) -> Compound:
+    if part is None:
+        return assembly.compound
+    matches = tuple(p for p in assembly.parts if p.name == part)
+    if not matches:
+        names = ", ".join(repr(p.name) for p in assembly.parts) or "(none)"
+        raise ValueError(
+            f"--part {part!r} not in assembly; have: {names}"
+        )
+    return Compound(children=[p.part.moved(p.location) for p in matches])
+
+
+def _bbox_extent(compound: Compound) -> tuple[tuple[float, float, float], float]:
+    """Return (center_xyz, max_extent) for an arbitrary compound."""
+    bb = compound.bounding_box()
+    center = ((bb.min.X + bb.max.X) / 2, (bb.min.Y + bb.max.Y) / 2, (bb.min.Z + bb.max.Z) / 2)
+    extent = max(bb.max.X - bb.min.X, bb.max.Y - bb.min.Y, bb.max.Z - bb.min.Z)
+    return center, extent
+
+
+def _camera_look_from(
+    direction: tuple[float, float, float],
+    center: tuple[float, float, float],
+    extent: float,
+) -> tuple[float, float, float]:
+    """Camera position at ``center + direction_unit * (extent * 2.5)``.
+
+    Build123d's HLR Drawing is orthographic, so the distance is a no-op
+    for the projection; the bbox-scaled position is still the right
+    shape if perspective ever lands and makes per-frame sizing matter.
+    """
+    n = math.sqrt(sum(d * d for d in direction)) or 1.0
+    d = extent * CAMERA_DISTANCE_FACTOR
+    return tuple(center[i] + direction[i] / n * d for i in range(3))  # type: ignore[return-value]
+
+
+def _resolve_views(names: tuple[str, ...] | None) -> tuple[View, ...]:
+    if names is None:
+        return STANDARD_VIEWS
+    unknown = tuple(n for n in names if n not in VIEW_PRESETS)
+    if unknown:
+        known = ", ".join(VIEW_PRESETS.keys())
+        raise ValueError(
+            f"unknown view name(s): {', '.join(unknown)}; known: {known}"
+        )
+    return tuple(VIEW_PRESETS[n] for n in names)
+
+
+def _drawing(
+    compound: Compound,
+    view: View,
+    center: tuple[float, float, float],
+    extent: float,
+) -> Drawing:
+    return Drawing(
         compound,
-        look_from=view.look_from,
+        look_at=center,
+        look_from=_camera_look_from(view.look_from, center, extent),
         look_up=view.look_up,
         with_hidden=True,
     )
+
+
+def _render_view(
+    compound: Compound,
+    view: View,
+    center: tuple[float, float, float],
+    extent: float,
+    out: Path,
+) -> Path:
+    drawing = _drawing(compound, view, center, extent)
     vis_edges, hid_edges = _split_edges(drawing)
     visible = tuple(_sample(e) for e in vis_edges)
     hidden = tuple(_sample(e) for e in hid_edges)
@@ -411,15 +501,12 @@ def _render_view(compound: Compound, view: View, out: Path) -> Path:
 def _render_view_svg(
     compound: Compound,
     view: View,
+    center: tuple[float, float, float],
+    extent: float,
     out: Path,
     themeable: bool = False,
 ) -> Path:
-    drawing = Drawing(
-        compound,
-        look_from=view.look_from,
-        look_up=view.look_up,
-        with_hidden=True,
-    )
+    drawing = _drawing(compound, view, center, extent)
     vis_edges, hid_edges = _split_edges(drawing)
     visible = tuple(_primitive(e) for e in vis_edges)
     hidden = tuple(_primitive(e) for e in hid_edges)
@@ -431,16 +518,19 @@ def _render_view_svg(
 def render(
     assembly: Assembly,
     out: Path,
-    views: tuple[View, ...] = STANDARD_VIEWS,
+    views: tuple[str, ...] | None = None,
+    part: str | None = None,
     format: str = "png",
     themeable: bool = False,
 ) -> tuple[Path, ...]:
     out.mkdir(parents=True, exist_ok=True)
-    compound = assembly.compound
+    compound = _scoped_compound(assembly, part)
+    center, extent = _bbox_extent(compound)
+    selected = _resolve_views(views)
     paths: list[Path] = []
-    for v in views:
+    for v in selected:
         if format in ("png", "both"):
-            paths.append(_render_view(compound, v, out))
+            paths.append(_render_view(compound, v, center, extent, out))
         if format in ("svg", "both"):
-            paths.append(_render_view_svg(compound, v, out, themeable=themeable))
+            paths.append(_render_view_svg(compound, v, center, extent, out, themeable=themeable))
     return tuple(paths)
