@@ -390,6 +390,11 @@ turret = turret.with_joint_angle("rotor", 45.0)
 turret = turret.with_joint_angle("rotor.platform_dump", 12.5)  # nested
 ```
 
+`with_joint(path, joint)` is the alternative shape: attach (or
+replace) the joint on an already-composed sub-assembly instead of
+passing `joint=` at `with_subassembly` time. Same dotted-path form
+as `with_joint_angle`; raises `KeyError` if any segment is missing.
+
 `with_joint_angle` raises if the path doesn't reach a jointed
 sub-assembly.
 
