@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from cad_khana import environment, render, viewer
+from cad_khana import draw, environment, viewer
 from cad_khana.cli import app
 
 runner = CliRunner()
@@ -131,7 +131,7 @@ def test_build_after_check_still_exports(tmp_path: Path):
     assert (out / "assembly.step").exists()
 
 
-def test_render_writes_png_views(tmp_path: Path):
+def test_draw_writes_png_views(tmp_path: Path):
     out = tmp_path / "out"
     views = tmp_path / "views"
     script = tmp_path / "asm.py"
@@ -145,7 +145,7 @@ def test_render_writes_png_views(tmp_path: Path):
         f"check(Assembly().with_part('cube', p.part), out=r'{out}')\n"
     )
     result = runner.invoke(
-        app, ["render", str(script), "--views-dir", str(views)]
+        app, ["draw", str(script), "--views-dir", str(views)]
     )
     assert result.exit_code == 0, result.output
     expected = {
@@ -154,7 +154,7 @@ def test_render_writes_png_views(tmp_path: Path):
         "iso_ne.png", "iso_nw.png", "iso_se.png", "iso_sw.png",
     }
     assert expected == {p.name for p in views.iterdir()}
-    assert not render.auto_enabled(), "render auto toggle must be cleared"
+    assert not draw.auto_enabled(), "draw auto toggle must be cleared"
 
 
 def test_build_writes_error_diagnostics_on_script_failure(tmp_path: Path):
@@ -270,13 +270,13 @@ def _cube_script(out: Path) -> str:
     )
 
 
-def test_render_svg_format_writes_svg_views(tmp_path: Path):
+def test_draw_svg_format_writes_svg_views(tmp_path: Path):
     out = tmp_path / "out"
     views = tmp_path / "views"
     script = tmp_path / "asm.py"
     script.write_text(_cube_script(out))
     result = runner.invoke(
-        app, ["render", str(script), "--views-dir", str(views), "--format", "svg"]
+        app, ["draw", str(script), "--views-dir", str(views), "--format", "svg"]
     )
     assert result.exit_code == 0, result.output
     expected = {
@@ -289,7 +289,7 @@ def test_render_svg_format_writes_svg_views(tmp_path: Path):
     assert not any(p.suffix == ".png" for p in views.iterdir())
 
 
-def test_render_svg_files_are_valid_xml(tmp_path: Path):
+def test_draw_svg_files_are_valid_xml(tmp_path: Path):
     import xml.etree.ElementTree as ET
 
     out = tmp_path / "out"
@@ -297,19 +297,19 @@ def test_render_svg_files_are_valid_xml(tmp_path: Path):
     script = tmp_path / "asm.py"
     script.write_text(_cube_script(out))
     runner.invoke(
-        app, ["render", str(script), "--views-dir", str(views), "--format", "svg"]
+        app, ["draw", str(script), "--views-dir", str(views), "--format", "svg"]
     )
     for svg_file in views.glob("*.svg"):
         ET.parse(svg_file)  # raises if invalid XML
 
 
-def test_render_both_format_writes_png_and_svg(tmp_path: Path):
+def test_draw_both_format_writes_png_and_svg(tmp_path: Path):
     out = tmp_path / "out"
     views = tmp_path / "views"
     script = tmp_path / "asm.py"
     script.write_text(_cube_script(out))
     result = runner.invoke(
-        app, ["render", str(script), "--views-dir", str(views), "--format", "both"]
+        app, ["draw", str(script), "--views-dir", str(views), "--format", "both"]
     )
     assert result.exit_code == 0, result.output
     names = {p.name for p in views.iterdir()}
@@ -321,13 +321,13 @@ def test_render_both_format_writes_png_and_svg(tmp_path: Path):
         assert f"{view}.svg" in names
 
 
-def test_render_default_format_unchanged(tmp_path: Path):
+def test_draw_default_format_unchanged(tmp_path: Path):
     out = tmp_path / "out"
     views = tmp_path / "views"
     script = tmp_path / "asm.py"
     script.write_text(_cube_script(out))
     result = runner.invoke(
-        app, ["render", str(script), "--views-dir", str(views)]
+        app, ["draw", str(script), "--views-dir", str(views)]
     )
     assert result.exit_code == 0, result.output
     names = {p.name for p in views.iterdir()}
@@ -335,14 +335,14 @@ def test_render_default_format_unchanged(tmp_path: Path):
     assert not any(n.endswith(".svg") for n in names)
 
 
-def test_render_svg_themeable_adds_classes(tmp_path: Path):
+def test_draw_svg_themeable_adds_classes(tmp_path: Path):
     out = tmp_path / "out"
     views = tmp_path / "views"
     script = tmp_path / "asm.py"
     script.write_text(_cube_script(out))
     result = runner.invoke(
         app,
-        ["render", str(script), "--views-dir", str(views),
+        ["draw", str(script), "--views-dir", str(views),
          "--format", "svg", "--themeable"],
     )
     assert result.exit_code == 0, result.output
@@ -352,13 +352,13 @@ def test_render_svg_themeable_adds_classes(tmp_path: Path):
     assert 'stroke="rgb(0,0,0)"' in svg
 
 
-def test_render_svg_default_no_classes(tmp_path: Path):
+def test_draw_svg_default_no_classes(tmp_path: Path):
     out = tmp_path / "out"
     views = tmp_path / "views"
     script = tmp_path / "asm.py"
     script.write_text(_cube_script(out))
     runner.invoke(
-        app, ["render", str(script), "--views-dir", str(views), "--format", "svg"]
+        app, ["draw", str(script), "--views-dir", str(views), "--format", "svg"]
     )
     svg = (views / "front.svg").read_text()
     assert "class=" not in svg
@@ -376,26 +376,26 @@ def _cylinder_script(out: Path) -> str:
     )
 
 
-def test_render_svg_cube_has_no_arcs(tmp_path: Path):
+def test_draw_svg_cube_has_no_arcs(tmp_path: Path):
     out = tmp_path / "out"
     views = tmp_path / "views"
     script = tmp_path / "asm.py"
     script.write_text(_cube_script(out))
     runner.invoke(
-        app, ["render", str(script), "--views-dir", str(views), "--format", "svg"]
+        app, ["draw", str(script), "--views-dir", str(views), "--format", "svg"]
     )
     svg = (views / "iso_se.svg").read_text()
     assert "<polyline" in svg
     assert "<path" not in svg
 
 
-def test_render_svg_cylinder_emits_arc_paths(tmp_path: Path):
+def test_draw_svg_cylinder_emits_arc_paths(tmp_path: Path):
     out = tmp_path / "out"
     views = tmp_path / "views"
     script = tmp_path / "asm.py"
     script.write_text(_cylinder_script(out))
     result = runner.invoke(
-        app, ["render", str(script), "--views-dir", str(views), "--format", "svg"]
+        app, ["draw", str(script), "--views-dir", str(views), "--format", "svg"]
     )
     assert result.exit_code == 0, result.output
     iso = (views / "iso_se.svg").read_text()
@@ -403,13 +403,13 @@ def test_render_svg_cylinder_emits_arc_paths(tmp_path: Path):
     assert " A " in iso
 
 
-def test_render_svg_cylinder_top_view_is_full_circle(tmp_path: Path):
+def test_draw_svg_cylinder_top_view_is_full_circle(tmp_path: Path):
     out = tmp_path / "out"
     views = tmp_path / "views"
     script = tmp_path / "asm.py"
     script.write_text(_cylinder_script(out))
     runner.invoke(
-        app, ["render", str(script), "--views-dir", str(views), "--format", "svg"]
+        app, ["draw", str(script), "--views-dir", str(views), "--format", "svg"]
     )
     top = (views / "top.svg").read_text()
     import re
@@ -422,15 +422,15 @@ def test_render_svg_cylinder_top_view_is_full_circle(tmp_path: Path):
     )
 
 
-def test_render_svg_top_view_dedupes_silhouette(tmp_path: Path):
+def test_draw_svg_top_view_dedupes_silhouette(tmp_path: Path):
     """HLR emits the cylinder rim as both visible and hidden when looking
-    down the axis; the renderer must drop the hidden duplicate."""
+    down the axis; the draw pass must drop the hidden duplicate."""
     out = tmp_path / "out"
     views = tmp_path / "views"
     script = tmp_path / "asm.py"
     script.write_text(_cylinder_script(out))
     runner.invoke(
-        app, ["render", str(script), "--views-dir", str(views), "--format", "svg"]
+        app, ["draw", str(script), "--views-dir", str(views), "--format", "svg"]
     )
     top = (views / "top.svg").read_text()
     import re
@@ -441,14 +441,14 @@ def test_render_svg_top_view_dedupes_silhouette(tmp_path: Path):
     assert len(paths) == 1, f"expected 1 deduped silhouette path, got {len(paths)}"
 
 
-def test_render_svg_cylinder_themeable_classes_on_paths(tmp_path: Path):
+def test_draw_svg_cylinder_themeable_classes_on_paths(tmp_path: Path):
     out = tmp_path / "out"
     views = tmp_path / "views"
     script = tmp_path / "asm.py"
     script.write_text(_cylinder_script(out))
     runner.invoke(
         app,
-        ["render", str(script), "--views-dir", str(views),
+        ["draw", str(script), "--views-dir", str(views),
          "--format", "svg", "--themeable"],
     )
     svg = (views / "iso_se.svg").read_text()
@@ -459,28 +459,28 @@ def test_render_svg_cylinder_themeable_classes_on_paths(tmp_path: Path):
         assert 'class="cad-' in path_tag, path_tag
 
 
-def test_render_view_subset_writes_only_requested(tmp_path: Path):
+def test_draw_view_subset_writes_only_requested(tmp_path: Path):
     out = tmp_path / "out"
     views = tmp_path / "views"
     script = tmp_path / "asm.py"
     script.write_text(_cube_script(out))
     result = runner.invoke(
         app,
-        ["render", str(script), "--views-dir", str(views), "--view", "top,iso_ne"],
+        ["draw", str(script), "--views-dir", str(views), "--view", "top,iso_ne"],
     )
     assert result.exit_code == 0, result.output
     names = {p.name for p in views.iterdir()}
     assert names == {"top.png", "iso_ne.png"}
 
 
-def test_render_view_unknown_name_fails(tmp_path: Path):
+def test_draw_view_unknown_name_fails(tmp_path: Path):
     out = tmp_path / "out"
     views = tmp_path / "views"
     script = tmp_path / "asm.py"
     script.write_text(_cube_script(out))
     result = runner.invoke(
         app,
-        ["render", str(script), "--views-dir", str(views), "--view", "isometric"],
+        ["draw", str(script), "--views-dir", str(views), "--view", "isometric"],
     )
     assert result.exit_code == 2
     assert "isometric" in result.output
@@ -505,8 +505,8 @@ def _two_part_script(out: Path) -> str:
     )
 
 
-def test_render_part_scopes_to_named_part(tmp_path: Path):
-    """`--part small` should frame and render only `small`, not the big
+def test_draw_part_scopes_to_named_part(tmp_path: Path):
+    """`--part small` should frame and draw only `small`, not the big
     box 100mm away. The post-projection canvas-fit transform makes this
     observable: the lines in `small`'s view should occupy most of the
     canvas instead of a tiny corner."""
@@ -518,12 +518,12 @@ def test_render_part_scopes_to_named_part(tmp_path: Path):
 
     runner.invoke(
         app,
-        ["render", str(script), "--views-dir", str(views_all),
+        ["draw", str(script), "--views-dir", str(views_all),
          "--format", "svg", "--view", "front"],
     )
     result = runner.invoke(
         app,
-        ["render", str(script), "--views-dir", str(views_part),
+        ["draw", str(script), "--views-dir", str(views_part),
          "--format", "svg", "--view", "front", "--part", "small"],
     )
     assert result.exit_code == 0, result.output
@@ -592,10 +592,10 @@ def test_status_real_probe_runs_and_returns_json():
     assert isinstance(data["ocp_vscode"]["reachable"], bool)
 
 
-def test_render_part_unknown_name_fails(tmp_path: Path):
-    """An unknown --part is a ValueError from render(), surfaced by the
+def test_draw_part_unknown_name_fails(tmp_path: Path):
+    """An unknown --part is a ValueError from draw(), surfaced by the
     CLI as a nonzero exit. The mechanism diagnostics themselves still
-    landed correctly before the render step ran, so we assert on the
+    landed correctly before the draw step ran, so we assert on the
     CLI failure and the diagnostic message rather than overwritten JSON."""
     out = tmp_path / "out"
     views = tmp_path / "views"
@@ -603,7 +603,7 @@ def test_render_part_unknown_name_fails(tmp_path: Path):
     script.write_text(_cube_script(out))
     result = runner.invoke(
         app,
-        ["render", str(script), "--views-dir", str(views), "--part", "nope"],
+        ["draw", str(script), "--views-dir", str(views), "--part", "nope"],
     )
     assert result.exit_code == 1
     assert "nope" in result.output
