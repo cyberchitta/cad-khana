@@ -422,9 +422,10 @@ def _to_svg(
 def _scoped_compound(assembly: Assembly, part: str | None) -> Compound:
     if part is None:
         return assembly.compound
-    matches = tuple(p for p in assembly.parts if p.name == part)
+    placed = assembly.placed_parts
+    matches = tuple(p for p in placed if p.name == part)
     if not matches:
-        names = ", ".join(repr(p.name) for p in assembly.parts) or "(none)"
+        names = ", ".join(repr(p.name) for p in placed) or "(none)"
         raise ValueError(
             f"--part {part!r} not in assembly; have: {names}"
         )

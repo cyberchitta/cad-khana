@@ -109,13 +109,13 @@ def clevis(
 
 assembly = (
     Assembly()
-    .add("clevis", clevis())
-    .add(
+    .with_part("clevis", clevis())
+    .with_part(
         "tang",
         tang(),
         location=Location((-TANG_PIVOT_OFFSET, 0, PIVOT_Z)),
     )
-    .add(
+    .with_part(
         "pin",
         pin(),
         location=Location((0, 0, PIVOT_Z)) * Rot(90, 0, 0),

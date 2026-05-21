@@ -112,11 +112,12 @@ def _interference(a: PlacedPart, b: PlacedPart) -> Interference | None:
 
 
 def compute(assembly: Assembly) -> Diagnostics:
-    shapes = {p.name: _placed(p) for p in assembly.parts}
+    placed = assembly.placed_parts
+    shapes = {p.name: _placed(p) for p in placed}
     parts = {name: _part_diagnostics(shape) for name, shape in shapes.items()}
     interferences = tuple(
         r
-        for a, b in combinations(assembly.parts, 2)
+        for a, b in combinations(placed, 2)
         if (r := _interference(a, b)) is not None
     )
     return Diagnostics(parts=parts, interferences=interferences)

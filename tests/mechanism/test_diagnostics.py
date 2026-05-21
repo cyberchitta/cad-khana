@@ -26,19 +26,19 @@ def test_default_status_is_ok():
 
 
 def test_part_bbox_reflects_placement():
-    a = Assembly().add("cube", _cube(10), location=Location((100, 0, 0)))
+    a = Assembly().with_part("cube", _cube(10), location=Location((100, 0, 0)))
     bbox = compute(a).parts["cube"].bbox
     assert bbox.min == approx((95.0, -5.0, -5.0))
     assert bbox.max == approx((105.0, 5.0, 5.0))
 
 
 def test_part_volume_is_reported_in_mm3():
-    d = compute(Assembly().add("cube", _cube(10)))
+    d = compute(Assembly().with_part("cube", _cube(10)))
     assert d.parts["cube"].volume_mm3 == approx(1000.0)
 
 
 def test_part_diagnostics_has_no_min_wall_field():
-    d = compute(Assembly().add("cube", _cube(10)))
+    d = compute(Assembly().with_part("cube", _cube(10)))
     assert not hasattr(d.parts["cube"], "min_wall_mm")
 
 
@@ -49,8 +49,8 @@ def test_diagnostics_has_no_overhangs_field():
 def test_non_overlapping_parts_have_no_interference():
     a = (
         Assembly()
-        .add("a", _cube(10))
-        .add("b", _cube(10), location=Location((20, 0, 0)))
+        .with_part("a", _cube(10))
+        .with_part("b", _cube(10), location=Location((20, 0, 0)))
     )
     assert compute(a).interferences == ()
 
@@ -58,8 +58,8 @@ def test_non_overlapping_parts_have_no_interference():
 def test_face_touching_parts_are_not_interfering():
     a = (
         Assembly()
-        .add("a", _cube(10))
-        .add("b", _cube(10), location=Location((10, 0, 0)))
+        .with_part("a", _cube(10))
+        .with_part("b", _cube(10), location=Location((10, 0, 0)))
     )
     assert compute(a).interferences == ()
 
@@ -67,8 +67,8 @@ def test_face_touching_parts_are_not_interfering():
 def test_overlapping_parts_produce_interference():
     a = (
         Assembly()
-        .add("a", _cube(10))
-        .add("b", _cube(10), location=Location((5, 0, 0)))
+        .with_part("a", _cube(10))
+        .with_part("b", _cube(10), location=Location((5, 0, 0)))
     )
     interferences = compute(a).interferences
     assert len(interferences) == 1
@@ -82,20 +82,20 @@ def test_overlapping_parts_produce_interference():
 def test_interference_pairs_are_unordered_combinations():
     a = (
         Assembly()
-        .add("a", _cube(10))
-        .add("b", _cube(10), location=Location((5, 0, 0)))
-        .add("c", _cube(10), location=Location((5, 5, 0)))
+        .with_part("a", _cube(10))
+        .with_part("b", _cube(10), location=Location((5, 0, 0)))
+        .with_part("c", _cube(10), location=Location((5, 5, 0)))
     )
     pairs = {(i.a, i.b) for i in compute(a).interferences}
     assert pairs == {("a", "b"), ("a", "c"), ("b", "c")}
 
 
 def test_assertions_default_empty():
-    assert compute(Assembly().add("cube", _cube())).assertions == ()
+    assert compute(Assembly().with_part("cube", _cube())).assertions == ()
 
 
 def test_box_topology_counts():
-    d = compute(Assembly().add("cube", _cube(10)))
+    d = compute(Assembly().with_part("cube", _cube(10)))
     p = d.parts["cube"]
     assert p.face_count == 6
     assert p.edge_count == 12
@@ -103,24 +103,24 @@ def test_box_topology_counts():
 
 
 def test_part_surface_area_mm2():
-    d = compute(Assembly().add("cube", _cube(10)))
+    d = compute(Assembly().with_part("cube", _cube(10)))
     assert d.parts["cube"].surface_area_mm2 == approx(600.0)
 
 
 def test_part_center_of_mass_at_origin_for_centered_cube():
-    d = compute(Assembly().add("cube", _cube(10)))
+    d = compute(Assembly().with_part("cube", _cube(10)))
     com = d.parts["cube"].center_of_mass_mm
     assert com == approx((0.0, 0.0, 0.0), abs=1e-9)
 
 
 def test_part_center_of_mass_reflects_placement():
-    a = Assembly().add("cube", _cube(10), location=Location((100, 0, 0)))
+    a = Assembly().with_part("cube", _cube(10), location=Location((100, 0, 0)))
     com = compute(a).parts["cube"].center_of_mass_mm
     assert com == approx((100.0, 0.0, 0.0), abs=1e-9)
 
 
 def test_part_is_valid_true_for_well_formed_solid():
-    d = compute(Assembly().add("cube", _cube(10)))
+    d = compute(Assembly().with_part("cube", _cube(10)))
     assert d.parts["cube"].is_valid is True
 
 
@@ -135,8 +135,8 @@ def test_fused_box_topology_differs_from_single_box():
     fused = p.part
 
     single = _cube(10)
-    d_fused = compute(Assembly().add("fused", fused))
-    d_single = compute(Assembly().add("single", single))
+    d_fused = compute(Assembly().with_part("fused", fused))
+    d_single = compute(Assembly().with_part("single", single))
     assert (
         d_fused.parts["fused"].face_count,
         d_fused.parts["fused"].edge_count,

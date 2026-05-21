@@ -105,7 +105,7 @@ NUT_SIZE = "M8-1.25"
 def lock_nut(size: str = NUT_SIZE) -> Part:
     return HexNut(size=size, fastener_type="iso4032")
 
-assembly = Assembly().add("nut", lock_nut(), location=Location((0, 0, 10)))
+assembly = Assembly().with_part("nut", lock_nut(), location=Location((0, 0, 10)))
 ```
 
 ## Don't inspect bought parts

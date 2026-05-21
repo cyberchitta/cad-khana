@@ -19,8 +19,8 @@ def _cube(size: float = 10):
 def test_check_writes_stl_and_step(tmp_path: Path):
     assembly = (
         Assembly()
-        .add("housing", _cube(20))
-        .add("lid", _cube(20), location=Location((0, 0, 25)))
+        .with_part("housing", _cube(20))
+        .with_part("lid", _cube(20), location=Location((0, 0, 25)))
     )
     result = check(assembly, out=tmp_path)
     names = sorted(path.name for path in result.exports)
@@ -32,12 +32,12 @@ def test_check_writes_stl_and_step(tmp_path: Path):
 
 def test_check_creates_missing_out_directory(tmp_path: Path):
     target = tmp_path / "nested" / "outputs"
-    check(Assembly().add("a", _cube()), out=target)
+    check(Assembly().with_part("a", _cube()), out=target)
     assert target.is_dir()
 
 
 def test_check_writes_mechanism_json(tmp_path: Path):
-    check(Assembly().add("cube", _cube(10)), out=tmp_path)
+    check(Assembly().with_part("cube", _cube(10)), out=tmp_path)
     diag_path = tmp_path / "mechanism.json"
     assert diag_path.exists()
     data = json.loads(diag_path.read_text())
@@ -53,19 +53,19 @@ def test_check_writes_mechanism_json(tmp_path: Path):
 
 
 def test_mechanism_json_has_no_kind_field(tmp_path: Path):
-    check(Assembly().add("cube", _cube(10)), out=tmp_path)
+    check(Assembly().with_part("cube", _cube(10)), out=tmp_path)
     data = json.loads((tmp_path / "mechanism.json").read_text())
     assert "kind" not in data
 
 
 def test_check_records_exports_in_diagnostics(tmp_path: Path):
-    result = check(Assembly().add("cube", _cube()), out=tmp_path)
+    result = check(Assembly().with_part("cube", _cube()), out=tmp_path)
     data = json.loads((tmp_path / "mechanism.json").read_text())
     assert sorted(data["exports"]) == sorted(str(p) for p in result.exports)
 
 
 def test_check_result_carries_diagnostics(tmp_path: Path):
-    result = check(Assembly().add("cube", _cube(10)), out=tmp_path)
+    result = check(Assembly().with_part("cube", _cube(10)), out=tmp_path)
     assert result.diagnostics.status == "ok"
     assert result.diagnostics.parts["cube"].volume_mm3 == approx(1000.0)
 
@@ -73,8 +73,8 @@ def test_check_result_carries_diagnostics(tmp_path: Path):
 def test_check_records_passing_assertion(tmp_path: Path):
     assembly = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((20, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((20, 0, 0)))
         .assert_no_interference("a", "b")
     )
     result = check(assembly, out=tmp_path)
@@ -86,8 +86,8 @@ def test_check_records_passing_assertion(tmp_path: Path):
 def test_check_raises_system_exit_on_assertion_failure(tmp_path: Path):
     assembly = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((5, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((5, 0, 0)))
         .assert_no_interference("a", "b")
     )
     with pytest.raises(SystemExit) as exc:
@@ -98,8 +98,8 @@ def test_check_raises_system_exit_on_assertion_failure(tmp_path: Path):
 def test_check_writes_diagnostics_before_exit_on_failure(tmp_path: Path):
     assembly = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((5, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((5, 0, 0)))
         .assert_no_interference("a", "b")
     )
     with pytest.raises(SystemExit):
@@ -114,8 +114,8 @@ def test_check_writes_diagnostics_before_exit_on_failure(tmp_path: Path):
 def test_check_still_exports_on_assertion_failure(tmp_path: Path):
     assembly = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((5, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((5, 0, 0)))
         .assert_no_interference("a", "b")
     )
     with pytest.raises(SystemExit):
@@ -127,8 +127,8 @@ def test_check_still_exports_on_assertion_failure(tmp_path: Path):
 def test_check_collects_all_assertion_failures(tmp_path: Path):
     assembly = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((5, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((5, 0, 0)))
         .assert_no_interference("a", "b", name="first")
         .assert_clearance("a", "b", min_mm=0.2, name="second")
     )
@@ -143,8 +143,8 @@ def test_check_collects_all_assertion_failures(tmp_path: Path):
 def test_check_records_interferences(tmp_path: Path):
     assembly = (
         Assembly()
-        .add("a", _cube(10))
-        .add("b", _cube(10), location=Location((5, 0, 0)))
+        .with_part("a", _cube(10))
+        .with_part("b", _cube(10), location=Location((5, 0, 0)))
     )
     check(assembly, out=tmp_path)
     data = json.loads((tmp_path / "mechanism.json").read_text())
@@ -157,7 +157,7 @@ def test_check_records_interferences(tmp_path: Path):
 
 
 def test_check_export_parameter_false_skips_stl_step(tmp_path: Path):
-    check(Assembly().add("cube", _cube()), out=tmp_path, export=False)
+    check(Assembly().with_part("cube", _cube()), out=tmp_path, export=False)
     assert not (tmp_path / "assembly.stl").exists()
     assert not (tmp_path / "assembly.step").exists()
     data = json.loads((tmp_path / "mechanism.json").read_text())
@@ -165,6 +165,6 @@ def test_check_export_parameter_false_skips_stl_step(tmp_path: Path):
 
 
 def test_check_export_parameter_true_forces_export(tmp_path: Path):
-    check(Assembly().add("cube", _cube()), out=tmp_path, export=True)
+    check(Assembly().with_part("cube", _cube()), out=tmp_path, export=True)
     assert (tmp_path / "assembly.stl").exists()
     assert (tmp_path / "assembly.step").exists()

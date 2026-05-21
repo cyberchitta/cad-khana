@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from build123d import Color, Compound, Location, Part
+from build123d import Axis, Color, Compound, Location, Part
 
 from cad_khana.mechanism.assertions import (
     Assertion,
@@ -19,6 +19,56 @@ class PlacedPart:
     location: Location
     color: Color | None = None
     material: str | None = None
+
+
+@dataclass(frozen=True)
+class RevoluteJoint:
+    """Single-DOF revolute joint between a parent ``Assembly`` and a
+    ``SubAssembly``. ``axis`` is interpreted in the parent's frame;
+    ``angle_deg`` is the animatable DOF (set per-frame by a factory).
+
+    The composed transform applied to the sub-assembly's local frame is
+    ``RevoluteJoint.transform * SubAssembly.location`` — the joint
+    rotates the placed sub-assembly about ``axis`` in the parent frame.
+    """
+
+    axis: Axis
+    angle_deg: float = 0.0
+
+    def with_angle(self, angle_deg: float) -> "RevoluteJoint":
+        return replace(self, angle_deg=angle_deg)
+
+    @property
+    def transform(self) -> Location:
+        """Rotation by ``angle_deg`` about ``axis`` as a build123d
+        ``Location``. Build123d's three-arg ``Location(position,
+        axis_direction, angle_degrees)`` does axis-angle directly."""
+        pos = self.axis.position
+        d = self.axis.direction
+        return Location((pos.X, pos.Y, pos.Z), (d.X, d.Y, d.Z), self.angle_deg)
+
+
+@dataclass(frozen=True)
+class SubAssembly:
+    """A nested ``Assembly`` placed in its parent's frame.
+
+    ``location`` is the rigid placement of the sub-assembly's local
+    frame origin in the parent frame. ``joint``, if present, layers an
+    animatable DOF on top: the sub-assembly's effective transform
+    becomes ``joint.transform * location``. The sub-assembly's parts
+    (and any further-nested sub-assemblies) compose underneath.
+    """
+
+    name: str
+    assembly: "Assembly"
+    location: Location = Location()
+    joint: RevoluteJoint | None = None
+
+    @property
+    def effective_location(self) -> Location:
+        if self.joint is None:
+            return self.location
+        return self.joint.transform * self.location
 
 
 @dataclass(frozen=True)
@@ -39,9 +89,10 @@ class DetailOverride:
 @dataclass(frozen=True)
 class Assembly:
     parts: tuple[PlacedPart, ...] = ()
+    subassemblies: tuple[SubAssembly, ...] = ()
     assertions: tuple[Assertion, ...] = ()
 
-    def add(
+    def with_part(
         self,
         name: str,
         part: Part,
@@ -52,60 +103,94 @@ class Assembly:
         placed = PlacedPart(name, part, location or Location(), color, material)
         return replace(self, parts=self.parts + (placed,))
 
+    def with_subassembly(
+        self,
+        name: str,
+        assembly: "Assembly",
+        location: Location | None = None,
+        joint: RevoluteJoint | None = None,
+    ) -> "Assembly":
+        sub = SubAssembly(
+            name=name,
+            assembly=assembly,
+            location=location or Location(),
+            joint=joint,
+        )
+        return replace(self, subassemblies=self.subassemblies + (sub,))
+
+    def with_joint(self, sub_name: str, joint: RevoluteJoint) -> "Assembly":
+        """Set the joint on the named sub-assembly. The joint's axis is
+        interpreted in this (parent) Assembly's frame. Raises
+        ``KeyError`` if no sub-assembly with that name exists."""
+        updated, found = [], False
+        for s in self.subassemblies:
+            if s.name == sub_name:
+                updated.append(replace(s, joint=joint))
+                found = True
+            else:
+                updated.append(s)
+        if not found:
+            raise KeyError(f"no sub-assembly named {sub_name!r}")
+        return replace(self, subassemblies=tuple(updated))
+
+    def with_joint_angle(self, sub_name: str, angle_deg: float) -> "Assembly":
+        """Animation hook — update the angle on the named sub-assembly's
+        joint. Raises ``KeyError`` if the sub-assembly is missing,
+        ``ValueError`` if it has no joint yet."""
+        updated, found = [], False
+        for s in self.subassemblies:
+            if s.name == sub_name:
+                if s.joint is None:
+                    raise ValueError(
+                        f"sub-assembly {sub_name!r} has no joint to update"
+                    )
+                updated.append(replace(s, joint=s.joint.with_angle(angle_deg)))
+                found = True
+            else:
+                updated.append(s)
+        if not found:
+            raise KeyError(f"no sub-assembly named {sub_name!r}")
+        return replace(self, subassemblies=tuple(updated))
+
     def with_materials(self, mapping: dict[str, str]) -> "Assembly":
         """Return a copy with each named part's material replaced by the
-        value in ``mapping``. Parts not in the mapping are unchanged.
+        value in ``mapping``. Recurses into sub-assemblies. Parts not in
+        the mapping are unchanged.
 
         Symmetric to ``chitra_cad.Scene.with_materials``: use this layer
         for cross-consumer experiments (render + FEA both read from the
         ``Assembly``); use the ``Scene`` layer for render-only sweeps.
         """
-        updated = tuple(
+        new_parts = tuple(
             replace(p, material=mapping.get(p.name, p.material)) for p in self.parts
         )
-        return replace(self, parts=updated)
+        new_subs = tuple(
+            replace(s, assembly=s.assembly.with_materials(mapping))
+            for s in self.subassemblies
+        )
+        return replace(self, parts=new_parts, subassemblies=new_subs)
 
     def with_detailed_geometry(
         self, mapping: dict[str, "DetailOverride | Part"]
     ) -> "Assembly":
         """Return a copy with detailed geometry swapped or appended.
 
-        Used for high-fidelity passes (render, FEA, kinematics) that
-        need real profiles or fasteners over the cheap primitives
-        (``Box``, ``Cylinder``) the geometric-iteration loop runs on.
-        Parallel to ``with_materials``: same recursion at every level,
-        single concern per layer.
+        Swaps recurse — a matching name anywhere in the hierarchy gets
+        its part replaced in-place (preserving placement / material /
+        color unless the override supplies them). Additions land at the
+        top level only, and require an explicit ``location``.
 
-        Names that match an existing ``PlacedPart`` swap the part
-        shape. ``location`` / ``material`` / ``color`` on the existing
-        placement are preserved unless the override explicitly supplies
-        them. Names with no match append a new ``PlacedPart`` — for
-        additions, ``location`` is required (material/color optional).
-
-        A bare ``Part`` value is shorthand for
-        ``DetailOverride(part=p)`` — convenient for the common
-        swap-only case where placement carries through.
+        A bare ``Part`` value is shorthand for ``DetailOverride(part=p)``.
         """
         overrides: dict[str, DetailOverride] = {
             name: (v if isinstance(v, DetailOverride) else DetailOverride(part=v))
             for name, v in mapping.items()
         }
-        existing = {p.name for p in self.parts}
-        swapped = tuple(
-            replace(
-                p,
-                part=overrides[p.name].part,
-                location=overrides[p.name].location or p.location,
-                material=overrides[p.name].material or p.material,
-                color=overrides[p.name].color or p.color,
-            )
-            if p.name in overrides
-            else p
-            for p in self.parts
-        )
+        swapped = self._swap_detail(overrides)
+        all_names = swapped._all_part_names()
         additions: list[PlacedPart] = []
         for name, ov in overrides.items():
-            if name in existing:
+            if name in all_names:
                 continue
             if ov.location is None:
                 raise ValueError(
@@ -121,7 +206,32 @@ class Assembly:
                     material=ov.material,
                 )
             )
-        return replace(self, parts=swapped + tuple(additions))
+        return replace(swapped, parts=swapped.parts + tuple(additions))
+
+    def _swap_detail(self, overrides: dict[str, "DetailOverride"]) -> "Assembly":
+        new_parts = tuple(
+            replace(
+                p,
+                part=overrides[p.name].part,
+                location=overrides[p.name].location or p.location,
+                material=overrides[p.name].material or p.material,
+                color=overrides[p.name].color or p.color,
+            )
+            if p.name in overrides
+            else p
+            for p in self.parts
+        )
+        new_subs = tuple(
+            replace(s, assembly=s.assembly._swap_detail(overrides))
+            for s in self.subassemblies
+        )
+        return replace(self, parts=new_parts, subassemblies=new_subs)
+
+    def _all_part_names(self) -> set[str]:
+        names = {p.name for p in self.parts}
+        for s in self.subassemblies:
+            names.update(s.assembly._all_part_names())
+        return names
 
     def assert_no_interference(
         self, a: str, b: str, name: str | None = None
@@ -169,5 +279,27 @@ class Assembly:
         return replace(self, assertions=self.assertions + (assertion,))
 
     @property
+    def placed_parts(self) -> tuple[PlacedPart, ...]:
+        """Flat walk over the assembly tree. Each yielded ``PlacedPart``
+        carries the original part + name, with ``location`` composed
+        through the parent chain so it reflects the world-frame placement
+        regardless of nesting depth.
+
+        Use this when a consumer needs the leaf view (interference checks,
+        diagnostics, name-keyed lookups across the whole assembly). The
+        underlying tree (``parts`` / ``subassemblies``) stays the source
+        of truth for animation channels and hierarchy emission.
+        """
+        out: list[PlacedPart] = list(self.parts)
+        for sub in self.subassemblies:
+            eff = sub.effective_location
+            for inner in sub.assembly.placed_parts:
+                out.append(replace(inner, location=eff * inner.location))
+        return tuple(out)
+
+    @property
     def compound(self) -> Compound:
-        return Compound(children=[p.part.moved(p.location) for p in self.parts])
+        children = [p.part.moved(p.location) for p in self.parts]
+        for sub in self.subassemblies:
+            children.append(sub.assembly.compound.moved(sub.effective_location))
+        return Compound(children=children)

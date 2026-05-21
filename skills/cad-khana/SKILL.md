@@ -111,7 +111,7 @@ Keep four sections, in order:
    propagates through everything.
 2. **Pure part functions** — each returns a `Part`. Take parameters with
    defaults; no hidden globals, no mutation.
-3. **Assembly composition** — build an `Assembly` by chaining `.add()`
+3. **Assembly composition** — build an `Assembly` by chaining `.with_part()`
    and `.assert_*()` calls. Call `check(assembly, out="outputs")`.
 4. **Per-part printability** — one `inspect(part, method=FDM(), name=...)`
    call per printed part.
@@ -130,7 +130,7 @@ free.
    printed body, taking parameters with defaults. No globals, no
    placement inside the function.
 2. **Wire the assembly with explicit `Location`s.** Compose with
-   `Assembly().add(name, part(), location=…)`. Names are stable IDs
+   `Assembly().with_part(name, part(), location=…)`. Names are stable IDs
    the assertions and diagnostics reference.
 3. **Add `assert_no_interference` between *every* candidate-overlap
    pair immediately** — before any clearance work. The cost of
@@ -177,8 +177,8 @@ def pin(length: float = WIDTH, d: float = PIN_D) -> Part:
 # 3. assembly + mechanism assertions
 assembly = (
     Assembly()
-    .add("bracket", bracket())
-    .add("pin", pin(), location=Location((0, 0, HEIGHT / 2)) * Rot(90, 0, 0))
+    .with_part("bracket", bracket())
+    .with_part("pin", pin(), location=Location((0, 0, HEIGHT / 2)) * Rot(90, 0, 0))
     .assert_no_interference("pin", "bracket")
 )
 
@@ -207,11 +207,11 @@ For build123d's selector operators (`>`, `<`, `>>`, `<<`, `|`, `@`, `%`,
 - **Default arguments = the intended top-level parameter.** `housing()`
   with no args should return the current design's housing. Callers who
   want to override a single dimension pass it by keyword.
-- **Use `Location` on `.add()` for placement, not inside the part.**
+- **Use `Location` on `.with_part()` for placement, not inside the part.**
   Part functions build geometry at a canonical pose (typically centered
   on origin); the assembly places each part in world coordinates.
-- **Colors are a viewer/render aid, set at the placement.** `.add()`
-  takes an optional `color=Color(...)` that `khana view` honors. Set it
+- **Colors are a viewer/render aid, set at the placement.**
+  `.with_part()` takes an optional `color=Color(...)` that `khana view` honors. Set it
   at the placement when the same part function is reused multiple times
   with different colors (e.g. four identical brackets, one red per
   corner); set `part.color` inside the part function only when the
@@ -219,10 +219,10 @@ For build123d's selector operators (`>`, `<`, `>>`, `<<`, `|`, `@`, `%`,
   affect diagnostics and are ignored by `khana draw`'s hidden-line
   drawings and by STEP export.
 - **Material is a first-class field on `PlacedPart`, parallel to
-  color.** `.add()` takes an optional `material="<token>"` string that
+  color.** `.with_part()` takes an optional `material="<token>"` string that
   downstream consumers (chitra-cad's photo-real renderer; future FEA /
   kinematics) resolve against their own catalogs. Same intrinsic-vs-
-  placement rule as color: set it at the `.add()` site when the same
+  placement rule as color: set it at the `.with_part()` site when the same
   part body gets placed with different materials (or when the parent
   is the natural place to bind it); push it inside the part-builder
   only if the part has one intrinsic material everywhere it's used;
@@ -259,7 +259,7 @@ For build123d's selector operators (`>`, `<`, `>>`, `<<`, `|`, `@`, `%`,
 - **Algebraic mode operators (`+`, `-`, `*`, `Pos`, `Rot`) read more
   cleanly than `BuildPart` for short shapes** — prefer them unless the
   BuildPart context buys something (sketches, workplanes, patterns).
-- **Name parts with stable identifiers** when you add them — assertions
+- **Name parts with stable identifiers** when you place them — assertions
   reference these names, and the JSON diagnostics report per-name data.
 - **Inspect only the parts you will actually print.** Stand-ins
   (extrusion stubs, shafts, fixed hardware) don't need `inspect()`;

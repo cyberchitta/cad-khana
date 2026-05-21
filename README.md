@@ -152,8 +152,8 @@ def lever(length: float = 25):
 
 assembly = (
     Assembly()
-    .add("housing", housing(), location=Location((0, 0, 0)))
-    .add("lever",   lever(),   location=Location((0, 0, 12)))
+    .with_part("housing", housing(), location=Location((0, 0, 0)))
+    .with_part("lever",   lever(),   location=Location((0, 0, 12)))
     .assert_no_interference("lever", "housing")
     .assert_clearance("lever", "housing", min_mm=0.2)
     .assert_min_wall("housing", min_mm=1.5)

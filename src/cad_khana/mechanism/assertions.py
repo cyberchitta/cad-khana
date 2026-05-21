@@ -96,5 +96,5 @@ def _placed(p: PlacedPart) -> Part:
 
 
 def evaluate(assembly: Assembly) -> tuple[AssertionResult, ...]:
-    parts = {p.name: _placed(p) for p in assembly.parts}
+    parts = {p.name: _placed(p) for p in assembly.placed_parts}
     return tuple(a.evaluate(parts) for a in assembly.assertions)

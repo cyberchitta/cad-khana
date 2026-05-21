@@ -17,8 +17,8 @@ def test_empty_assembly_produces_no_results():
 def test_no_interference_passes_for_separated_parts():
     a = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((20, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((20, 0, 0)))
         .assert_no_interference("a", "b")
     )
     (result,) = evaluate(a)
@@ -29,8 +29,8 @@ def test_no_interference_passes_for_separated_parts():
 def test_no_interference_passes_for_face_touching_parts():
     a = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((10, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((10, 0, 0)))
         .assert_no_interference("a", "b")
     )
     assert evaluate(a)[0].passed
@@ -39,8 +39,8 @@ def test_no_interference_passes_for_face_touching_parts():
 def test_no_interference_fails_for_overlapping_parts():
     a = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((5, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((5, 0, 0)))
         .assert_no_interference("a", "b")
     )
     result = evaluate(a)[0]
@@ -51,8 +51,8 @@ def test_no_interference_fails_for_overlapping_parts():
 def test_no_interference_default_name_contains_both_parts():
     a = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((20, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((20, 0, 0)))
         .assert_no_interference("a", "b")
     )
     name = evaluate(a)[0].name
@@ -62,8 +62,8 @@ def test_no_interference_default_name_contains_both_parts():
 def test_no_interference_custom_name_is_respected():
     a = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((20, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((20, 0, 0)))
         .assert_no_interference("a", "b", name="custom_rule")
     )
     assert evaluate(a)[0].name == "custom_rule"
@@ -72,8 +72,8 @@ def test_no_interference_custom_name_is_respected():
 def test_clearance_passes_when_gap_exceeds_min():
     a = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((20, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((20, 0, 0)))
         .assert_clearance("a", "b", min_mm=5)
     )
     result = evaluate(a)[0]
@@ -84,8 +84,8 @@ def test_clearance_passes_when_gap_exceeds_min():
 def test_clearance_fails_when_gap_below_min():
     a = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((12, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((12, 0, 0)))
         .assert_clearance("a", "b", min_mm=5)
     )
     result = evaluate(a)[0]
@@ -96,8 +96,8 @@ def test_clearance_fails_when_gap_below_min():
 def test_clearance_fails_when_parts_touch():
     a = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((10, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((10, 0, 0)))
         .assert_clearance("a", "b", min_mm=0.2)
     )
     assert not evaluate(a)[0].passed
@@ -106,8 +106,8 @@ def test_clearance_fails_when_parts_touch():
 def test_clearance_fails_when_parts_interfere():
     a = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((5, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((5, 0, 0)))
         .assert_clearance("a", "b", min_mm=0.2)
     )
     assert not evaluate(a)[0].passed
@@ -116,8 +116,8 @@ def test_clearance_fails_when_parts_interfere():
 def test_interference_passes_for_overlapping_parts():
     a = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((5, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((5, 0, 0)))
         .assert_interference("a", "b")
     )
     result = evaluate(a)[0]
@@ -128,8 +128,8 @@ def test_interference_passes_for_overlapping_parts():
 def test_interference_fails_for_separated_parts():
     a = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((20, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((20, 0, 0)))
         .assert_interference("a", "b")
     )
     result = evaluate(a)[0]
@@ -143,8 +143,8 @@ def test_interference_fails_for_face_touching_parts():
     # no longer there.
     a = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((10, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((10, 0, 0)))
         .assert_interference("a", "b")
     )
     assert not evaluate(a)[0].passed
@@ -153,8 +153,8 @@ def test_interference_fails_for_face_touching_parts():
 def test_interference_reason_appears_in_failure_detail():
     a = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((20, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((20, 0, 0)))
         .assert_interference("a", "b", reason="junction design pending")
     )
     result = evaluate(a)[0]
@@ -165,8 +165,8 @@ def test_interference_reason_appears_in_failure_detail():
 def test_interference_default_name_contains_both_parts():
     a = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((5, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((5, 0, 0)))
         .assert_interference("a", "b")
     )
     name = evaluate(a)[0].name
@@ -176,8 +176,8 @@ def test_interference_default_name_contains_both_parts():
 def test_interference_custom_name_is_respected():
     a = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((5, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((5, 0, 0)))
         .assert_interference("a", "b", name="custom_rule")
     )
     assert evaluate(a)[0].name == "custom_rule"
@@ -186,8 +186,8 @@ def test_interference_custom_name_is_respected():
 def test_multiple_assertions_all_evaluated_in_order():
     a = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((20, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((20, 0, 0)))
         .assert_no_interference("a", "b", name="first")
         .assert_clearance("a", "b", min_mm=5, name="second")
     )
@@ -199,8 +199,8 @@ def test_multiple_assertions_all_evaluated_in_order():
 def test_failures_and_passes_coexist():
     a = (
         Assembly()
-        .add("a", _cube())
-        .add("b", _cube(), location=Location((5, 0, 0)))
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((5, 0, 0)))
         .assert_no_interference("a", "b")
         .assert_clearance("a", "b", min_mm=0.2)
     )

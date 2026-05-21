@@ -26,7 +26,7 @@ def test_build_runs_successful_script(tmp_path: Path):
         "\n"
         "with BuildPart() as p:\n"
         "    Box(10, 10, 10)\n"
-        f"check(Assembly().add('cube', p.part), out=r'{out}')\n"
+        f"check(Assembly().with_part('cube', p.part), out=r'{out}')\n"
     )
     result = runner.invoke(app, ["build", str(script)])
     assert result.exit_code == 0, result.output
@@ -58,8 +58,8 @@ def test_view_pushes_named_parts_to_viewer(
         "    Box(5, 5, 5)\n"
         "check(\n"
         "    Assembly()\n"
-        "        .add('big', a.part)\n"
-        "        .add('small', b.part, location=Location((20, 0, 0))),\n"
+        "        .with_part('big', a.part)\n"
+        "        .with_part('small', b.part, location=Location((20, 0, 0))),\n"
         f"    out=r'{out}',\n"
         ")\n"
     )
@@ -84,7 +84,7 @@ def test_build_does_not_push_to_viewer(
         "\n"
         "with BuildPart() as p:\n"
         "    Box(10, 10, 10)\n"
-        f"check(Assembly().add('cube', p.part), out=r'{out}')\n"
+        f"check(Assembly().with_part('cube', p.part), out=r'{out}')\n"
     )
     result = runner.invoke(app, ["build", str(script)])
     assert result.exit_code == 0, result.output
@@ -101,7 +101,7 @@ def test_check_writes_diagnostics_without_exports(tmp_path: Path):
         "\n"
         "with BuildPart() as p:\n"
         "    Box(10, 10, 10)\n"
-        f"check(Assembly().add('cube', p.part), out=r'{out}')\n"
+        f"check(Assembly().with_part('cube', p.part), out=r'{out}')\n"
     )
     result = runner.invoke(app, ["check", str(script)])
     assert result.exit_code == 0, result.output
@@ -122,7 +122,7 @@ def test_build_after_check_still_exports(tmp_path: Path):
         "\n"
         "with BuildPart() as p:\n"
         "    Box(10, 10, 10)\n"
-        f"check(Assembly().add('cube', p.part), out=r'{out}')\n"
+        f"check(Assembly().with_part('cube', p.part), out=r'{out}')\n"
     )
     runner.invoke(app, ["check", str(script)])
     result = runner.invoke(app, ["build", str(script)])
@@ -142,7 +142,7 @@ def test_render_writes_png_views(tmp_path: Path):
         "\n"
         "with BuildPart() as p:\n"
         "    Box(10, 10, 10)\n"
-        f"check(Assembly().add('cube', p.part), out=r'{out}')\n"
+        f"check(Assembly().with_part('cube', p.part), out=r'{out}')\n"
     )
     result = runner.invoke(
         app, ["render", str(script), "--views-dir", str(views)]
@@ -181,7 +181,7 @@ def test_inspect_runs_from_script(tmp_path: Path):
         "\n"
         "with BuildPart() as p:\n"
         "    Box(10, 10, 10)\n"
-        f"check(Assembly().add('cube', p.part), out=r'{out}')\n"
+        f"check(Assembly().with_part('cube', p.part), out=r'{out}')\n"
         f"inspect(p.part, method=FDM(wall_min_mm=1.0, overhang_max_deg=95.0), out=r'{out}', name='cube')\n"
     )
     result = runner.invoke(app, ["check", str(script)])
@@ -210,7 +210,7 @@ def test_relative_out_anchors_to_script_directory(
         "\n"
         "with BuildPart() as p:\n"
         "    Box(10, 10, 10)\n"
-        "check(Assembly().add('cube', p.part), out='outputs')\n"
+        "check(Assembly().with_part('cube', p.part), out='outputs')\n"
         "inspect(p.part, method=FDM(wall_min_mm=1.0, overhang_max_deg=95.0),"
         " out='outputs', name='cube')\n"
     )
@@ -266,7 +266,7 @@ def _cube_script(out: Path) -> str:
         "\n"
         "with BuildPart() as p:\n"
         "    Box(10, 10, 10)\n"
-        f"check(Assembly().add('cube', p.part), out=r'{out}')\n"
+        f"check(Assembly().with_part('cube', p.part), out=r'{out}')\n"
     )
 
 
@@ -372,7 +372,7 @@ def _cylinder_script(out: Path) -> str:
         "\n"
         "with BuildPart() as p:\n"
         "    Cylinder(radius=5, height=10)\n"
-        f"check(Assembly().add('cyl', p.part), out=r'{out}')\n"
+        f"check(Assembly().with_part('cyl', p.part), out=r'{out}')\n"
     )
 
 
@@ -498,8 +498,8 @@ def _two_part_script(out: Path) -> str:
         "    Box(2, 2, 2)\n"
         "check(\n"
         "    Assembly()\n"
-        "        .add('big', a.part)\n"
-        "        .add('small', b.part, location=Location((100, 0, 0))),\n"
+        "        .with_part('big', a.part)\n"
+        "        .with_part('small', b.part, location=Location((100, 0, 0))),\n"
         f"    out=r'{out}',\n"
         ")\n"
     )

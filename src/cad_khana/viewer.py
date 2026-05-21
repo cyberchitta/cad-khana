@@ -17,8 +17,9 @@ def auto_enabled() -> bool:
 
 
 def push(assembly: Assembly) -> None:
-    parts = [p.part.moved(p.location) for p in assembly.parts]
-    names = [p.name for p in assembly.parts]
-    colors = [p.color or p.part.color for p in assembly.parts]
+    placed = assembly.placed_parts
+    parts = [p.part.moved(p.location) for p in placed]
+    names = [p.name for p in placed]
+    colors = [p.color or p.part.color for p in placed]
     extras = {"colors": colors} if any(c is not None for c in colors) else {}
     show(*parts, names=names, **extras)

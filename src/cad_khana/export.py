@@ -39,6 +39,22 @@ def export_assembly(
     return (stl_path, step_path)
 
 
+def _structural_groups(assembly: Assembly) -> list[list[str]]:
+    """Walk the subassembly tree; each jointed sub-assembly contributes
+    a group of its leaf part names. Recurses into nested sub-assemblies
+    so a joint at any depth surfaces a group. Returns ``[]`` for a flat
+    assembly — the caller then falls back to trajectory inference.
+    """
+    groups: list[list[str]] = []
+    for sub in assembly.subassemblies:
+        if sub.joint is not None:
+            names = [p.name for p in sub.assembly.placed_parts]
+            if names:
+                groups.append(names)
+        groups.extend(_structural_groups(sub.assembly))
+    return groups
+
+
 def export_glb(
     assembly: Assembly,
     out: Path,
@@ -88,7 +104,13 @@ def export_glb(
 
     to_yup = Rot(-90, 0, 0) if y_up else None
 
-    for placed in assembly.parts:
+    # ``placed_parts`` walks any sub-assembly tree, composing the
+    # joint+placement chain so leaf parts arrive at their world-frame
+    # position. Static export doesn't need to preserve the hierarchy in
+    # the glTF scene graph — that work happens in
+    # ``export_animated_glb`` where the structural groups give the
+    # animation channels their handles.
+    for placed in assembly.placed_parts:
         part = placed.part.moved(placed.location)
         if to_yup is not None:
             part = to_yup * part
@@ -231,15 +253,17 @@ def export_animated_glb(
             or abs(orr.X - op.X) > tol or abs(orr.Y - op.Y) > tol or abs(orr.Z - op.Z) > tol
         )
 
-    ref_locs = {p.name: p.location for p in ref_assembly.parts}
+    ref_placed = ref_assembly.placed_parts
+    ref_locs = {p.name: p.location for p in ref_placed}
     probe = factory(ts_list[len(ts_list) // 2])
+    probe_placed = probe.placed_parts
     dynamic = {
-        p.name for p in probe.parts
+        p.name for p in probe_placed
         if p.name in ref_locs and _moved(ref_locs[p.name], p.location)
     }
     violators = [
         (p.name, str(p.part.location))
-        for p in ref_assembly.parts
+        for p in ref_placed
         if p.name in dynamic and not p.part.location.wrapped.IsIdentity()
     ]
     if violators:
@@ -254,7 +278,7 @@ def export_animated_glb(
             f"the transform out of the part-creation function and into the "
             f"assembly placement. e.g. for `def thing(): return Rot(0, 20, 0) "
             f"* Box(L, W, T)`, return a plain `Box(L, W, T)` and bake the "
-            f"`Rot` into `location=` at `.add(...)`. First offender: "
+            f"`Rot` into `location=` at `.with_part(...)`. First offender: "
             f"{violators[0][0]!r} has part.location = {violators[0][1]}."
         )
 
@@ -269,14 +293,14 @@ def export_animated_glb(
     )
 
     to_yup = Rot(-90, 0, 0) if y_up else None
-    ref_names = {p.name for p in ref_assembly.parts}
+    ref_names = {p.name for p in ref_placed}
     samples: dict[str, list[tuple[tuple[float, float, float], tuple[float, float, float, float]]]] = {
         name: [] for name in ref_names
     }
     for t in ts_list:
         a = factory(t)
         seen: set[str] = set()
-        for placed in a.parts:
+        for placed in a.placed_parts:
             if placed.name not in ref_names:
                 continue
             loc = placed.location if to_yup is None else to_yup * placed.location
@@ -301,12 +325,24 @@ def export_animated_glb(
     for ss in samples.values():
         _align_quaternion_hemispheres(ss)
 
-    # Group parts whose relative-trajectory (T[i]·T[0]⁻¹) matches across
-    # frames. Each group becomes a single parent node carrying the
-    # animation, with children inheriting the parent's slerp'd rotation —
-    # eliminating the chord-vs-arc drift that per-channel TRS lerp
-    # produces on orbiting parts at low frame counts.
-    groups, group_trajectories = _classify_and_group(samples, eps_pos_mm, eps_quat)
+    # When the assembly carries a sub-assembly tree with joints, the
+    # rigid-body groups are *given* by structure — no trajectory
+    # inference needed. The relative trajectory is still derived from
+    # the sampled absolute poses of one representative member (any
+    # member of the group works; they all share the joint's motion by
+    # construction). Flat assemblies (no sub-assemblies, no joints —
+    # e.g. m03's current path) fall through to `_classify_and_group`,
+    # which infers groups by trajectory match across all dynamic parts.
+    structural = _structural_groups(ref_assembly)
+    if structural:
+        groups = [
+            [n for n in g if n in ref_names and len(samples[n]) == len(ts_list)]
+            for g in structural
+        ]
+        groups = [g for g in groups if g]
+        group_trajectories = [_relative_trajectory(samples[g[0]]) for g in groups]
+    else:
+        groups, group_trajectories = _classify_and_group(samples, eps_pos_mm, eps_quat)
     for traj in group_trajectories:
         _align_quaternion_hemispheres(traj)
 
