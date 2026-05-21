@@ -23,6 +23,8 @@ from cad_khana.mechanism.assembly import Assembly
 _DEFAULT_LINEAR_TOLERANCE_MM = 0.1
 _DEFAULT_ANGULAR_TOLERANCE_RAD = 0.5
 _DEFAULT_DRACO_LEVEL = 7
+_EPS_POS_MM = 1e-4
+_EPS_QUAT = 1e-6
 
 
 def export_assembly(
@@ -227,8 +229,6 @@ def export_animated_glb(
     y_up: bool = True,
     draco: bool = True,
     draco_level: int = _DEFAULT_DRACO_LEVEL,
-    eps_pos_mm: float = 1e-4,
-    eps_quat: float = 1e-6,
     animation_name: str = "default",
 ) -> Path:
     """Sweep ``factory(t)`` over ``ts`` and write an animated glTF.
@@ -238,9 +238,17 @@ def export_animated_glb(
     at every ``t`` and injects per-node translation + rotation samplers
     (``LINEAR`` interpolation) targeting the matching node by name.
 
-    Parts whose location is constant across ``ts`` (within
-    ``eps_pos_mm`` / ``eps_quat``) get no animation channel — the static
-    node TRS from ``export_glb`` carries them.
+    Animation grouping is driven by the assembly's sub-assembly tree:
+    each jointed ``with_subassembly(...)`` contributes one ``animgroup_N``
+    node that carries the shared relative-trajectory animation, with the
+    group's parts re-parented as children. Static parts get no animation
+    channel — the frame-0 TRS from ``export_glb`` carries them.
+
+    Flat assemblies (no jointed sub-assemblies) produce no animgroups;
+    any motion in such an assembly falls through to per-part TRS
+    samplers, which lerp between keyframes and chord-drift on orbital
+    motion. Express orbital motion as a ``RevoluteJoint`` on a
+    sub-assembly to get the correct slerp arc.
 
     glTF time values are spread evenly over ``duration_s`` seconds
     regardless of what ``t`` units mean to the factory. With
@@ -353,24 +361,21 @@ def export_animated_glb(
     for ss in samples.values():
         _align_quaternion_hemispheres(ss)
 
-    # When the assembly carries a sub-assembly tree with joints, the
-    # rigid-body groups are *given* by structure — no trajectory
-    # inference needed. The relative trajectory is still derived from
-    # the sampled absolute poses of one representative member (any
-    # member of the group works; they all share the joint's motion by
-    # construction). Flat assemblies (no sub-assemblies, no joints —
-    # e.g. m03's current path) fall through to `_classify_and_group`,
-    # which infers groups by trajectory match across all dynamic parts.
+    # Rigid-body groups are *given* by the sub-assembly tree: each
+    # jointed `with_subassembly(...)` becomes one group. The relative
+    # trajectory is derived from one representative member's sampled
+    # absolute pose (any member works — they share the joint's motion
+    # by construction). Flat assemblies produce no groups; any motion
+    # there falls through to the per-part TRS samplers in
+    # `_inject_animation_into_glb` (correct for static / pure-translation /
+    # in-place-rotation; chord-drifts on orbital motion).
     structural = _structural_groups(ref_assembly)
-    if structural:
-        groups = [
-            [n for n in g if n in ref_names and len(samples[n]) == len(ts_list)]
-            for g in structural
-        ]
-        groups = [g for g in groups if g]
-        group_trajectories = [_relative_trajectory(samples[g[0]]) for g in groups]
-    else:
-        groups, group_trajectories = _classify_and_group(samples, eps_pos_mm, eps_quat)
+    groups = [
+        [n for n in g if n in ref_names and len(samples[n]) == len(ts_list)]
+        for g in structural
+    ]
+    groups = [g for g in groups if g]
+    group_trajectories = [_relative_trajectory(samples[g[0]]) for g in groups]
     for traj in group_trajectories:
         _align_quaternion_hemispheres(traj)
 
@@ -381,8 +386,6 @@ def export_animated_glb(
         groups=groups,
         group_trajectories=group_trajectories,
         times_s=times_s,
-        eps_pos_mm=eps_pos_mm,
-        eps_quat=eps_quat,
         animation_name=animation_name,
     )
 
@@ -462,87 +465,12 @@ def _relative_trajectory(
     return out
 
 
-def _classify_and_group(
-    samples: dict[str, list[tuple[tuple[float, float, float], tuple[float, float, float, float]]]],
-    eps_pos_mm: float,
-    eps_quat: float,
-) -> tuple[
-    list[list[str]],
-    list[list[tuple[tuple[float, float, float], tuple[float, float, float, float]]]],
-]:
-    """Group parts whose absolute pose varies in BOTH translation and
-    orientation, by identical relative trajectory.
-
-    Chord drift on per-channel TRS lerp only shows up when a part's
-    world-space origin follows a curved path — i.e. when both its
-    rotation AND translation vary across frames. Parts that only
-    translate (linear motion = lerp is exact) or only rotate in place
-    (constant translation = no chord) are left to the per-part TRS
-    path, which handles them correctly. Static parts are likewise
-    ignored.
-
-    Two parts share a group when their relative-trajectory entries
-    agree frame-by-frame within ``eps_pos_mm`` / ``eps_quat``. The
-    quaternion match accounts for the ``q ~ -q`` ambiguity.
-
-    Returns ``(groups, group_trajectories)`` where each group is a list
-    of part names and ``group_trajectories[i]`` is the relative
-    trajectory shared by ``groups[i]`` (taken from its first member).
-    """
-
-    def _moves_trans(ss: list[tuple[tuple[float, ...], tuple[float, ...]]]) -> bool:
-        p0 = ss[0][0]
-        return any(
-            abs(p[k] - p0[k]) > eps_pos_mm for p, _ in ss[1:] for k in range(3)
-        )
-
-    def _moves_rot(ss: list[tuple[tuple[float, ...], tuple[float, ...]]]) -> bool:
-        q0 = ss[0][1]
-        return any(
-            sum((q[k] - q0[k]) ** 2 for k in range(4)) > eps_quat
-            for _, q in ss[1:]
-        )
-
-    candidates = [
-        name for name, ss in samples.items()
-        if _moves_trans(ss) and _moves_rot(ss)
-    ]
-    relatives = {name: _relative_trajectory(samples[name]) for name in candidates}
-
-    def _trajectories_match(
-        a: list[tuple[tuple[float, ...], tuple[float, ...]]],
-        b: list[tuple[tuple[float, ...], tuple[float, ...]]],
-    ) -> bool:
-        for (p_a, q_a), (p_b, q_b) in zip(a, b):
-            if any(abs(p_a[k] - p_b[k]) > eps_pos_mm for k in range(3)):
-                return False
-            dot = sum(q_a[k] * q_b[k] for k in range(4))
-            if 1.0 - abs(dot) > eps_quat:
-                return False
-        return True
-
-    groups: list[list[str]] = []
-    group_trajectories: list[list[tuple[tuple[float, ...], tuple[float, ...]]]] = []
-    for name in candidates:
-        rel = relatives[name]
-        for g, g_rel in zip(groups, group_trajectories):
-            if _trajectories_match(rel, g_rel):
-                g.append(name)
-                break
-        else:
-            groups.append([name])
-            group_trajectories.append(rel)
-    return groups, group_trajectories
-
-
 def _inject_animation_into_glb(
     glb_path: Path,
     samples: dict[str, list[tuple[tuple[float, ...], tuple[float, ...]]]],
     groups: list[list[str]],
     group_trajectories: list[list[tuple[tuple[float, ...], tuple[float, ...]]]],
     times_s: list[float],
-    eps_pos_mm: float,
-    eps_quat: float,
     animation_name: str,
 ) -> None:
     """Append an ``animation`` block to an existing GLB written by
@@ -665,7 +593,7 @@ def _inject_animation_into_glb(
         )
         p0_rel = traj[0][0]
         rel_moves_trans = any(
-            abs(p[k] - p0_rel[k]) > eps_pos_mm for p, _ in traj[1:] for k in range(3)
+            abs(p[k] - p0_rel[k]) > _EPS_POS_MM for p, _ in traj[1:] for k in range(3)
         )
         if rel_moves_trans:
             _add_sampler_channel(
@@ -684,10 +612,10 @@ def _inject_animation_into_glb(
         p0 = ss[0][0]
         q0 = ss[0][1]
         moves_trans = any(
-            abs(p[k] - p0[k]) > eps_pos_mm for p, _ in ss[1:] for k in range(3)
+            abs(p[k] - p0[k]) > _EPS_POS_MM for p, _ in ss[1:] for k in range(3)
         )
         moves_rot = any(
-            sum((q[k] - q0[k]) ** 2 for k in range(4)) > eps_quat
+            sum((q[k] - q0[k]) ** 2 for k in range(4)) > _EPS_QUAT
             for _, q in ss[1:]
         )
 
