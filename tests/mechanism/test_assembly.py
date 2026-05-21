@@ -254,6 +254,41 @@ def test_revolute_joint_transform_about_z_rotates_xy():
     assert bb.center().Y == pytest.approx(10.0, abs=1e-6)
 
 
+def test_revolute_joint_transform_about_offset_axis_is_pivot_conjugation():
+    # Axis along +Z through (5, 0, 0). 180° should map a point at
+    # (10, 0, 0) (5 mm past the pivot in +X) onto (0, 0, 0)
+    # (5 mm before the pivot in -X), not onto (-10, 0, 0) which is
+    # what a rotate-around-origin-then-translate Location would give.
+    j = RevoluteJoint(axis=Axis((5, 0, 0), (0, 0, 1)), angle_deg=180.0)
+    p = Pos(10, 0, 0) * _cube()
+    bb = p.moved(j.transform).bounding_box()
+    assert bb.center().X == pytest.approx(0.0, abs=1e-6)
+    assert bb.center().Y == pytest.approx(0.0, abs=1e-6)
+    assert bb.center().Z == pytest.approx(0.0, abs=1e-6)
+
+
+def test_revolute_joint_transform_about_offset_x_axis_tilts_outer_edge_down():
+    # m03-shape sanity: rotation about +X through (0, -65, -22.5) by
+    # +30°. Point at (0, -185, 0) — the platform's far outer edge —
+    # should tip in (Y less negative) and DOWN (Z negative); the
+    # screw-form Location would put it nowhere near.
+    j = RevoluteJoint(
+        axis=Axis((0, -65, -22.5), (1, 0, 0)), angle_deg=30.0
+    )
+    p = Pos(0, -185, 0) * _cube()
+    bb = p.moved(j.transform).bounding_box()
+    # Expected from T·R·T⁻¹ closed-form:
+    #   (p - pivot) = (0, -120, 22.5)
+    #   R(+X, 30°)·(0, -120, 22.5) ≈ (0, -115.173, -40.514)
+    #   + pivot                    ≈ (0, -180.173, -63.014)
+    # (Tolerance is loose-ish because bb.center() of a rotated cube is
+    # the AABB centroid, which is the rotated centroid only to within
+    # the mesher's bounding-box precision.)
+    assert bb.center().X == pytest.approx(0.0, abs=1e-3)
+    assert bb.center().Y == pytest.approx(-180.173, abs=1e-2)
+    assert bb.center().Z == pytest.approx(-63.014, abs=1e-2)
+
+
 def test_with_joint_attaches_joint_to_named_subassembly():
     leaf = Assembly().with_part("inner", _cube())
     parent = (
@@ -288,6 +323,43 @@ def test_with_joint_angle_without_joint_raises():
     parent = Assembly().with_subassembly("group", Assembly())
     with pytest.raises(ValueError, match="no joint"):
         parent.with_joint_angle("group", 30.0)
+
+
+def test_with_joint_angle_dotted_path_updates_nested_joint():
+    grandchild = Assembly().with_part("leaf", _cube())
+    child = Assembly().with_subassembly(
+        "inner", grandchild, joint=RevoluteJoint(axis=Axis.Z, angle_deg=0.0)
+    )
+    parent = (
+        Assembly()
+        .with_subassembly("outer", child)
+        .with_joint_angle("outer.inner", 45.0)
+    )
+    inner = parent.subassemblies[0].assembly.subassemblies[0]
+    assert inner.joint.angle_deg == 45.0
+
+
+def test_with_joint_dotted_path_attaches_nested_joint():
+    grandchild = Assembly().with_part("leaf", _cube())
+    child = Assembly().with_subassembly("inner", grandchild)
+    parent = (
+        Assembly()
+        .with_subassembly("outer", child)
+        .with_joint("outer.inner", RevoluteJoint(axis=Axis.Z, angle_deg=15.0))
+    )
+    inner = parent.subassemblies[0].assembly.subassemblies[0]
+    assert inner.joint is not None
+    assert inner.joint.angle_deg == 15.0
+
+
+def test_with_joint_angle_dotted_path_missing_segment_raises():
+    grandchild = Assembly().with_part("leaf", _cube())
+    child = Assembly().with_subassembly(
+        "inner", grandchild, joint=RevoluteJoint(axis=Axis.Z, angle_deg=0.0)
+    )
+    parent = Assembly().with_subassembly("outer", child)
+    with pytest.raises(KeyError):
+        parent.with_joint_angle("outer.missing", 10.0)
 
 
 def test_joint_rotates_subassembly_parts_in_placed_parts():

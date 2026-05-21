@@ -41,17 +41,45 @@ def export_assembly(
 
 def _structural_groups(assembly: Assembly) -> list[list[str]]:
     """Walk the subassembly tree; each jointed sub-assembly contributes
-    a group of its leaf part names. Recurses into nested sub-assemblies
-    so a joint at any depth surfaces a group. Returns ``[]`` for a flat
+    a group of part names that it *directly* owns (its own ``parts``
+    plus the parts of any non-jointed descendants), recursing past any
+    nested jointed sub-assembly so that nested joints surface as their
+    own separate, non-overlapping groups. Returns ``[]`` for a flat
     assembly — the caller then falls back to trajectory inference.
-    """
+
+    Non-overlapping groups are load-bearing for
+    ``_inject_animation_into_glb``: each group's animation channel is
+    applied at scene-root level to a freshly inserted animgroup node
+    whose children are the group's parts. If two groups shared parts
+    (e.g. an outer rotor group + an inner platform group that both
+    claim the platform's parts), the inner re-parent would clash with
+    the outer's, producing malformed glTF. Each part belongs to its
+    *innermost* jointed ancestor, and that group's relative trajectory
+    naturally captures the composed motion of every ancestor joint —
+    because the relative trajectory is sampled from any one member's
+    absolute pose, which already includes every ancestor's
+    contribution by construction."""
+
+    def _walk_into(asm: Assembly) -> list[str]:
+        """Names of parts inside ``asm`` that DON'T belong to any
+        nested jointed sub. Walks past jointed children (they become
+        their own group elsewhere) and aggregates the rest."""
+        names = [p.name for p in asm.parts]
+        for sub in asm.subassemblies:
+            if sub.joint is None:
+                names.extend(_walk_into(sub.assembly))
+        return names
+
+    def _collect(asm: Assembly, out: list[list[str]]) -> None:
+        for sub in asm.subassemblies:
+            if sub.joint is not None:
+                owned = _walk_into(sub.assembly)
+                if owned:
+                    out.append(owned)
+            _collect(sub.assembly, out)
+
     groups: list[list[str]] = []
-    for sub in assembly.subassemblies:
-        if sub.joint is not None:
-            names = [p.name for p in sub.assembly.placed_parts]
-            if names:
-                groups.append(names)
-        groups.extend(_structural_groups(sub.assembly))
+    _collect(assembly, groups)
     return groups
 
 

@@ -41,11 +41,24 @@ class RevoluteJoint:
     @property
     def transform(self) -> Location:
         """Rotation by ``angle_deg`` about ``axis`` as a build123d
-        ``Location``. Build123d's three-arg ``Location(position,
-        axis_direction, angle_degrees)`` does axis-angle directly."""
+        ``Location`` — conjugated by ``axis.position`` so the rotation
+        is about the axis line, not about the parallel line through
+        the origin.
+
+        Build123d's three-arg ``Location((x,y,z), (dx,dy,dz), a)``
+        builds a rigid transform that rotates by ``a`` about the line
+        ``(dx,dy,dz)`` *through the origin* and then translates by
+        ``(x,y,z)`` — so passing ``axis.position`` there gives a
+        screw-like motion, not a rotation about the axis. The correct
+        rotation-about-an-arbitrary-axis is ``T(p) · R(d, a) · T(-p)``.
+        Reduces to a plain rotation when ``axis.position`` is the
+        origin, so callers using ``Axis.Z`` and friends are unaffected.
+        """
         pos = self.axis.position
         d = self.axis.direction
-        return Location((pos.X, pos.Y, pos.Z), (d.X, d.Y, d.Z), self.angle_deg)
+        pivot = Location((pos.X, pos.Y, pos.Z))
+        rotation = Location((0, 0, 0), (d.X, d.Y, d.Z), self.angle_deg)
+        return pivot * rotation * pivot.inverse()
 
 
 @dataclass(frozen=True)
@@ -118,38 +131,61 @@ class Assembly:
         )
         return replace(self, subassemblies=self.subassemblies + (sub,))
 
-    def with_joint(self, sub_name: str, joint: RevoluteJoint) -> "Assembly":
+    def with_joint(self, path: str, joint: RevoluteJoint) -> "Assembly":
         """Set the joint on the named sub-assembly. The joint's axis is
-        interpreted in this (parent) Assembly's frame. Raises
-        ``KeyError`` if no sub-assembly with that name exists."""
+        interpreted in the owning parent Assembly's frame. ``path`` is
+        either a single sub-assembly name or a dotted path
+        (``"rotor.platform_dump"``) for nested sub-assemblies — the
+        joint then attaches to the leaf at the end of the path, with
+        each intermediate frame interpreting its own segment. Raises
+        ``KeyError`` if any segment is missing."""
+        head, _, rest = path.partition(".")
         updated, found = [], False
         for s in self.subassemblies:
-            if s.name == sub_name:
-                updated.append(replace(s, joint=joint))
+            if s.name == head:
+                if rest:
+                    new_sub = replace(
+                        s, assembly=s.assembly.with_joint(rest, joint)
+                    )
+                    updated.append(new_sub)
+                else:
+                    updated.append(replace(s, joint=joint))
                 found = True
             else:
                 updated.append(s)
         if not found:
-            raise KeyError(f"no sub-assembly named {sub_name!r}")
+            raise KeyError(f"no sub-assembly named {head!r}")
         return replace(self, subassemblies=tuple(updated))
 
-    def with_joint_angle(self, sub_name: str, angle_deg: float) -> "Assembly":
+    def with_joint_angle(self, path: str, angle_deg: float) -> "Assembly":
         """Animation hook — update the angle on the named sub-assembly's
-        joint. Raises ``KeyError`` if the sub-assembly is missing,
-        ``ValueError`` if it has no joint yet."""
+        joint. ``path`` accepts the same dotted-path form as
+        ``with_joint`` for reaching nested joints. Raises ``KeyError``
+        if any segment is missing, ``ValueError`` if the leaf has no
+        joint yet."""
+        head, _, rest = path.partition(".")
         updated, found = [], False
         for s in self.subassemblies:
-            if s.name == sub_name:
-                if s.joint is None:
-                    raise ValueError(
-                        f"sub-assembly {sub_name!r} has no joint to update"
+            if s.name == head:
+                if rest:
+                    new_sub = replace(
+                        s,
+                        assembly=s.assembly.with_joint_angle(rest, angle_deg),
                     )
-                updated.append(replace(s, joint=s.joint.with_angle(angle_deg)))
+                    updated.append(new_sub)
+                else:
+                    if s.joint is None:
+                        raise ValueError(
+                            f"sub-assembly {head!r} has no joint to update"
+                        )
+                    updated.append(
+                        replace(s, joint=s.joint.with_angle(angle_deg))
+                    )
                 found = True
             else:
                 updated.append(s)
         if not found:
-            raise KeyError(f"no sub-assembly named {sub_name!r}")
+            raise KeyError(f"no sub-assembly named {head!r}")
         return replace(self, subassemblies=tuple(updated))
 
     def with_materials(self, mapping: dict[str, str]) -> "Assembly":
