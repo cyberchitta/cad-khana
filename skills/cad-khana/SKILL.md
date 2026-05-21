@@ -324,6 +324,136 @@ yet (e.g., a junction whose bracket hasn't been designed). The
 goes away, so a future reader understands what the assertion was
 guarding against. Default to `assert_no_interference` everywhere else.
 
+## Animation: joints + time-parameterized assembly
+
+Beyond static assertions, `Assembly` can express **motion**: a
+`RevoluteJoint` on a `with_subassembly(...)` exposes a single
+animatable DOF, and a `t → Assembly` factory function (the project's
+animation primitive) drives the joints from a time parameter.
+
+Use this when:
+
+- A mechanism's clearance / interference depends on a joint angle —
+  not just the rest pose. Sample `factory(t)` at several `t` and
+  call `check()` on each to catch mid-motion overlaps.
+- You're producing a multi-frame artifact (GLB exhibit, animated
+  preview). `export_animated_glb` consumes the same factory.
+
+Skip when the assembly's motion isn't relevant to the question
+you're answering: pure static fit / printability runs faster on a
+plain flat `Assembly`.
+
+### Joint primitives
+
+Today the library exposes one joint type:
+
+```python
+from build123d import Axis
+from cad_khana.mechanism.assembly import RevoluteJoint
+
+joint = RevoluteJoint(
+    axis=Axis((px, py, pz), (dx, dy, dz)),   # in the PARENT'S frame
+    angle_deg=0.0,                            # animatable DOF
+)
+```
+
+The axis is interpreted in the frame of the parent `Assembly` that
+owns the sub-assembly — not in the sub-assembly's local frame, and
+not in world. `angle_deg` is the value the animation factory
+updates per frame.
+
+### Composing animated assemblies
+
+A jointed sub-assembly is added with
+`with_subassembly(name, sub, location=..., joint=...)`. The
+sub-assembly is itself a full `Assembly` (it can contain parts,
+sub-sub-assemblies, joints) — nest as deeply as the mechanism needs.
+Reach into the tree with dotted paths:
+
+```python
+turret = (
+    Assembly()
+    .with_subassembly(
+        "rotor",
+        rotor_internals,                              # an Assembly
+        location=Pos(0, 0, 0),
+        joint=RevoluteJoint(axis=Axis.Z),             # parent's Z
+    )
+    .with_subassembly(
+        "kicker_lever",
+        lever_internals,
+        joint=RevoluteJoint(axis=Axis((px, 0, pz), (0, -1, 0))),
+    )
+)
+# later — animation hook:
+turret = turret.with_joint_angle("rotor", 45.0)
+turret = turret.with_joint_angle("rotor.platform_dump", 12.5)  # nested
+```
+
+`with_joint_angle` raises if the path doesn't reach a jointed
+sub-assembly.
+
+### The `t → Assembly` factory
+
+A function `factory(t: float) -> Assembly` that returns the static
+assembly at parameter `t` is the project's animation primitive.
+Motion is expressed *in user code* as math (`angle = f(t)`); the
+library samples `factory(t)` and emits glTF or runs per-frame
+checks.
+
+```python
+def build_at(t: float) -> Assembly:
+    a = build_static()
+    a = a.with_joint_angle("rotor", 360.0 * t)
+    a = a.with_joint_angle("kicker_lever", lift_schedule(t))
+    return a
+```
+
+`cad_khana.export.export_animated_glb(factory, ts, out, ...)`
+sweeps the factory over a sequence of `t` values, tessellates
+geometry once from `factory(ts[0])`, and injects animation samplers
+per jointed sub-assembly. Each jointed `with_subassembly(...)`
+becomes one `animgroup_N` node in the GLB scene graph whose
+children are the group's parts — the parent carries a slerp'd
+rotation that traces the true arc between keyframes (per-channel
+TRS lerp would chord through curved paths).
+
+### Conventions that matter
+
+- **Parts in canonical local frame.** Inside an animated
+  sub-assembly, a `Part` returned by your part function must have
+  identity `part.location` — orientation and translation belong at
+  the `with_part(name, part, location=...)` site, not baked into
+  the geometry. `export_animated_glb` enforces this on dynamic
+  parts and raises with the offender's name. Reason: the per-frame
+  TRS sampler only reads `PlacedPart.location`, so a non-identity
+  intrinsic `Location` renders correctly at frame 0 then gets
+  silently dropped from frame 1 onward.
+
+- **Placement is parent-local for parts inside a sub-assembly.**
+  When a part lives inside a sub-assembly, the `location=` passed
+  to `with_part(...)` is in the sub-assembly's local frame, not
+  world. The composition through the joint and the outer
+  `with_subassembly` placement brings it to world automatically.
+
+- **One-frame static first.** A bad joint axis costs the same at
+  1 frame as at 97, and a 97-frame sweep is minutes of wall time.
+  Validate any geometry or joint-wiring change via `factory(0.0)` +
+  `khana check` (or a single `export_glb`) before fanning out to
+  the full animated sweep.
+
+### Static GLB export
+
+`cad_khana.export.export_glb(assembly, out, ...)` writes a static
+GLB; each `PlacedPart` becomes a named scene node with its
+build123d `Color` baked as a flat sRGB baseColor. No PBR, no
+lighting — the geometry-truth artifact. For PBR materials baked
+from `chitra-cad`'s catalog use `chitra_cad.export.export_glb`
+instead.
+
+Both pipelines require `gltf-transform` on `PATH`:
+`bun install -g @gltf-transform/cli`.
+
 ## Printability: `inspect(part, method=…)`
 
 The method object carries manufacturing parameters. Today only
