@@ -442,14 +442,62 @@ TRS lerp would chord through curved paths).
   `khana check` (or a single `export_glb`) before fanning out to
   the full animated sweep.
 
-### Static GLB export
+### glTF / GLB export
 
 `cad_khana.export.export_glb(assembly, out, ...)` writes a static
 GLB; each `PlacedPart` becomes a named scene node with its
-build123d `Color` baked as a flat sRGB baseColor. No PBR, no
-lighting — the geometry-truth artifact. For PBR materials baked
-from `chitra-cad`'s catalog use `chitra_cad.export.export_glb`
-instead.
+build123d `Color` baked as the glTF baseColor. No PBR, no lighting
+— the geometry-truth artifact. For PBR materials baked from
+`chitra-cad`'s catalog use `chitra_cad.export.export_glb` instead.
+
+```python
+from pathlib import Path
+
+from cad_khana.export import export_glb
+
+from assembly import assembly  # the top-level Assembly
+
+export_glb(assembly, out=Path("subsite/assets"), name="rig.glb")
+```
+
+`cad_khana.export.export_animated_glb(factory, ts, out, ...)`
+sweeps a `t → Assembly` factory and emits an animation block on top
+of the static geometry path. One `animgroup_N` node per jointed
+sub-assembly; per-channel TRS samplers fall through for any
+top-level motion. See the factory + conventions sections above for
+how to shape the assembly.
+
+```python
+from pathlib import Path
+
+from cad_khana.export import export_animated_glb
+
+from animated_assembly import build_at  # def build_at(t: float) -> Assembly
+
+N_FRAMES = 61
+ts = [i / (N_FRAMES - 1) for i in range(N_FRAMES)]
+export_animated_glb(
+    build_at,
+    ts=ts,
+    out=Path("subsite/assets"),
+    name="rig-animated.glb",
+    duration_s=8.0,
+)
+```
+
+Tessellation runs once on `factory(ts[0])`; subsequent frames only
+sample `PlacedPart.location` per part. `ts` closing the loop
+(`ts[-1]` reproduces `ts[0]`'s pose) lets `<model-viewer autoplay>`
+loop the animation in `duration_s` seconds without a visible cut.
+
+**Color-space convention.** `PlacedPart.color` is treated as
+sRGB-encoded throughout the cad-khana export path (OCP labels it
+`Quantity_TOC_sRGB` and converts to linear before writing
+glTF). Pass colors authored the way humans pick them (CSS hex,
+design tokens). Pre-linearizing (`r ** 2.2`) double-converts and
+crushes the rendered output to near-black. Downstream consumers
+that need linear (e.g. chitra-cad → Blender Cycles) linearize at
+their own input boundary.
 
 Both pipelines require `gltf-transform` on `PATH`:
 `bun install -g @gltf-transform/cli`.
