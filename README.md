@@ -10,6 +10,10 @@ is a place for CAD.
 
 **Status:** early. API may still churn.
 
+Used in practice to design the
+[Sorted Studs LEGO scanner](https://sorted-studs.cyberchitta.cc/) —
+every part drawn by an LLM via cad-khana.
+
 ## What it does
 
 `cad-khana` wraps Build123d with a diagnostics-first workflow. You
