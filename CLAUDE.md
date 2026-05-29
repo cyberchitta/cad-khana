@@ -383,6 +383,23 @@ the appropriate surface and delete the matched field-notes entries:
   frames, multi-sub-assembly composition).
 - `NOTES.md` — design rationale (why a default exists, a trade-off
   taken, an open question).
+- `research/ideas.md` — the prioritized idea backlog distilled from
+  the ~30-repo survey. When a field-note **resonates with an idea
+  already mined from another repo**, that's where it lands: add or
+  bump the matching row, set its `FN:` link to the field-note date,
+  and let the real-use evidence raise its priority. This is the
+  cross-pollination surface between consumer friction and the survey.
+
+**Field-note resonance is high-signal corroboration.** A field-note
+that matches a feature seen in another repo is *not* just a third
+data point — real-use friction is higher signal than repo frequency
+(repos copy features without surfacing them through use; the survey
+diamond rule). A single field-note that lands on an existing
+`research/ideas.md` row can justify promoting that idea ahead of the
+2–3-repo threshold, because the friction is observed, not inferred.
+Several field-notes already do this (e.g. the kinematic
+`sweep`/`onset`/`inspect-placed` cluster resonates with hedless's
+interference `suggested_fix` and faust-machines's per-mutation deltas).
 
 The 2–3-occurrence threshold matters because every line in SKILL.md
 costs context for every future check, and every default change is
