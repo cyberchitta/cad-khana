@@ -70,16 +70,9 @@ desktop.ini
 .env.local
 .env.*.local
 
-# Working files (commit message drafts, field notes, etc.)
+# Working files (commit message drafts, etc.)
 .commit-msg
-field-notes.md
-NOTES.md
-research-mcp-servers.md
-ResearchPrompt.md
-draft-sessions-*.md
-deferred-repos.md
-implementation-log.md
 
-# Research scratchpad — distilled idea backlog, repo registry, per-repo
-# notes, and the frozen raw-crawl archive. All local working docs.
-research/
+# Working notes — a symlink to the private working-notes repo. No trailing
+# slash: git sees a symlink as a file, and a rule with one would not match.
+_notes

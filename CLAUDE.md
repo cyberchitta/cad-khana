@@ -52,7 +52,7 @@ humans.
 cad-khana/
   README.md                   # human-facing install + viewer setup
   CLAUDE.md                   # this file
-  NOTES.md                    # design rationale, open questions, history
+  _notes/                     # working notes, gitignored — see below
   pyproject.toml              # uv-managed, entry point: khana = cad_khana.cli:main
   skills/
     cad-khana/
@@ -352,9 +352,24 @@ for end-user install, `uvx khana ...` for ephemeral use.
 - Don't add dependencies casually. Every dep is a support burden.
 - Don't reproduce copyrighted code from other projects. Write originals.
 
+## Working notes (gitignored)
+
+Tracked separately in the private `working-notes` repo, symlinked at `_notes/`;
+not discoverable by search — `Grep`/`Glob` follow neither symlinks nor
+gitignored paths. `Read` works once a path is named. Read directly when
+relevant:
+
+- `_notes/NOTES.md` — design rationale, open questions, history
+- `_notes/field-notes.md` — real-use friction from consumer sessions
+- `_notes/implementation-log.md` — session log
+- `_notes/research/ideas.md` — prioritized idea backlog from the ~30-repo survey
+- `_notes/research/repos/` — per-repo survey notes
+
+Speculative unless stated otherwise. Do not implement from these without asking.
+
 ## Field-notes promotion policy
 
-`field-notes.md` (uncommitted, gitignored) collects real-use friction
+`_notes/field-notes.md` (gitignored) collects real-use friction
 from consumer sessions — anything an agent flagged as awkward, buggy,
 missing, or surprising while using cad-khana. The SKILL.md "Feedback"
 section tells consumers to log freely without self-filtering, so
@@ -381,9 +396,9 @@ the appropriate surface and delete the matched field-notes entries:
 - `skills/cad-khana/SKILL.md` body — conventions consumers should
   follow when authoring scripts (parameter layout, naming, coordinate
   frames, multi-sub-assembly composition).
-- `NOTES.md` — design rationale (why a default exists, a trade-off
+- `_notes/NOTES.md` — design rationale (why a default exists, a trade-off
   taken, an open question).
-- `research/ideas.md` — the prioritized idea backlog distilled from
+- `_notes/research/ideas.md` — the prioritized idea backlog distilled from
   the ~30-repo survey. When a field-note **resonates with an idea
   already mined from another repo**, that's where it lands: add or
   bump the matching row, set its `FN:` link to the field-note date,
@@ -396,7 +411,7 @@ data point — real-use friction is higher signal than repo frequency.
 Repo frequency is ambiguous (a high count may reflect convergent
 real-use *or* feature-copying — usually we can't tell), whereas a
 field-note is observed friction. A single field-note that lands on an existing
-`research/ideas.md` row can justify promoting that idea ahead of the
+`_notes/research/ideas.md` row can justify promoting that idea ahead of the
 2–3-repo threshold, because the friction is observed, not inferred.
 Several field-notes already do this (e.g. the kinematic
 `sweep`/`onset`/`inspect-placed` cluster resonates with hedless's
