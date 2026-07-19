@@ -392,9 +392,10 @@ the appropriate surface and delete the matched field-notes entries:
 
 **Field-note resonance is high-signal corroboration.** A field-note
 that matches a feature seen in another repo is *not* just a third
-data point — real-use friction is higher signal than repo frequency
-(repos copy features without surfacing them through use; the survey
-diamond rule). A single field-note that lands on an existing
+data point — real-use friction is higher signal than repo frequency.
+Repo frequency is ambiguous (a high count may reflect convergent
+real-use *or* feature-copying — usually we can't tell), whereas a
+field-note is observed friction. A single field-note that lands on an existing
 `research/ideas.md` row can justify promoting that idea ahead of the
 2–3-repo threshold, because the friction is observed, not inferred.
 Several field-notes already do this (e.g. the kinematic
