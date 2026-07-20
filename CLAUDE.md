@@ -355,9 +355,8 @@ for end-user install, `uvx khana ...` for ephemeral use.
 ## Working notes (gitignored)
 
 Tracked separately in the private `working-notes` repo, symlinked at `_notes/`;
-not discoverable by search — `Grep`/`Glob` follow neither symlinks nor
-gitignored paths. `Read` works once a path is named. Read directly when
-relevant:
+invisible to the `Grep`/`Glob` tools (global `CLAUDE.md` has the `rg` forms).
+Read directly when relevant:
 
 - `_notes/NOTES.md` — design rationale, open questions, history
 - `_notes/field-notes.md` — real-use friction from consumer sessions
