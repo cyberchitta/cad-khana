@@ -58,6 +58,15 @@ Prefer `khana check` during fast iteration — it skips STL/STEP export
 so the loop is tighter. Switch to `khana build` when you want the
 exports on disk.
 
+A script that is a **package member** (its directory and every
+ancestor up to the package root carry an `__init__.py`) runs with
+`python -m` semantics: the package root's parent goes on `sys.path`
+and the script's relative imports (`from .params import …`,
+`from ..shared import …`) resolve. Plain standalone scripts run
+exactly as before. This lets sub-assembly files in a package tree be
+both imported by their composing parent and `khana check`-ed
+standalone with no `sys.path` bootstrapping in the script itself.
+
 JSON diagnostics are always written to `--out` (default `outputs/`),
 even on failure — read them to diagnose errors. Exit code is nonzero
 on any assertion failure or script exception.

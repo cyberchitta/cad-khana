@@ -1,5 +1,6 @@
 import json
 import runpy
+import sys
 import traceback
 from dataclasses import asdict
 from importlib.metadata import version as _pkg_version
@@ -77,11 +78,37 @@ OutOpt = Annotated[
 ]
 
 
+def _package_module_spec(script: Path) -> tuple[str, Path] | None:
+    """Dotted module name + ``sys.path`` root for a script that is a
+    package member (its directory and every ancestor up to the package
+    root carry an ``__init__.py``). ``None`` for plain scripts."""
+    script = script.resolve()
+    if not (script.parent / "__init__.py").exists():
+        return None
+    root = script.parent
+    while (root.parent / "__init__.py").exists():
+        root = root.parent
+    parts = script.relative_to(root.parent).with_suffix("").parts
+    if not all(p.isidentifier() for p in parts):
+        return None
+    return ".".join(parts), root.parent
+
+
 def _run_script(script: Path, out: Path | None, command: str) -> None:
     if out is None:
         out = script.resolve().parent / "outputs"
     try:
-        runpy.run_path(str(script), run_name="__main__")
+        spec = _package_module_spec(script)
+        if spec is None:
+            runpy.run_path(str(script), run_name="__main__")
+        else:
+            # Package members run with ``python -m`` semantics so their
+            # relative imports resolve; alter_sys makes the module the
+            # real ``__main__`` (out= anchoring reads its __file__).
+            module, root = spec
+            if str(root) not in sys.path:
+                sys.path.insert(0, str(root))
+            runpy.run_module(module, run_name="__main__", alter_sys=True)
     except (SystemExit, typer.Exit):
         raise
     except BaseException as exc:

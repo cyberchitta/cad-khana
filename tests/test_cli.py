@@ -592,6 +592,84 @@ def test_status_real_probe_runs_and_returns_json():
     assert isinstance(data["ocp_vscode"]["reachable"], bool)
 
 
+def _pkg_tree(tmp_path: Path, name: str) -> Path:
+    """A two-level package tree whose leaf script needs BOTH relative
+    import forms: ``.params`` (sibling) and ``..shared`` (package root).
+    Distinct *name* per test — run_module leaves the package cached in
+    this process's ``sys.modules``, so a reused name would resolve to a
+    prior test's tree."""
+    root = tmp_path / "proj"
+    (root / name / "unit").mkdir(parents=True)
+    (root / name / "__init__.py").write_text("")
+    (root / name / "unit" / "__init__.py").write_text("")
+    (root / name / "shared.py").write_text("PREFIX = 'cube'\n")
+    (root / name / "unit" / "params.py").write_text("SIZE = 10\n")
+    (root / name / "unit" / "asm.py").write_text(
+        "from build123d import Box\n"
+        "from cad_khana.mechanism.assembly import Assembly\n"
+        "from cad_khana.mechanism.check import check\n"
+        "\n"
+        "from ..shared import PREFIX\n"
+        "from .params import SIZE\n"
+        "\n"
+        "check(Assembly().with_part(PREFIX, Box(SIZE, SIZE, SIZE)), out='outputs')\n"
+    )
+    return root
+
+
+def test_check_runs_package_member_with_relative_imports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A script inside a package runs with ``python -m`` semantics:
+    relative imports resolve and relative ``out=`` still lands next to
+    the script, from an unrelated cwd."""
+    root = _pkg_tree(tmp_path, "pkgok")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    script = root / "pkgok" / "unit" / "asm.py"
+    result = runner.invoke(app, ["check", str(script)])
+    assert result.exit_code == 0, result.output
+    data = json.loads((script.parent / "outputs" / "mechanism.json").read_text())
+    assert data["status"] == "ok"
+    assert data["parts"]["cube"]["volume_mm3"] > 0
+    assert not (elsewhere / "outputs").exists()
+
+
+def test_package_member_failure_writes_error_diagnostics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    root = _pkg_tree(tmp_path, "pkgbad")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    bad = root / "pkgbad" / "unit" / "bad.py"
+    bad.write_text(
+        "from .params import SIZE\n"
+        "raise RuntimeError(f'kaboom {SIZE}')\n"
+    )
+    result = runner.invoke(app, ["build", str(bad)])
+    assert result.exit_code == 1
+    data = json.loads((bad.parent / "outputs" / "mechanism.json").read_text())
+    assert data["status"] == "error"
+    assert "kaboom 10" in data["error"]
+
+
+def test_plain_script_beside_init_free_dir_keeps_run_path(tmp_path: Path):
+    """No ``__init__.py`` in the script's directory → the old run_path
+    behavior, even when a sibling directory IS a package."""
+    (tmp_path / "somepkg").mkdir()
+    (tmp_path / "somepkg" / "__init__.py").write_text("")
+    out = tmp_path / "out"
+    script = tmp_path / "plain.py"
+    script.write_text(_cube_script(out))
+    result = runner.invoke(app, ["check", str(script)])
+    assert result.exit_code == 0, result.output
+    assert json.loads((out / "mechanism.json").read_text())["status"] == "ok"
+
+
 def test_draw_part_unknown_name_fails(tmp_path: Path):
     """An unknown --part is a ValueError from draw(), surfaced by the
     CLI as a nonzero exit. The mechanism diagnostics themselves still
