@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 
 from build123d import Axis, Color, Compound, Location, Part
@@ -10,6 +11,33 @@ from cad_khana.mechanism.assertions import (
     ExpectedInterference,
     NoInterference,
 )
+
+
+def _normalize_pair_maps(
+    known_overlaps: Iterable[tuple[str, str, str]],
+    suppressed: Iterable[tuple[str, str]],
+) -> tuple[dict[frozenset[str], str], set[frozenset[str]]]:
+    """Order-independent lookup forms for the group-assertion options:
+    ``known_overlaps`` triples ``(a, b, reason)`` → ``{frozenset: reason}``,
+    ``suppressed`` pairs → ``{frozenset}``."""
+    reasons = {frozenset((a, b)): reason for a, b, reason in known_overlaps}
+    sup = {frozenset(p) for p in suppressed}
+    return reasons, sup
+
+
+def _pair_assertion(
+    a: str, b: str, reasons: dict[frozenset[str], str]
+) -> Assertion:
+    """The assertion for one pair: ``ExpectedInterference`` when the pair
+    is a documented known overlap, ``NoInterference`` otherwise. Names
+    match the single-pair ``assert_*`` auto-names so group expansion is
+    diff-identical to an equivalent hand-written loop."""
+    key = frozenset((a, b))
+    if key in reasons:
+        return ExpectedInterference(
+            a=a, b=b, name=f"interference:{a}/{b}", reason=reasons[key]
+        )
+    return NoInterference(a=a, b=b, name=f"no_interference:{a}/{b}")
 
 
 @dataclass(frozen=True)
@@ -313,6 +341,94 @@ class Assembly:
             reason=reason,
         )
         return replace(self, assertions=self.assertions + (assertion,))
+
+    def _subassembly_at(self, path: str) -> SubAssembly:
+        """The ``SubAssembly`` at a dotted ``path`` (same form as
+        ``with_joint`` / ``with_joint_angle``). Raises ``KeyError`` if
+        any segment is missing."""
+        head, _, rest = path.partition(".")
+        for s in self.subassemblies:
+            if s.name == head:
+                return s.assembly._subassembly_at(rest) if rest else s
+        raise KeyError(f"no sub-assembly named {head!r}")
+
+    def _resolve_group(self, group: str | Iterable[str]) -> tuple[str, ...]:
+        """A group selector → concrete part names. A ``str`` is a dotted
+        sub-assembly path and resolves to every part name under that
+        subtree (sorted, for deterministic expansion order); any other
+        iterable is taken as explicit part names in the given order."""
+        if isinstance(group, str):
+            sub = self._subassembly_at(group)
+            return tuple(sorted(sub.assembly._all_part_names()))
+        return tuple(group)
+
+    def assert_no_interference_between(
+        self,
+        group_a: str | Iterable[str],
+        group_b: str | Iterable[str],
+        *,
+        known_overlaps: Iterable[tuple[str, str, str]] = (),
+        suppressed: Iterable[tuple[str, str]] = (),
+    ) -> "Assembly":
+        """Assert no interference for every cross pair ``(a, b)`` with
+        ``a`` from ``group_a`` and ``b`` from ``group_b``.
+
+        Groups are explicit name iterables, or a dotted sub-assembly
+        path selecting every part under that subtree. Expansion is a
+        macro over the *current* group contents — parts added to a
+        subtree afterwards are not covered.
+
+        ``known_overlaps`` triples ``(a, b, reason)`` downgrade that
+        pair (order-independent) to ``assert_interference(reason=…)`` —
+        a regression alarm that self-fails when the overlap disappears.
+        ``suppressed`` pairs (order-independent) are skipped entirely;
+        a suppressed pair absent from the cross product is silently
+        unused. Same-name pairs are skipped, and if the groups overlap
+        each unordered pair is emitted once (first encounter's order).
+
+        Emitted assertions are the plain single-pair forms with their
+        usual auto-names, so replacing a hand-written double loop with
+        this call leaves ``mechanism.json`` unchanged.
+        """
+        a_names = self._resolve_group(group_a)
+        b_names = self._resolve_group(group_b)
+        reasons, sup = _normalize_pair_maps(known_overlaps, suppressed)
+        new: list[Assertion] = []
+        seen: set[frozenset[str]] = set()
+        for a in a_names:
+            for b in b_names:
+                if a == b:
+                    continue
+                key = frozenset((a, b))
+                if key in sup or key in seen:
+                    continue
+                seen.add(key)
+                new.append(_pair_assertion(a, b, reasons))
+        return replace(self, assertions=self.assertions + tuple(new))
+
+    def assert_no_interference_within(
+        self,
+        group: str | Iterable[str],
+        *,
+        known_overlaps: Iterable[tuple[str, str, str]] = (),
+        suppressed: Iterable[tuple[str, str]] = (),
+    ) -> "Assembly":
+        """Assert no interference for every unordered pair within
+        ``group`` (pair order follows the group's order: ``(names[i],
+        names[j])`` for ``i < j``). Group selectors, ``known_overlaps``,
+        ``suppressed``, and name-stability semantics are exactly as in
+        ``assert_no_interference_between``.
+        """
+        names = self._resolve_group(group)
+        reasons, sup = _normalize_pair_maps(known_overlaps, suppressed)
+        new: list[Assertion] = []
+        for i in range(len(names)):
+            for j in range(i + 1, len(names)):
+                a, b = names[i], names[j]
+                if a == b or frozenset((a, b)) in sup:
+                    continue
+                new.append(_pair_assertion(a, b, reasons))
+        return replace(self, assertions=self.assertions + tuple(new))
 
     @property
     def placed_parts(self) -> tuple[PlacedPart, ...]:

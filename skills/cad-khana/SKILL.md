@@ -324,6 +324,34 @@ yet (e.g., a junction whose bracket hasn't been designed). The
 goes away, so a future reader understands what the assertion was
 guarding against. Default to `assert_no_interference` everywhere else.
 
+### Group assertions
+
+When "assert every pair" is the intent, say so — don't hand-write the
+double loop:
+
+| Assertion | Expands to |
+|---|---|
+| `.assert_no_interference_between(group_a, group_b, …)` | One `assert_no_interference` per cross pair `(a, b)`. |
+| `.assert_no_interference_within(group, …)` | One per unordered pair inside `group` (`i < j` in group order). |
+
+A group is an iterable of part names, or a **dotted sub-assembly path**
+(`"turret.rotor"`) selecting every part under that subtree (sorted).
+Expansion is a macro over the current contents — parts added afterwards
+aren't covered, so declare group assertions after composition.
+
+Both take two keyword options:
+
+- `known_overlaps=[(a, b, reason), …]` — downgrades those pairs
+  (order-independent) to `assert_interference(reason=…)` regression
+  alarms.
+- `suppressed=[(a, b), …]` — skips those pairs entirely (e.g. a
+  design-intended contact during motion with no clean per-frame
+  predicate).
+
+Expanded assertions are the plain single-pair forms with their usual
+auto-names, so migrating a hand-written loop to a group call leaves
+`mechanism.json` unchanged.
+
 ## Animation: joints + time-parameterized assembly
 
 Beyond static assertions, `Assembly` can express **motion**: a

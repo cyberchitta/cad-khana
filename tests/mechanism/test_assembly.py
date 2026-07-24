@@ -386,3 +386,100 @@ def test_with_materials_recurses_into_subassemblies():
     overridden = parent.with_materials({"inner": "steel", "outer": "aluminium"})
     assert overridden.parts[0].material == "aluminium"
     assert overridden.subassemblies[0].assembly.parts[0].material == "steel"
+
+
+# --- Group assertions -------------------------------------------------
+
+
+def _three_part_assembly():
+    return (
+        Assembly()
+        .with_part("a1", _cube())
+        .with_part("a2", _cube(), location=Location((0, 0, 20)))
+        .with_part("b1", _cube(), location=Location((0, 0, 40)))
+    )
+
+
+def test_between_is_diff_identical_to_hand_loop():
+    base = _three_part_assembly()
+    hand = base
+    for a in ("a1", "a2"):
+        for b in ("b1",):
+            hand = hand.assert_no_interference(a, b)
+    grouped = base.assert_no_interference_between(("a1", "a2"), ("b1",))
+    assert grouped.assertions == hand.assertions
+
+
+def test_within_is_diff_identical_to_hand_loop():
+    base = _three_part_assembly()
+    names = ("a1", "a2", "b1")
+    hand = base
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            hand = hand.assert_no_interference(names[i], names[j])
+    grouped = base.assert_no_interference_within(names)
+    assert grouped.assertions == hand.assertions
+
+
+def test_between_known_overlap_downgrades_order_independent():
+    base = _three_part_assembly()
+    grouped = base.assert_no_interference_between(
+        ("a1",), ("b1",), known_overlaps=(("b1", "a1", "documented"),)
+    )
+    (assertion,) = grouped.assertions
+    assert assertion.name == "interference:a1/b1"
+    assert assertion.reason == "documented"
+
+
+def test_between_suppressed_skips_order_independent():
+    base = _three_part_assembly()
+    grouped = base.assert_no_interference_between(
+        ("a1", "a2"), ("b1",), suppressed=(("b1", "a1"),)
+    )
+    assert [a.name for a in grouped.assertions] == ["no_interference:a2/b1"]
+
+
+def test_between_overlapping_groups_dedupes_and_skips_same_name():
+    base = _three_part_assembly()
+    grouped = base.assert_no_interference_between(
+        ("a1", "a2"), ("a2", "a1", "b1")
+    )
+    assert [a.name for a in grouped.assertions] == [
+        "no_interference:a1/a2",
+        "no_interference:a1/b1",
+        "no_interference:a2/b1",
+    ]
+
+
+def test_within_known_and_suppressed():
+    base = _three_part_assembly()
+    grouped = base.assert_no_interference_within(
+        ("a1", "a2", "b1"),
+        known_overlaps=(("a2", "a1", "why"),),
+        suppressed=(("b1", "a2"),),
+    )
+    assert [a.name for a in grouped.assertions] == [
+        "interference:a1/a2",
+        "no_interference:a1/b1",
+    ]
+
+
+def test_group_path_selects_subtree_parts_sorted():
+    sub = Assembly().with_part("z_part", _cube()).with_part("a_part", _cube())
+    nested = Assembly().with_subassembly("inner", sub)
+    top = (
+        Assembly()
+        .with_part("outside", _cube(), location=Location((0, 0, 40)))
+        .with_subassembly("unit", nested)
+    )
+    grouped = top.assert_no_interference_between("unit.inner", ("outside",))
+    assert [a.name for a in grouped.assertions] == [
+        "no_interference:a_part/outside",
+        "no_interference:z_part/outside",
+    ]
+
+
+def test_group_path_missing_raises_keyerror():
+    top = Assembly().with_subassembly("unit", Assembly())
+    with pytest.raises(KeyError):
+        top.assert_no_interference_within("unit.nope")
