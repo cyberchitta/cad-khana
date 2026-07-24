@@ -380,14 +380,24 @@ from build123d import Axis
 from cad_khana.mechanism.assembly import RevoluteJoint
 
 joint = RevoluteJoint(
-    axis=Axis((px, py, pz), (dx, dy, dz)),   # in the PARENT'S frame
+    axis=Axis((px, py, pz), (dx, dy, dz)),   # in the SUB-ASSEMBLY'S frame
     angle_deg=0.0,                            # animatable DOF
+    frame="local",
 )
 ```
 
-The axis is interpreted in the frame of the parent `Assembly` that
-owns the sub-assembly — not in the sub-assembly's local frame, and
-not in world. `angle_deg` is the value the animation factory
+**Prefer `frame="local"`** — the axis is written in the jointed
+sub-assembly's own frame (build123d's joint-on-the-part convention),
+and the `location=` placement carries it to the parent. Identical
+sub-assemblies placed at different poses (four platforms around a
+hub) then share one joint declaration instead of a hand-computed
+per-instance axis table.
+
+The default is `frame="parent"` (compatibility): the axis is
+interpreted in the owning parent `Assembly`'s frame, and each
+differently-posed instance needs its own axis. The two are
+interchangeable — a local axis `A` ≡ the parent-frame axis
+`location * A`. `angle_deg` is the value the animation factory
 updates per frame.
 
 ### Composing animated assemblies
@@ -405,12 +415,15 @@ turret = (
         "rotor",
         rotor_internals,                              # an Assembly
         location=Pos(0, 0, 0),
-        joint=RevoluteJoint(axis=Axis.Z),             # parent's Z
+        joint=RevoluteJoint(axis=Axis.Z, frame="local"),   # rotor's own Z
     )
     .with_subassembly(
         "kicker_lever",
         lever_internals,
-        joint=RevoluteJoint(axis=Axis((px, 0, pz), (0, -1, 0))),
+        joint=RevoluteJoint(
+            axis=Axis((px, 0, pz), (0, -1, 0)),       # in lever-local
+            frame="local",
+        ),
     )
 )
 # later — animation hook:

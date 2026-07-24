@@ -242,3 +242,29 @@ def test_printability_is_valid_regression():
     new = _empty_printability() | {"is_valid": False}
     out = diff(old, new)
     assert "is_valid" in out
+
+
+def _mech_with_part(com_x: float) -> dict:
+    d = _empty_mech()
+    d["parts"] = {
+        "p": {
+            "volume_mm3": 100.0,
+            "surface_area_mm2": 130.0,
+            "bbox": {"min": [0, 0, 0], "max": [1, 1, 1]},
+            "center_of_mass_mm": [com_x, 0.5, 0.5],
+            "is_valid": True,
+        }
+    }
+    return d
+
+
+def test_part_ulp_noise_is_not_reported():
+    old = _mech_with_part(0.5)
+    new = _mech_with_part(0.5 + 1e-12)
+    assert diff(old, new) == "no changes\n"
+
+
+def test_part_real_move_is_reported():
+    old = _mech_with_part(0.5)
+    new = _mech_with_part(0.501)
+    assert "center_of_mass_mm" in diff(old, new)

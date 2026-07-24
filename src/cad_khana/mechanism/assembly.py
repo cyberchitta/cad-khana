@@ -52,16 +52,38 @@ class PlacedPart:
 @dataclass(frozen=True)
 class RevoluteJoint:
     """Single-DOF revolute joint between a parent ``Assembly`` and a
-    ``SubAssembly``. ``axis`` is interpreted in the parent's frame;
-    ``angle_deg`` is the animatable DOF (set per-frame by a factory).
+    ``SubAssembly``. ``angle_deg`` is the animatable DOF (set per-frame
+    by a factory).
 
-    The composed transform applied to the sub-assembly's local frame is
-    ``RevoluteJoint.transform * SubAssembly.location`` — the joint
-    rotates the placed sub-assembly about ``axis`` in the parent frame.
+    ``frame`` says which frame ``axis`` is expressed in:
+
+    * ``"local"`` — the sub-assembly's own frame (build123d's
+      joint-on-the-part convention; preferred). The composed transform
+      is ``SubAssembly.location * RevoluteJoint.transform``: the sub
+      rotates about its own axis, then gets placed. Identical
+      sub-assemblies placed at different poses (e.g. stations around a
+      hub) share one axis declaration — the placement rotates the axis
+      with the sub.
+    * ``"parent"`` (default, for compatibility) — the owning parent
+      Assembly's frame. The composed transform is
+      ``RevoluteJoint.transform * SubAssembly.location``: the placed
+      sub is rotated about a fixed axis of the parent. Each differently
+      posed instance needs its own hand-computed axis.
+
+    The two are interchangeable: a local axis ``A`` behaves exactly as
+    the parent-frame axis ``location * A``.
     """
 
     axis: Axis
     angle_deg: float = 0.0
+    frame: str = "parent"
+
+    def __post_init__(self):
+        if self.frame not in ("parent", "local"):
+            raise ValueError(
+                f"RevoluteJoint frame must be 'parent' or 'local', "
+                f"got {self.frame!r}"
+            )
 
     def with_angle(self, angle_deg: float) -> "RevoluteJoint":
         return replace(self, angle_deg=angle_deg)
@@ -96,8 +118,10 @@ class SubAssembly:
     ``location`` is the rigid placement of the sub-assembly's local
     frame origin in the parent frame. ``joint``, if present, layers an
     animatable DOF on top: the sub-assembly's effective transform
-    becomes ``joint.transform * location``. The sub-assembly's parts
-    (and any further-nested sub-assemblies) compose underneath.
+    becomes ``location * joint.transform`` for a ``frame="local"``
+    joint, ``joint.transform * location`` for a ``frame="parent"`` one
+    (see ``RevoluteJoint``). The sub-assembly's parts (and any
+    further-nested sub-assemblies) compose underneath.
     """
 
     name: str
@@ -109,6 +133,8 @@ class SubAssembly:
     def effective_location(self) -> Location:
         if self.joint is None:
             return self.location
+        if self.joint.frame == "local":
+            return self.location * self.joint.transform
         return self.joint.transform * self.location
 
 

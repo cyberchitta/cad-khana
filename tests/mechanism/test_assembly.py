@@ -483,3 +483,72 @@ def test_group_path_missing_raises_keyerror():
     top = Assembly().with_subassembly("unit", Assembly())
     with pytest.raises(KeyError):
         top.assert_no_interference_within("unit.nope")
+
+
+# --- Local-frame joints -----------------------------------------------
+
+
+def _placed_position(assembly, name):
+    for p in assembly.placed_parts:
+        if p.name == name:
+            return p.location.position
+    raise KeyError(name)
+
+
+def test_local_joint_rotates_about_sub_local_axis():
+    # Part at sub-local (10, 0, 0); sub placed at parent (100, 0, 0).
+    # A local Z-axis joint at the sub origin swings the part around the
+    # sub's own origin — 90° puts it at parent (100, 10, 0).
+    sub = Assembly().with_part("tip", _cube(), location=Location((10, 0, 0)))
+    top = Assembly().with_subassembly(
+        "arm",
+        sub,
+        location=Location((100, 0, 0)),
+        joint=RevoluteJoint(axis=Axis.Z, angle_deg=90.0, frame="local"),
+    )
+    pos = _placed_position(top, "tip")
+    assert abs(pos.X - 100) < 1e-9
+    assert abs(pos.Y - 10) < 1e-9
+
+
+def test_parent_joint_rotates_about_parent_axis():
+    # Same geometry with a parent-frame Z joint at the parent origin:
+    # the whole placed sub swings around the parent origin — 90° puts
+    # the part at parent (0, 110, 0).
+    sub = Assembly().with_part("tip", _cube(), location=Location((10, 0, 0)))
+    top = Assembly().with_subassembly(
+        "arm",
+        sub,
+        location=Location((100, 0, 0)),
+        joint=RevoluteJoint(axis=Axis.Z, angle_deg=90.0, frame="parent"),
+    )
+    pos = _placed_position(top, "tip")
+    assert abs(pos.X - 0) < 1e-9
+    assert abs(pos.Y - 110) < 1e-9
+
+
+def test_local_axis_equals_parent_axis_through_location():
+    # A local axis A is interchangeable with the parent-frame axis
+    # location * A — here the sub is placed rotated 90° about Z, so its
+    # local X axis is the parent's Y axis through the placement point.
+    from build123d import Vector
+
+    sub = Assembly().with_part("tip", _cube(), location=Location((0, 0, 30)))
+    place = Location((50, 0, 0), (0, 0, 1), 90)
+    local = Assembly().with_subassembly(
+        "u", sub, location=place,
+        joint=RevoluteJoint(axis=Axis.X, angle_deg=35.0, frame="local"),
+    )
+    parent_axis = Axis((50, 0, 0), (0, 1, 0))
+    parent = Assembly().with_subassembly(
+        "u", sub, location=place,
+        joint=RevoluteJoint(axis=parent_axis, angle_deg=35.0, frame="parent"),
+    )
+    lp = _placed_position(local, "tip")
+    pp = _placed_position(parent, "tip")
+    assert (Vector(lp) - Vector(pp)).length < 1e-9
+
+
+def test_joint_frame_validated():
+    with pytest.raises(ValueError):
+        RevoluteJoint(axis=Axis.Z, frame="world")

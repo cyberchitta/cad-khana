@@ -69,17 +69,50 @@ def _assertions_section(old: list[Diag], new: list[Diag]) -> list[str]:
 
 _PART_SCALAR_FIELDS = ("volume_mm3", "surface_area_mm2")
 
+# Numeric part fields (mm / mm² / mm³) compare within this absolute
+# tolerance. Rebuilding the same geometry through a different (but
+# mathematically equivalent) transform-composition order perturbs
+# coordinates at the last-ulp level (~1e-13 mm observed); a real design
+# change moves them by clearance-scale amounts (≥ 0.01 mm). Exact float
+# equality would report the noise and bury the signal.
+_PART_NUMERIC_TOLERANCE = 1e-6
+
+
+def _numbers_close(old: Any, new: Any) -> bool:
+    """Equality with ``_PART_NUMERIC_TOLERANCE`` on numbers, recursing
+    through lists/dicts (bbox, center_of_mass). Non-numeric leaves fall
+    back to exact equality."""
+    if isinstance(old, bool) or isinstance(new, bool):
+        return old == new
+    if isinstance(old, (int, float)) and isinstance(new, (int, float)):
+        return abs(float(old) - float(new)) <= _PART_NUMERIC_TOLERANCE
+    if isinstance(old, list) and isinstance(new, list):
+        return len(old) == len(new) and all(
+            _numbers_close(o, n) for o, n in zip(old, new)
+        )
+    if isinstance(old, dict) and isinstance(new, dict):
+        return old.keys() == new.keys() and all(
+            _numbers_close(old[k], new[k]) for k in old
+        )
+    return old == new
+
 
 def _mech_part_changes(name: str, old: Diag, new: Diag) -> list[str]:
     scalar_lines = [
         f"    {f}: {_delta(old.get(f), new.get(f))}"
         for f in _PART_SCALAR_FIELDS
-        if old.get(f) != new.get(f)
+        if not _numbers_close(old.get(f), new.get(f))
     ]
-    bbox_line = ["    bbox: changed"] if old.get("bbox") != new.get("bbox") else []
+    bbox_line = (
+        ["    bbox: changed"]
+        if not _numbers_close(old.get("bbox"), new.get("bbox"))
+        else []
+    )
     com_line = (
         [f"    center_of_mass_mm: {old.get('center_of_mass_mm')} → {new.get('center_of_mass_mm')}"]
-        if old.get("center_of_mass_mm") != new.get("center_of_mass_mm")
+        if not _numbers_close(
+            old.get("center_of_mass_mm"), new.get("center_of_mass_mm")
+        )
         else []
     )
     valid_line = (
