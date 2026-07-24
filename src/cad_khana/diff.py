@@ -6,6 +6,10 @@ from cad_khana.mechanism.diagnostics import SCHEMA_VERSION
 
 Diag = dict[str, Any]
 
+# The exact text returned when two diagnostics are equivalent. The CLI
+# keys its exit code off this (0 = identical, 1 = differences).
+NO_CHANGES = "no changes\n"
+
 
 def _pct(old: float, new: float) -> str:
     if old == 0:
@@ -41,6 +45,10 @@ def _require_current_schema(old: Diag, new: Diag) -> None:
         )
 
 
+def _assertion_state(passed: bool | None) -> str:
+    return "passed" if passed is True else "failed" if passed is False else "skipped"
+
+
 def _assertions_section(old: list[Diag], new: list[Diag]) -> list[str]:
     old_map = {a["name"]: a for a in old}
     new_map = {a["name"]: a for a in new}
@@ -49,19 +57,28 @@ def _assertions_section(old: list[Diag], new: list[Diag]) -> list[str]:
         f"  regressed: {name}"
         + (f" — {new_map[name]['detail']}" if new_map[name].get("detail") else "")
         for name in sorted(common)
-        if old_map[name]["passed"] and not new_map[name]["passed"]
+        if old_map[name]["passed"] is True and new_map[name]["passed"] is False
     ]
     fixed = [
         f"  fixed: {name}"
         for name in sorted(common)
-        if not old_map[name]["passed"] and new_map[name]["passed"]
+        if old_map[name]["passed"] is False and new_map[name]["passed"] is True
+    ]
+    # Transitions into or out of the skipped state (passed = null).
+    skip_changed = [
+        f"  changed: {name}"
+        f" {_assertion_state(old_map[name]['passed'])}"
+        f" → {_assertion_state(new_map[name]['passed'])}"
+        for name in sorted(common)
+        if old_map[name]["passed"] != new_map[name]["passed"]
+        and None in (old_map[name]["passed"], new_map[name]["passed"])
     ]
     added = [
-        f"  added: {name} ({'passed' if new_map[name]['passed'] else 'failed'})"
+        f"  added: {name} ({_assertion_state(new_map[name]['passed'])})"
         for name in sorted(new_map.keys() - old_map.keys())
     ]
     removed = [f"  removed: {name}" for name in sorted(old_map.keys() - new_map.keys())]
-    return regressed + fixed + added + removed
+    return regressed + fixed + skip_changed + added + removed
 
 
 # --- Mechanism diff -----------------------------------------------------
@@ -183,7 +200,7 @@ def _diff_mechanism(old: Diag, new: Diag) -> str:
         ),
     )
     blocks = [f"{title}:\n" + "\n".join(lines) for title, lines in sections if lines]
-    return "\n".join(blocks) + "\n" if blocks else "no changes\n"
+    return "\n".join(blocks) + "\n" if blocks else NO_CHANGES
 
 
 # --- Printability diff --------------------------------------------------
@@ -276,7 +293,7 @@ def _diff_printability(old: Diag, new: Diag) -> str:
         ),
     )
     blocks = [f"{title}:\n" + "\n".join(lines) for title, lines in sections if lines]
-    return "\n".join(blocks) + "\n" if blocks else "no changes\n"
+    return "\n".join(blocks) + "\n" if blocks else NO_CHANGES
 
 
 # --- Dispatch -----------------------------------------------------------

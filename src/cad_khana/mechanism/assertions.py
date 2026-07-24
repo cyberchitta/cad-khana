@@ -127,11 +127,29 @@ def _placed(p: PlacedPart) -> Part:
     return p.part.moved(p.location)
 
 
+def _evaluate_part_assertion(
+    assertion: NoInterference | Clearance | ExpectedInterference,
+    parts: dict[str, Part],
+) -> AssertionResult:
+    """Skip (``passed=None``) instead of evaluating when a referenced
+    part is absent. Absence is a legitimate run state, not an input
+    error: detail geometry (fasteners, motors) is applied by an
+    override, and a standalone sub-assembly run evaluates the same
+    assertion list without those parts."""
+    missing = sorted(n for n in (assertion.a, assertion.b) if n not in parts)
+    if missing:
+        names = ", ".join(missing)
+        return AssertionResult(
+            assertion.name, None, f"skipped: part(s) absent from this run: {names}"
+        )
+    return assertion.evaluate(parts)
+
+
 def evaluate(assembly: Assembly) -> tuple[AssertionResult, ...]:
     parts = {p.name: _placed(p) for p in assembly.placed_parts}
     return tuple(
         a.evaluate_on(assembly)
         if isinstance(a, AnchorsCoincident)
-        else a.evaluate(parts)
+        else _evaluate_part_assertion(a, parts)
         for a in assembly.assertions
     )

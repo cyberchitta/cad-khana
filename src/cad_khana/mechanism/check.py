@@ -37,7 +37,7 @@ def check(
     do_export = _export_default if export is None else export
     exports = export_assembly(assembly, out_path) if do_export else ()
     assertion_results = evaluate_assertions(assembly)
-    failed = any(not a.passed for a in assertion_results)
+    failed = any(a.passed is False for a in assertion_results)
     diagnostics = replace(
         compute(assembly),
         exports=tuple(str(p) for p in exports),

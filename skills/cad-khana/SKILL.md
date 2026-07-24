@@ -49,7 +49,7 @@ khana build  <script>          # run script, export STL/STEP, write JSON diagnos
 khana check  <script>          # run script, write JSON diagnostics only (no export)
 khana view   <script>          # build, then push assembly to the OCP viewer (socket)
 khana draw   <script> [--view <names>] [--part <name>] [--format png|svg|both] [--themeable]  # build, then write engineering drawings under <out>/views/
-khana diff   <before> <after>  # diff two JSON files (mechanism or printability)
+khana diff   <before> <after>  # diff two JSON files; exit 0 identical, 1 differences, 2 error
 khana status                   # JSON probe of versions + viewer reachability; exit nonzero if degraded
 khana --version
 ```
@@ -273,7 +273,10 @@ For build123d's selector operators (`>`, `<`, `>>`, `<<`, `|`, `@`, `%`,
   `PlacedPart` from a `DetailOverride(part=…, location=…, material=…)`.
   Fasteners that the cheap model never created enter via additions
   — and each new fastener earns its own clearance assertion at the
-  sub-assembly that owns the joint. Same intrinsic-vs-placement
+  sub-assembly that owns the joint. Declare those assertions freely:
+  in a run without the detail applied they skip (`passed: null` in
+  the JSON, with the missing part named) instead of crashing, and
+  evaluate normally once the override adds the part. Same intrinsic-vs-placement
   rule as materials: stable detail facts can move into the
   part-builder when they earn it; live as override entries until
   then. The two override layers (`with_materials`,
@@ -675,6 +678,12 @@ printed part.
   success, stay the same on a silent no-op or OCCT failure.
 - `interferences` — list of overlapping part pairs with volume + centroid.
 - `assertions` — one entry per declared assertion; `passed` + `detail`.
+  `passed` is `true`/`false`/`null`: `null` means the assertion was
+  skipped because a part it references is absent from this run
+  (`detail` names the missing parts) — normal for assertions against
+  override-added detail parts in a standalone run. Skips never fail
+  the build; watch for an assertion that is *always* skipped, which
+  usually means a typo'd part name.
 
 `<name>-printability.json` after every `inspect()`:
 

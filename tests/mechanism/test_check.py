@@ -140,6 +140,37 @@ def test_check_collects_all_assertion_failures(tmp_path: Path):
     assert all(not a["passed"] for a in data["assertions"])
 
 
+def test_check_skipped_assertion_does_not_fail_the_run(tmp_path: Path):
+    assembly = (
+        Assembly()
+        .with_part("a", _cube())
+        .assert_clearance("a", "bolt", min_mm=0.2, name="detail_only")
+    )
+    result = check(assembly, out=tmp_path)
+    assert result.diagnostics.status == "ok"
+    data = json.loads((tmp_path / "mechanism.json").read_text())
+    assert data["status"] == "ok"
+    assert data["assertions"][0]["passed"] is None
+    assert "skipped" in data["assertions"][0]["detail"]
+
+
+def test_check_skipped_alongside_failure_still_fails(tmp_path: Path):
+    assembly = (
+        Assembly()
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((5, 0, 0)))
+        .assert_no_interference("a", "b", name="real")
+        .assert_clearance("a", "bolt", min_mm=0.2, name="detail_only")
+    )
+    with pytest.raises(SystemExit):
+        check(assembly, out=tmp_path)
+    data = json.loads((tmp_path / "mechanism.json").read_text())
+    assert data["status"] == "assertion_failed"
+    by_name = {a["name"]: a for a in data["assertions"]}
+    assert by_name["real"]["passed"] is False
+    assert by_name["detail_only"]["passed"] is None
+
+
 def test_check_records_interferences(tmp_path: Path):
     assembly = (
         Assembly()

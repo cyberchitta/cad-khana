@@ -6,6 +6,7 @@ from typer.testing import CliRunner
 
 from cad_khana import draw, environment, viewer
 from cad_khana.cli import app
+from cad_khana.mechanism.diagnostics import SCHEMA_VERSION
 
 runner = CliRunner()
 
@@ -546,7 +547,7 @@ def _fake_report(viewer_reachable: bool) -> environment.EnvironmentReport:
             reachable=viewer_reachable,
             error=None if viewer_reachable else "no listener on port 3939",
         ),
-        schema_version="0.2",
+        schema_version=SCHEMA_VERSION,
         status="ok" if viewer_reachable else "degraded",
     )
 
@@ -588,7 +589,7 @@ def test_status_real_probe_runs_and_returns_json():
     result = runner.invoke(app, ["status"])
     assert result.exit_code in (0, 1), result.output
     data = json.loads(result.stdout)
-    assert data["schema_version"] == "0.2"
+    assert data["schema_version"] == SCHEMA_VERSION
     assert isinstance(data["ocp_vscode"]["reachable"], bool)
 
 
@@ -685,3 +686,42 @@ def test_draw_part_unknown_name_fails(tmp_path: Path):
     )
     assert result.exit_code == 1
     assert "nope" in result.output
+
+
+# --- diff exit codes ------------------------------------------------------
+
+
+def _mech_json(tmp_path: Path, name: str, **overrides) -> Path:
+    base = {
+        "schema_version": SCHEMA_VERSION,
+        "status": "ok",
+        "parts": {},
+        "interferences": [],
+        "assertions": [],
+    }
+    path = tmp_path / name
+    path.write_text(json.dumps(base | overrides))
+    return path
+
+
+def test_diff_identical_exits_zero(tmp_path: Path):
+    a = _mech_json(tmp_path, "a.json")
+    b = _mech_json(tmp_path, "b.json")
+    result = runner.invoke(app, ["diff", str(a), str(b)])
+    assert result.exit_code == 0, result.output
+    assert "no changes" in result.stdout
+
+
+def test_diff_differences_exit_one(tmp_path: Path):
+    a = _mech_json(tmp_path, "a.json")
+    b = _mech_json(tmp_path, "b.json", status="assertion_failed")
+    result = runner.invoke(app, ["diff", str(a), str(b)])
+    assert result.exit_code == 1
+    assert "status:" in result.stdout
+
+
+def test_diff_schema_mismatch_exits_two(tmp_path: Path):
+    a = _mech_json(tmp_path, "a.json", schema_version="0.1")
+    b = _mech_json(tmp_path, "b.json")
+    result = runner.invoke(app, ["diff", str(a), str(b)])
+    assert result.exit_code == 2

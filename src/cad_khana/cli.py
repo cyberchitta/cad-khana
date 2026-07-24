@@ -12,7 +12,7 @@ import typer
 from cad_khana import environment
 from cad_khana import draw as _draw
 from cad_khana import viewer
-from cad_khana.diff import diff as compute_diff
+from cad_khana.diff import NO_CHANGES, diff as compute_diff
 from cad_khana.mechanism.check import _set_export_default
 from cad_khana.mechanism.diagnostics import Diagnostics
 
@@ -239,14 +239,22 @@ def status() -> None:
 
 @app.command()
 def diff(before: DiagArg, after: DiagArg) -> None:
-    """Diff two diagnostics JSON files (mechanism or printability)."""
+    """Diff two diagnostics JSON files (mechanism or printability).
+
+    Exits 0 when the files are equivalent, 1 when differences are
+    found (like `diff` / `git diff`), 2 on error — so refactor
+    harnesses can gate on the exit code.
+    """
     old = json.loads(before.read_text())
     new = json.loads(after.read_text())
     try:
-        typer.echo(compute_diff(old, new), nl=False)
+        text = compute_diff(old, new)
     except ValueError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=2)
+    typer.echo(text, nl=False)
+    if text != NO_CHANGES:
+        raise typer.Exit(code=1)
 
 
 def main() -> None:

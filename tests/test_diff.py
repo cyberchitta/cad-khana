@@ -96,6 +96,34 @@ def test_assertion_fix_is_reported():
     assert "fixed: clr" in out
 
 
+def test_assertion_newly_skipped_is_reported():
+    old = _empty_mech() | {"assertions": [{"name": "clr", "passed": True, "detail": None}]}
+    new = _empty_mech() | {
+        "assertions": [{"name": "clr", "passed": None, "detail": "skipped: part(s) absent from this run: bolt"}]
+    }
+    out = diff(old, new)
+    assert "changed: clr passed → skipped" in out
+
+
+def test_assertion_skip_to_failure_is_reported():
+    old = _empty_mech() | {"assertions": [{"name": "clr", "passed": None, "detail": "skipped"}]}
+    new = _empty_mech() | {"assertions": [{"name": "clr", "passed": False, "detail": "x"}]}
+    out = diff(old, new)
+    assert "changed: clr skipped → failed" in out
+
+
+def test_assertion_added_as_skipped_is_reported():
+    old = _empty_mech()
+    new = _empty_mech() | {"assertions": [{"name": "clr", "passed": None, "detail": "skipped"}]}
+    out = diff(old, new)
+    assert "added: clr (skipped)" in out
+
+
+def test_assertion_stably_skipped_is_not_reported():
+    skipped = {"assertions": [{"name": "clr", "passed": None, "detail": "skipped"}]}
+    assert diff(_empty_mech() | skipped, _empty_mech() | skipped) == "no changes\n"
+
+
 # --- printability diff --------------------------------------------------
 
 

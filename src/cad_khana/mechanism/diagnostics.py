@@ -9,7 +9,7 @@ from build123d import Part
 if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
 
-SCHEMA_VERSION = "0.2"
+SCHEMA_VERSION = "0.3"
 INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
 
 
@@ -41,8 +41,13 @@ class Interference:
 
 @dataclass(frozen=True)
 class AssertionResult:
+    """``passed`` is tri-state: ``True``/``False`` for an evaluated
+    assertion, ``None`` when it was skipped because a referenced part
+    is absent from the run (``detail`` names the missing parts).
+    Skipped assertions never fail a build."""
+
     name: str
-    passed: bool
+    passed: bool | None
     detail: str | None = None
 
 

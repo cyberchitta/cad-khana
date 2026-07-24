@@ -149,12 +149,14 @@ khana draw <path> --format png|svg|both     # orthographic/iso engineering drawi
 khana diff <old> <new>          # diff two diagnostics JSON files
 ```
 
-Use `typer` for the CLI. Every command exits nonzero on failure. `build` and
+Use `typer` for the CLI. Every command exits nonzero on failure. `diff`
+follows the `diff`/`git diff` contract: exit 0 when the files are
+equivalent, 1 when differences are found, 2 on error. `build` and
 `check` always write `mechanism.json` (and `<name>-printability.json` per
 `inspect()` call) even on failure, so the agent can always read structured
 error info.
 
-## Diagnostics JSON schemas (v0.2)
+## Diagnostics JSON schemas (v0.3)
 
 Version these from day one. Agents depend on field stability.
 
@@ -162,7 +164,7 @@ Version these from day one. Agents depend on field stability.
 
 ```json
 {
-  "schema_version": "0.2",
+  "schema_version": "0.3",
   "status": "ok | error | assertion_failed",
   "error": null,
   "hint": "Missing .part accessor — use `with BuildPart() as p: ...; return p.part`.",
@@ -188,11 +190,17 @@ Version these from day one. Agents depend on field stability.
 }
 ```
 
+`assertions[].passed` is tri-state: `true`/`false` for an evaluated
+assertion, `null` when it was skipped because a referenced part is
+absent from the run (`detail` names the missing parts — the standalone
+sub-assembly case, where detail-override parts aren't applied). Skipped
+assertions never set `status: "assertion_failed"`.
+
 `<name>-printability.json` — written by each `inspect()`:
 
 ```json
 {
-  "schema_version": "0.2",
+  "schema_version": "0.3",
   "kind": "printability",
   "status": "ok | assertion_failed",
   "name": "housing",

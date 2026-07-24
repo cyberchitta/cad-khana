@@ -209,6 +209,47 @@ def test_failures_and_passes_coexist():
     assert all(not r.passed for r in results)
 
 
+def test_assertion_against_absent_part_is_skipped():
+    # A detail-only assertion (e.g. against a fastener applied by an
+    # override) must not crash a standalone run that lacks the part.
+    a = Assembly().with_part("a", _cube()).assert_no_interference("a", "bolt")
+    (result,) = evaluate(a)
+    assert result.passed is None
+    assert "skipped" in result.detail
+    assert "bolt" in result.detail
+
+
+def test_clearance_against_absent_part_is_skipped():
+    a = Assembly().with_part("a", _cube()).assert_clearance("a", "bolt", min_mm=0.2)
+    (result,) = evaluate(a)
+    assert result.passed is None
+
+
+def test_expected_interference_against_absent_part_is_skipped():
+    a = Assembly().with_part("a", _cube()).assert_interference("a", "bolt")
+    (result,) = evaluate(a)
+    assert result.passed is None
+
+
+def test_skip_detail_names_every_missing_part():
+    a = Assembly().with_part("a", _cube()).assert_clearance("bolt", "nut", min_mm=1)
+    (result,) = evaluate(a)
+    assert "bolt" in result.detail and "nut" in result.detail
+
+
+def test_skipped_and_failed_assertions_coexist():
+    a = (
+        Assembly()
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((5, 0, 0)))
+        .assert_no_interference("a", "b", name="real_failure")
+        .assert_clearance("a", "bolt", min_mm=0.2, name="detail_only")
+    )
+    by_name = {r.name: r for r in evaluate(a)}
+    assert by_name["real_failure"].passed is False
+    assert by_name["detail_only"].passed is None
+
+
 def test_anchors_coincident_passes_when_beliefs_agree():
     # Two units each export their belief of a shared datum in their
     # own frame; the parent composes and asserts coincidence.
