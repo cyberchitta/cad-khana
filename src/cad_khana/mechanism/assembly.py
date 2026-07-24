@@ -159,6 +159,21 @@ class Assembly:
     subassemblies: tuple[SubAssembly, ...] = ()
     assertions: tuple[Assertion, ...] = ()
 
+    def _check_sibling_name(self, name: str) -> None:
+        """Sibling names must be unique at each tree level — they are
+        the segments of the qualified part paths that ``placed_parts``
+        and the diagnostics report, so a duplicate would make two
+        parts silently shadow each other in every ``{path: part}``
+        consumer (assertions, diff, renders)."""
+        if any(p.name == name for p in self.parts) or any(
+            s.name == name for s in self.subassemblies
+        ):
+            raise ValueError(
+                f"duplicate sibling name {name!r} — part and "
+                f"sub-assembly names must be unique within one level "
+                f"(they qualify into tree paths)"
+            )
+
     def with_part(
         self,
         name: str,
@@ -167,6 +182,7 @@ class Assembly:
         color: Color | None = None,
         material: str | None = None,
     ) -> "Assembly":
+        self._check_sibling_name(name)
         placed = PlacedPart(name, part, location or Location(), color, material)
         return replace(self, parts=self.parts + (placed,))
 
@@ -177,6 +193,12 @@ class Assembly:
         location: Location | None = None,
         joint: RevoluteJoint | None = None,
     ) -> "Assembly":
+        if "." in name:
+            raise ValueError(
+                f"sub-assembly name {name!r} contains '.' — reserved "
+                f"as the tree-path separator"
+            )
+        self._check_sibling_name(name)
         sub = SubAssembly(
             name=name,
             assembly=assembly,
@@ -244,18 +266,31 @@ class Assembly:
 
     def with_materials(self, mapping: dict[str, str]) -> "Assembly":
         """Return a copy with each named part's material replaced by the
-        value in ``mapping``. Recurses into sub-assemblies. Parts not in
-        the mapping are unchanged.
+        value in ``mapping``. Keys are qualified tree paths — the same
+        names ``placed_parts`` reports (``"turret.rotor.arm.spider"``;
+        bare names for root-level parts). Parts not in the mapping are
+        unchanged.
 
         Symmetric to ``chitra_cad.Scene.with_materials``: use this layer
         for cross-consumer experiments (render + FEA both read from the
         ``Assembly``); use the ``Scene`` layer for render-only sweeps.
         """
+        return self._with_materials(mapping, "")
+
+    def _with_materials(
+        self, mapping: dict[str, str], prefix: str
+    ) -> "Assembly":
         new_parts = tuple(
-            replace(p, material=mapping.get(p.name, p.material)) for p in self.parts
+            replace(p, material=mapping.get(f"{prefix}{p.name}", p.material))
+            for p in self.parts
         )
         new_subs = tuple(
-            replace(s, assembly=s.assembly.with_materials(mapping))
+            replace(
+                s,
+                assembly=s.assembly._with_materials(
+                    mapping, f"{prefix}{s.name}."
+                ),
+            )
             for s in self.subassemblies
         )
         return replace(self, parts=new_parts, subassemblies=new_subs)
@@ -265,10 +300,13 @@ class Assembly:
     ) -> "Assembly":
         """Return a copy with detailed geometry swapped or appended.
 
-        Swaps recurse — a matching name anywhere in the hierarchy gets
+        Keys are qualified tree paths (the names ``placed_parts``
+        reports). A key matching a part anywhere in the hierarchy gets
         its part replaced in-place (preserving placement / material /
-        color unless the override supplies them). Additions land at the
-        top level only, and require an explicit ``location``.
+        color unless the override supplies them). Keys with no match
+        are additions: they land at the top level only, require an
+        explicit ``location``, and their name becomes a root-level
+        part name.
 
         A bare ``Part`` value is shorthand for ``DetailOverride(part=p)``.
         """
@@ -276,7 +314,7 @@ class Assembly:
             name: (v if isinstance(v, DetailOverride) else DetailOverride(part=v))
             for name, v in mapping.items()
         }
-        swapped = self._swap_detail(overrides)
+        swapped = self._swap_detail(overrides, "")
         all_names = swapped._all_part_names()
         additions: list[PlacedPart] = []
         for name, ov in overrides.items():
@@ -298,29 +336,40 @@ class Assembly:
             )
         return replace(swapped, parts=swapped.parts + tuple(additions))
 
-    def _swap_detail(self, overrides: dict[str, "DetailOverride"]) -> "Assembly":
+    def _swap_detail(
+        self, overrides: dict[str, "DetailOverride"], prefix: str
+    ) -> "Assembly":
         new_parts = tuple(
             replace(
                 p,
-                part=overrides[p.name].part,
-                location=overrides[p.name].location or p.location,
-                material=overrides[p.name].material or p.material,
-                color=overrides[p.name].color or p.color,
+                part=overrides[f"{prefix}{p.name}"].part,
+                location=overrides[f"{prefix}{p.name}"].location or p.location,
+                material=overrides[f"{prefix}{p.name}"].material or p.material,
+                color=overrides[f"{prefix}{p.name}"].color or p.color,
             )
-            if p.name in overrides
+            if f"{prefix}{p.name}" in overrides
             else p
             for p in self.parts
         )
         new_subs = tuple(
-            replace(s, assembly=s.assembly._swap_detail(overrides))
+            replace(
+                s,
+                assembly=s.assembly._swap_detail(
+                    overrides, f"{prefix}{s.name}."
+                ),
+            )
             for s in self.subassemblies
         )
         return replace(self, parts=new_parts, subassemblies=new_subs)
 
     def _all_part_names(self) -> set[str]:
+        """Qualified tree paths of every part in the tree — the same
+        names ``placed_parts`` reports."""
         names = {p.name for p in self.parts}
         for s in self.subassemblies:
-            names.update(s.assembly._all_part_names())
+            names.update(
+                f"{s.name}.{n}" for n in s.assembly._all_part_names()
+            )
         return names
 
     def assert_no_interference(
@@ -379,13 +428,18 @@ class Assembly:
         raise KeyError(f"no sub-assembly named {head!r}")
 
     def _resolve_group(self, group: str | Iterable[str]) -> tuple[str, ...]:
-        """A group selector → concrete part names. A ``str`` is a dotted
-        sub-assembly path and resolves to every part name under that
-        subtree (sorted, for deterministic expansion order); any other
-        iterable is taken as explicit part names in the given order."""
+        """A group selector → concrete part paths. A ``str`` is a dotted
+        sub-assembly path and resolves to every part under that subtree,
+        as qualified paths from *this* assembly's root (sorted, for
+        deterministic expansion order); any other iterable is taken as
+        explicit part paths in the given order."""
         if isinstance(group, str):
             sub = self._subassembly_at(group)
-            return tuple(sorted(sub.assembly._all_part_names()))
+            return tuple(
+                sorted(
+                    f"{group}.{n}" for n in sub.assembly._all_part_names()
+                )
+            )
         return tuple(group)
 
     def assert_no_interference_between(
@@ -459,20 +513,31 @@ class Assembly:
     @property
     def placed_parts(self) -> tuple[PlacedPart, ...]:
         """Flat walk over the assembly tree. Each yielded ``PlacedPart``
-        carries the original part + name, with ``location`` composed
-        through the parent chain so it reflects the world-frame placement
-        regardless of nesting depth.
+        carries the original part with its ``name`` qualified into the
+        dotted tree path (``"turret.rotor.arm.spider"``; root-level
+        parts keep their bare name) and ``location`` composed through
+        the parent chain so it reflects the world-frame placement
+        regardless of nesting depth. The path is the part's identity:
+        assertions, diagnostics, diff, exports, and the override layers
+        (``with_materials`` / ``with_detailed_geometry``) all key on it.
 
         Use this when a consumer needs the leaf view (interference checks,
-        diagnostics, name-keyed lookups across the whole assembly). The
+        diagnostics, path-keyed lookups across the whole assembly). The
         underlying tree (``parts`` / ``subassemblies``) stays the source
-        of truth for animation channels and hierarchy emission.
+        of truth for animation channels and hierarchy emission; inside
+        the tree, ``PlacedPart.name`` is the local segment only.
         """
         out: list[PlacedPart] = list(self.parts)
         for sub in self.subassemblies:
             eff = sub.effective_location
             for inner in sub.assembly.placed_parts:
-                out.append(replace(inner, location=eff * inner.location))
+                out.append(
+                    replace(
+                        inner,
+                        name=f"{sub.name}.{inner.name}",
+                        location=eff * inner.location,
+                    )
+                )
         return tuple(out)
 
     @property

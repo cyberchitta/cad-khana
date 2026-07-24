@@ -229,7 +229,8 @@ For build123d's selector operators (`>`, `<`, `>>`, `<<`, `|`, `@`, `%`,
   leave unset (`None`) when the answer is genuinely open and let the
   consumer's override layer supply the current best guess. For
   cross-consumer experiments (render + FEA both reading from the same
-  assembly), use `Assembly.with_materials({name: token})`. For
+  assembly), use `Assembly.with_materials({path: token})` — keys are
+  the qualified tree paths that `placed_parts` reports. For
   render-only sweeps, use the consumer's own override (e.g.
   chitra-cad's `Scene.with_materials({...})`).
 - **Two fidelity tiers — keep cheap geometry in the assembly,
@@ -245,9 +246,9 @@ For build123d's selector operators (`>`, `<`, `>>`, `<<`, `|`, `@`, `%`,
   `Assembly.with_detailed_geometry(BUNDLE)` before the consumer
   (render / FEA / kinematics) reads the assembly. The override map
   handles **both swaps and additions**: a key matching an existing
-  `PlacedPart.name` swaps the part shape (placement / material /
-  color preserved); a key with no match appends a new `PlacedPart`
-  from a `DetailOverride(part=…, location=…, material=…)`.
+  part's qualified path swaps the part shape (placement / material /
+  color preserved); a key with no match appends a new root-level
+  `PlacedPart` from a `DetailOverride(part=…, location=…, material=…)`.
   Fasteners that the cheap model never created enter via additions
   — and each new fastener earns its own clearance assertion at the
   sub-assembly that owns the joint. Same intrinsic-vs-placement
@@ -261,6 +262,15 @@ For build123d's selector operators (`>`, `<`, `>>`, `<<`, `|`, `@`, `%`,
   BuildPart context buys something (sketches, workplanes, patterns).
 - **Name parts with stable identifiers** when you place them — assertions
   reference these names, and the JSON diagnostics report per-name data.
+  **Identity is the tree path**: a part nested in sub-assemblies is
+  addressed everywhere by its dotted path (`"turret.rotor.arm.spider"`;
+  root-level parts keep their bare name). The local name is just the
+  last segment, so don't bake hierarchy into it — `"frame"` inside
+  `platform_image` beats `"platform_image_frame"`; two instances of one
+  builder are distinguished by their subtree, not by name prefixes.
+  Sibling names must be unique within a level (`with_part` /
+  `with_subassembly` enforce this) and sub-assembly names cannot
+  contain `.`.
 - **Inspect only the parts you will actually print.** Stand-ins
   (extrusion stubs, shafts, fixed hardware) don't need `inspect()`;
   they are bought, not printed.
@@ -334,10 +344,12 @@ double loop:
 | `.assert_no_interference_between(group_a, group_b, …)` | One `assert_no_interference` per cross pair `(a, b)`. |
 | `.assert_no_interference_within(group, …)` | One per unordered pair inside `group` (`i < j` in group order). |
 
-A group is an iterable of part names, or a **dotted sub-assembly path**
-(`"turret.rotor"`) selecting every part under that subtree (sorted).
-Expansion is a macro over the current contents — parts added afterwards
-aren't covered, so declare group assertions after composition.
+A group is an iterable of part paths, or a **dotted sub-assembly path**
+(`"turret.rotor"`) selecting every part under that subtree — expanded
+to full paths from the asserting assembly's root
+(`"turret.rotor.arm.spider"`), sorted. Expansion is a macro over the
+current contents — parts added afterwards aren't covered, so declare
+group assertions after composition.
 
 Both take two keyword options:
 

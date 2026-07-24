@@ -62,26 +62,29 @@ def _structural_groups(assembly: Assembly) -> list[list[str]]:
     absolute pose, which already includes every ancestor's
     contribution by construction."""
 
-    def _walk_into(asm: Assembly) -> list[str]:
-        """Names of parts inside ``asm`` that DON'T belong to any
-        nested jointed sub. Walks past jointed children (they become
-        their own group elsewhere) and aggregates the rest."""
-        names = [p.name for p in asm.parts]
+    def _walk_into(asm: Assembly, prefix: str) -> list[str]:
+        """Qualified paths of parts inside ``asm`` that DON'T belong to
+        any nested jointed sub. Walks past jointed children (they
+        become their own group elsewhere) and aggregates the rest.
+        Paths must match ``placed_parts`` names — that's how
+        ``_inject_animation_into_glb`` finds the GLB nodes."""
+        names = [f"{prefix}{p.name}" for p in asm.parts]
         for sub in asm.subassemblies:
             if sub.joint is None:
-                names.extend(_walk_into(sub.assembly))
+                names.extend(_walk_into(sub.assembly, f"{prefix}{sub.name}."))
         return names
 
-    def _collect(asm: Assembly, out: list[list[str]]) -> None:
+    def _collect(asm: Assembly, prefix: str, out: list[list[str]]) -> None:
         for sub in asm.subassemblies:
+            sub_prefix = f"{prefix}{sub.name}."
             if sub.joint is not None:
-                owned = _walk_into(sub.assembly)
+                owned = _walk_into(sub.assembly, sub_prefix)
                 if owned:
                     out.append(owned)
-            _collect(sub.assembly, out)
+            _collect(sub.assembly, sub_prefix, out)
 
     groups: list[list[str]] = []
-    _collect(assembly, groups)
+    _collect(assembly, "", groups)
     return groups
 
 

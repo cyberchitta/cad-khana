@@ -225,7 +225,7 @@ def test_placed_parts_composes_subassembly_location():
     )
     placed = parent.placed_parts
     assert len(placed) == 1
-    assert placed[0].name == "inner"
+    assert placed[0].name == "group.inner"
     assert placed[0].location.position.X == pytest.approx(11.0)
 
 
@@ -383,7 +383,9 @@ def test_with_materials_recurses_into_subassemblies():
         .with_part("outer", _cube(), material="plastic_matte")
         .with_subassembly("group", leaf)
     )
-    overridden = parent.with_materials({"inner": "steel", "outer": "aluminium"})
+    overridden = parent.with_materials(
+        {"group.inner": "steel", "outer": "aluminium"}
+    )
     assert overridden.parts[0].material == "aluminium"
     assert overridden.subassemblies[0].assembly.parts[0].material == "steel"
 
@@ -474,8 +476,8 @@ def test_group_path_selects_subtree_parts_sorted():
     )
     grouped = top.assert_no_interference_between("unit.inner", ("outside",))
     assert [a.name for a in grouped.assertions] == [
-        "no_interference:a_part/outside",
-        "no_interference:z_part/outside",
+        "no_interference:unit.inner.a_part/outside",
+        "no_interference:unit.inner.z_part/outside",
     ]
 
 
@@ -506,7 +508,7 @@ def test_local_joint_rotates_about_sub_local_axis():
         location=Location((100, 0, 0)),
         joint=RevoluteJoint(axis=Axis.Z, angle_deg=90.0, frame="local"),
     )
-    pos = _placed_position(top, "tip")
+    pos = _placed_position(top, "arm.tip")
     assert abs(pos.X - 100) < 1e-9
     assert abs(pos.Y - 10) < 1e-9
 
@@ -522,7 +524,7 @@ def test_parent_joint_rotates_about_parent_axis():
         location=Location((100, 0, 0)),
         joint=RevoluteJoint(axis=Axis.Z, angle_deg=90.0, frame="parent"),
     )
-    pos = _placed_position(top, "tip")
+    pos = _placed_position(top, "arm.tip")
     assert abs(pos.X - 0) < 1e-9
     assert abs(pos.Y - 110) < 1e-9
 
@@ -544,11 +546,114 @@ def test_local_axis_equals_parent_axis_through_location():
         "u", sub, location=place,
         joint=RevoluteJoint(axis=parent_axis, angle_deg=35.0, frame="parent"),
     )
-    lp = _placed_position(local, "tip")
-    pp = _placed_position(parent, "tip")
+    lp = _placed_position(local, "u.tip")
+    pp = _placed_position(parent, "u.tip")
     assert (Vector(lp) - Vector(pp)).length < 1e-9
 
 
 def test_joint_frame_validated():
     with pytest.raises(ValueError):
         RevoluteJoint(axis=Axis.Z, frame="world")
+
+
+# --- Path identity ------------------------------------------------------
+
+
+def test_placed_parts_qualifies_names_at_depth():
+    leaf = Assembly().with_part("frame", _cube())
+    mid = Assembly().with_subassembly("platform_image", leaf)
+    top = (
+        Assembly()
+        .with_part("bench", _cube())
+        .with_subassembly("rotor", mid)
+    )
+    assert [p.name for p in top.placed_parts] == [
+        "bench",
+        "rotor.platform_image.frame",
+    ]
+
+
+def test_same_leaf_name_in_two_subtrees_does_not_shadow():
+    # Two instances of one builder, distinguished only by their subtree
+    # path — the motivating case for path identity. Both must appear in
+    # placed_parts under distinct names.
+    def cartridge():
+        return Assembly().with_part("frame", _cube())
+
+    top = (
+        Assembly()
+        .with_subassembly("platform_image", cartridge())
+        .with_subassembly(
+            "platform_dump", cartridge(), location=Location((100, 0, 0))
+        )
+    )
+    names = [p.name for p in top.placed_parts]
+    assert names == ["platform_image.frame", "platform_dump.frame"]
+    # And a group assertion across the two paths evaluates both parts.
+    checked = top.assert_no_interference_between(
+        "platform_image", "platform_dump"
+    )
+    from cad_khana.mechanism.assertions import evaluate
+
+    results = evaluate(checked)
+    assert len(results) == 1
+    assert results[0].passed
+
+
+def test_with_materials_keys_on_path_at_depth():
+    leaf = Assembly().with_part("frame", _cube(), material="plastic_matte")
+    top = Assembly().with_subassembly(
+        "rotor", Assembly().with_subassembly("platform_image", leaf)
+    )
+    overridden = top.with_materials(
+        {"rotor.platform_image.frame": "steel"}
+    )
+    placed = overridden.placed_parts
+    assert placed[0].material == "steel"
+    # A bare leaf name no longer matches a nested part.
+    unmatched = top.with_materials({"frame": "steel"})
+    assert unmatched.placed_parts[0].material == "plastic_matte"
+
+
+def test_with_detailed_geometry_swaps_by_path():
+    leaf = Assembly().with_part("rail", _cube(10), material="plastic_matte")
+    top = Assembly().with_subassembly("unit", leaf)
+    detailed = _cube(20)
+    result = top.with_detailed_geometry({"unit.rail": detailed})
+    assert result.subassemblies[0].assembly.parts[0].part is detailed
+    # No addition happened — the path matched.
+    assert result.parts == ()
+
+
+def test_with_detailed_geometry_bare_name_of_nested_part_is_addition():
+    leaf = Assembly().with_part("rail", _cube(10))
+    top = Assembly().with_subassembly("unit", leaf)
+    with pytest.raises(ValueError, match="requires an explicit location"):
+        top.with_detailed_geometry({"rail": _cube(20)})
+
+
+def test_duplicate_sibling_part_name_raises():
+    a = Assembly().with_part("frame", _cube())
+    with pytest.raises(ValueError, match="duplicate sibling name"):
+        a.with_part("frame", _cube())
+
+
+def test_duplicate_part_and_subassembly_name_raises():
+    a = Assembly().with_part("frame", _cube())
+    with pytest.raises(ValueError, match="duplicate sibling name"):
+        a.with_subassembly("frame", Assembly())
+
+
+def test_same_name_at_different_levels_is_fine():
+    inner = Assembly().with_part("frame", _cube())
+    top = (
+        Assembly()
+        .with_part("frame", _cube(), location=Location((50, 0, 0)))
+        .with_subassembly("unit", inner)
+    )
+    assert [p.name for p in top.placed_parts] == ["frame", "unit.frame"]
+
+
+def test_subassembly_name_with_dot_raises():
+    with pytest.raises(ValueError, match="tree-path separator"):
+        Assembly().with_subassembly("a.b", Assembly())

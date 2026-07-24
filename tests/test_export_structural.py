@@ -28,7 +28,7 @@ def test_structural_groups_one_group_per_top_level_joint():
     )
     groups = _structural_groups(a)
     assert len(groups) == 1
-    assert set(groups[0]) == {"hub", "spider"}
+    assert set(groups[0]) == {"rotor.hub", "rotor.spider"}
 
 
 def test_structural_groups_nested_joints_produce_non_overlapping_groups():
@@ -55,10 +55,15 @@ def test_structural_groups_nested_joints_produce_non_overlapping_groups():
     )
     groups = _structural_groups(a)
     assert len(groups) == 2
-    rotor_grp = next(g for g in groups if "hub" in g)
-    platform_grp = next(g for g in groups if "acrylic" in g)
-    assert set(rotor_grp) == {"hub", "spider"}
-    assert set(platform_grp) == {"acrylic", "frame"}
+    rotor_grp = next(g for g in groups if "rotor.hub" in g)
+    platform_grp = next(
+        g for g in groups if "rotor.platform_dump.acrylic" in g
+    )
+    assert set(rotor_grp) == {"rotor.hub", "rotor.spider"}
+    assert set(platform_grp) == {
+        "rotor.platform_dump.acrylic",
+        "rotor.platform_dump.frame",
+    }
     flat = [n for g in groups for n in g]
     assert len(flat) == len(set(flat)), "groups must be non-overlapping"
 
@@ -79,4 +84,8 @@ def test_structural_groups_non_jointed_subassembly_is_absorbed():
     )
     groups = _structural_groups(a)
     assert len(groups) == 1
-    assert set(groups[0]) == {"hub", "inner_a", "inner_b"}
+    assert set(groups[0]) == {
+        "rotor.hub",
+        "rotor.static_wrapper.inner_a",
+        "rotor.static_wrapper.inner_b",
+    }
