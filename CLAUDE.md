@@ -359,6 +359,8 @@ invisible to the `Grep`/`Glob` tools (global `CLAUDE.md` has the `rg` forms).
 Read directly when relevant:
 
 - `_notes/NOTES.md` — design rationale, open questions, history
+- `_notes/worklist.md` — the continuing-state file: feature-program
+  sequencing and status (implementation driven in tandem with sorted-studs)
 - `_notes/field-notes.md` — real-use friction from consumer sessions
 - `_notes/implementation-log.md` — session log
 - `_notes/research/ideas.md` — prioritized idea backlog from the ~30-repo survey
