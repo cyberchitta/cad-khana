@@ -207,3 +207,65 @@ def test_failures_and_passes_coexist():
     results = evaluate(a)
     assert len(results) == 2
     assert all(not r.passed for r in results)
+
+
+def test_anchors_coincident_passes_when_beliefs_agree():
+    # Two units each export their belief of a shared datum in their
+    # own frame; the parent composes and asserts coincidence.
+    deck = Assembly().with_anchor("top", Location((0, 0, 890)))
+    chain = Assembly().with_anchor("deck_top", Location((0, 0, -140)))
+    top = (
+        Assembly()
+        .with_subassembly("m05", deck)
+        .with_subassembly("chain", chain, location=Location((0, 0, 1030)))
+        .assert_anchors_coincident("m05.top", "chain.deck_top")
+    )
+    (result,) = evaluate(top)
+    assert result.passed
+    assert result.name == "anchors_coincident:m05.top/chain.deck_top"
+
+
+def test_anchors_coincident_fails_on_drift_with_distance_detail():
+    deck = Assembly().with_anchor("top", Location((0, 0, 890)))
+    chain = Assembly().with_anchor("deck_top", Location((0, 0, -150)))
+    top = (
+        Assembly()
+        .with_subassembly("m05", deck)
+        .with_subassembly("chain", chain, location=Location((0, 0, 1030)))
+        .assert_anchors_coincident("m05.top", "chain.deck_top")
+    )
+    (result,) = evaluate(top)
+    assert not result.passed
+    assert "10.000000mm" in result.detail
+
+
+def test_anchors_coincident_tolerance_is_respected():
+    a = (
+        Assembly()
+        .with_anchor("x", Location((0, 0, 0)))
+        .with_anchor("y", Location((0.05, 0, 0)))
+        .assert_anchors_coincident("x", "y", tol_mm=0.1)
+    )
+    (result,) = evaluate(a)
+    assert result.passed
+
+
+def test_anchors_coincident_honors_joint_angle_applied_after_declaration():
+    # The assertion re-resolves at evaluate time: declaring at angle 0
+    # then rotating the jointed subtree moves its anchor off target.
+    from cad_khana.mechanism.assembly import RevoluteJoint
+    from build123d import Axis
+
+    unit = Assembly().with_anchor("tip", Location((10, 0, 0)))
+    top = (
+        Assembly()
+        .with_anchor("target", Location((10, 0, 0)))
+        .with_subassembly(
+            "arm", unit, joint=RevoluteJoint(axis=Axis.Z, frame="local")
+        )
+        .assert_anchors_coincident("target", "arm.tip")
+    )
+    (at_rest,) = evaluate(top)
+    assert at_rest.passed
+    (rotated,) = evaluate(top.with_joint_angle("arm", 90.0))
+    assert not rotated.passed

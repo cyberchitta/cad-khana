@@ -364,6 +364,43 @@ Expanded assertions are the plain single-pair forms with their usual
 auto-names, so migrating a hand-written loop to a group call leaves
 `mechanism.json` unchanged.
 
+### Named interface anchors
+
+When two units share a physical interface (a deck a frame rests on, a
+column a bracket mates to, a delivery point), don't mirror the numbers
+across unit boundaries — export the datum as an **anchor** and let the
+composing parent derive placements and assert the interface:
+
+```python
+# each unit declares its interface points in its OWN frame
+m05 = m05.with_anchor("deck_top", Pos(0, 0, DECK_TOP_Z))
+chain = chain.with_anchor("deck_top", Pos(0, 0, DECK_TOP_Z_LOCAL))
+
+# the parent resolves anchors to derive placement …
+deck = m05_assy.anchor("deck_top").position
+pose = Pos(0, 250, deck.Z - floor_bottom.Z)
+
+# … and, after composition, asserts the units' beliefs coincide
+top = top.assert_anchors_coincident("chain.deck_top", "m05.deck_top")
+```
+
+`with_anchor(name, location)` declares a named `Location` in the
+assembly's local frame (own namespace — no collision with part names;
+no `.` in the name). `anchor(path)` resolves a dotted path
+(`"m05.deck_top"`) through the tree, composing each sub-assembly's
+placement and joint like part locations — an anchor under a jointed
+subtree moves with the joint. `assert_anchors_coincident(a, b,
+tol_mm=1e-6)` compares resolved **positions** (orientation ignored);
+paths are checked at declaration (fail-fast on typos) and re-resolved
+at `check()` time.
+
+The pattern replaces mirror-constant + drift-assert pairs: a unit that
+must build standalone keeps its local numbers, but *exports where it
+believes the shared datum is* — if a mirror drifts, the two beliefs
+stop coinciding and the parent's `check()` fails loudly, instead of
+the drift silently desyncing the machine. Anchors carry no geometry;
+exports and interference checks ignore them.
+
 ## Animation: joints + time-parameterized assembly
 
 Beyond static assertions, `Assembly` can express **motion**: a

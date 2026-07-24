@@ -88,7 +88,39 @@ class ExpectedInterference:
         return AssertionResult(self.name, passed, detail)
 
 
-Assertion = NoInterference | Clearance | ExpectedInterference
+@dataclass(frozen=True)
+class AnchorsCoincident:
+    """Assert two named anchors resolve to the same position (within
+    ``tol_mm``; orientation is ignored). ``a`` / ``b`` are dotted
+    anchor paths resolved against the asserting assembly at evaluation
+    time (``Assembly.anchor``), so the check reflects placements and
+    joint angles as of ``check()``. Unlike the part assertions, this
+    needs the assembly (not the placed-parts dict) to evaluate.
+    """
+
+    a: str
+    b: str
+    tol_mm: float
+    name: str
+
+    def evaluate_on(self, assembly: Assembly) -> AssertionResult:
+        pa = assembly.anchor(self.a).position
+        pb = assembly.anchor(self.b).position
+        dist = (pa - pb).length
+        passed = dist <= self.tol_mm
+        detail = (
+            None
+            if passed
+            else (
+                f"anchors differ by {dist:.6f}mm (tol {self.tol_mm}mm): "
+                f"{self.a} at ({pa.X:.6f}, {pa.Y:.6f}, {pa.Z:.6f}), "
+                f"{self.b} at ({pb.X:.6f}, {pb.Y:.6f}, {pb.Z:.6f})"
+            )
+        )
+        return AssertionResult(self.name, passed, detail)
+
+
+Assertion = NoInterference | Clearance | ExpectedInterference | AnchorsCoincident
 
 
 def _placed(p: PlacedPart) -> Part:
@@ -97,4 +129,9 @@ def _placed(p: PlacedPart) -> Part:
 
 def evaluate(assembly: Assembly) -> tuple[AssertionResult, ...]:
     parts = {p.name: _placed(p) for p in assembly.placed_parts}
-    return tuple(a.evaluate(parts) for a in assembly.assertions)
+    return tuple(
+        a.evaluate_on(assembly)
+        if isinstance(a, AnchorsCoincident)
+        else a.evaluate(parts)
+        for a in assembly.assertions
+    )

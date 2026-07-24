@@ -657,3 +657,75 @@ def test_same_name_at_different_levels_is_fine():
 def test_subassembly_name_with_dot_raises():
     with pytest.raises(ValueError, match="tree-path separator"):
         Assembly().with_subassembly("a.b", Assembly())
+
+
+# --- Anchors ----------------------------------------------------------
+
+
+def test_with_anchor_and_root_resolution():
+    a = Assembly().with_anchor("deck_top", Location((0, 0, 890)))
+    assert a.anchor("deck_top").position == Location((0, 0, 890)).position
+
+
+def test_anchor_resolves_through_subassembly_placement():
+    unit = Assembly().with_anchor("datum", Location((10, 0, 0)))
+    top = Assembly().with_subassembly(
+        "m05", unit, location=Location((100, 0, 5))
+    )
+    pos = top.anchor("m05.datum").position
+    assert abs(pos.X - 110) < 1e-9
+    assert abs(pos.Z - 5) < 1e-9
+
+
+def test_anchor_composes_joint_transform():
+    # Anchor at sub-local (10, 0, 0) under a 90° local Z joint at the
+    # sub origin: swings to sub-frame (0, 10, 0), then places at
+    # parent (100, 10, 0) — same composition as placed parts.
+    unit = Assembly().with_anchor("tip", Location((10, 0, 0)))
+    top = Assembly().with_subassembly(
+        "arm",
+        unit,
+        location=Location((100, 0, 0)),
+        joint=RevoluteJoint(axis=Axis.Z, angle_deg=90.0, frame="local"),
+    )
+    pos = top.anchor("arm.tip").position
+    assert abs(pos.X - 100) < 1e-9
+    assert abs(pos.Y - 10) < 1e-9
+
+
+def test_anchor_missing_name_raises_keyerror():
+    a = Assembly().with_anchor("datum", Location())
+    with pytest.raises(KeyError):
+        a.anchor("nope")
+
+
+def test_anchor_missing_subassembly_segment_raises_keyerror():
+    a = Assembly().with_anchor("datum", Location())
+    with pytest.raises(KeyError):
+        a.anchor("ghost.datum")
+
+
+def test_duplicate_anchor_name_raises():
+    a = Assembly().with_anchor("datum", Location())
+    with pytest.raises(ValueError):
+        a.with_anchor("datum", Location((1, 0, 0)))
+
+
+def test_anchor_name_with_dot_raises():
+    with pytest.raises(ValueError):
+        Assembly().with_anchor("a.b", Location())
+
+
+def test_anchor_name_does_not_collide_with_part_name():
+    a = (
+        Assembly()
+        .with_part("datum", _cube())
+        .with_anchor("datum", Location((0, 0, 42)))
+    )
+    assert a.anchor("datum").position.Z == 42
+
+
+def test_assert_anchors_coincident_fails_fast_on_missing_path():
+    a = Assembly().with_anchor("datum", Location())
+    with pytest.raises(KeyError):
+        a.assert_anchors_coincident("datum", "ghost.datum")

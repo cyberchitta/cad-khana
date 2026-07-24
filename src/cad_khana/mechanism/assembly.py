@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from build123d import Axis, Color, Compound, Location, Part
 
 from cad_khana.mechanism.assertions import (
+    AnchorsCoincident,
     Assertion,
     Clearance,
     ExpectedInterference,
@@ -47,6 +48,25 @@ class PlacedPart:
     location: Location
     color: Color | None = None
     material: str | None = None
+
+
+@dataclass(frozen=True)
+class Anchor:
+    """A named datum ``Location`` in the owning assembly's local frame.
+
+    Anchors are a unit's exported interface points (a deck top face, a
+    mating column top, a delivery centroid): the unit declares where
+    the interface is *in its own frame*, and a parent resolves the
+    anchor through the tree (``Assembly.anchor``) — composed through
+    sub-assembly placements and joints exactly like part locations —
+    to derive placements or assert coincidence
+    (``assert_anchors_coincident``). Anchors carry no geometry and are
+    ignored by exports and interference checks; they live in their own
+    namespace, separate from part / sub-assembly names.
+    """
+
+    name: str
+    location: Location
 
 
 @dataclass(frozen=True)
@@ -158,6 +178,7 @@ class Assembly:
     parts: tuple[PlacedPart, ...] = ()
     subassemblies: tuple[SubAssembly, ...] = ()
     assertions: tuple[Assertion, ...] = ()
+    anchors: tuple[Anchor, ...] = ()
 
     def _check_sibling_name(self, name: str) -> None:
         """Sibling names must be unique at each tree level — they are
@@ -206,6 +227,41 @@ class Assembly:
             joint=joint,
         )
         return replace(self, subassemblies=self.subassemblies + (sub,))
+
+    def with_anchor(self, name: str, location: Location) -> "Assembly":
+        """Declare a named datum ``Location`` in this assembly's local
+        frame (see ``Anchor``). Names cannot contain ``.`` (reserved as
+        the tree-path separator) and must be unique among this level's
+        anchors; they do not collide with part or sub-assembly names.
+        """
+        if "." in name:
+            raise ValueError(
+                f"anchor name {name!r} contains '.' — reserved as the "
+                f"tree-path separator"
+            )
+        if any(a.name == name for a in self.anchors):
+            raise ValueError(f"duplicate anchor name {name!r}")
+        return replace(self, anchors=self.anchors + (Anchor(name, location),))
+
+    def anchor(self, path: str) -> Location:
+        """Resolve a dotted anchor ``path`` to a ``Location`` in this
+        assembly's frame. Every segment but the last names a
+        sub-assembly; the last names an anchor at that level
+        (``"m05.deck_top"``; bare name for a root-level anchor). The
+        result composes each sub-assembly's ``effective_location``
+        (placement + joint) on the way up, so an anchor under a jointed
+        subtree moves with the joint. Raises ``KeyError`` if any
+        segment is missing."""
+        head, _, rest = path.partition(".")
+        if rest:
+            for s in self.subassemblies:
+                if s.name == head:
+                    return s.effective_location * s.assembly.anchor(rest)
+            raise KeyError(f"no sub-assembly named {head!r}")
+        for a in self.anchors:
+            if a.name == head:
+                return a.location
+        raise KeyError(f"no anchor named {head!r}")
 
     def with_joint(self, path: str, joint: RevoluteJoint) -> "Assembly":
         """Set the joint on the named sub-assembly. The joint's axis is
@@ -414,6 +470,35 @@ class Assembly:
             b=b,
             name=name or f"interference:{a}/{b}",
             reason=reason,
+        )
+        return replace(self, assertions=self.assertions + (assertion,))
+
+    def assert_anchors_coincident(
+        self,
+        a: str,
+        b: str,
+        tol_mm: float = 1e-6,
+        name: str | None = None,
+    ) -> "Assembly":
+        """Assert the anchors at dotted paths ``a`` and ``b`` resolve to
+        the same position (within ``tol_mm``; orientation is ignored).
+
+        This is the cross-unit interface contract: each unit exports
+        where it believes a shared datum is, in its own frame, and the
+        composing parent asserts the beliefs coincide after placement —
+        so a drifted mirror constant inside one unit fails loudly here
+        instead of silently desyncing the machine. Both paths are
+        resolved once at declaration time to fail fast on a typo'd
+        path; evaluation re-resolves at ``check()`` time, so joint
+        angles applied later are honored.
+        """
+        self.anchor(a)
+        self.anchor(b)
+        assertion = AnchorsCoincident(
+            a=a,
+            b=b,
+            tol_mm=tol_mm,
+            name=name or f"anchors_coincident:{a}/{b}",
         )
         return replace(self, assertions=self.assertions + (assertion,))
 
