@@ -707,7 +707,7 @@ should. Don't filter; the maintainer triages.
 
 When cad-khana is editably installed (e.g.
 `[tool.uv.sources] cad-khana = { path = "../cad-khana", editable = true }`),
-append a short entry to `<cad-khana-repo>/field-notes.md` — that
+append a short entry to `<cad-khana-repo>/_notes/field-notes.md` — that
 file's header has the entry format. When installed as a tool from
 git, file an issue at https://github.com/cyberchitta/cad-khana/issues
 with the same content.
