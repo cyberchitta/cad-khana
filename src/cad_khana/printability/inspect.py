@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import sys
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 from build123d import Part
 
 from cad_khana._paths import resolve_out
 from cad_khana.mechanism.diagnostics import (
+    BOUND_EPSILON,
     SCHEMA_VERSION,
     AssertionResult,
     BBox,
@@ -17,6 +18,18 @@ from cad_khana.mechanism.diagnostics import (
 from cad_khana.printability.methods import FDM
 from cad_khana.printability.overhangs import Overhang, detect_overhang
 from cad_khana.printability.wall import WallSample, min_wall
+
+
+@dataclass(frozen=True)
+class WarningEntry:
+    """A non-fatal diagnostic surfaced in ``warnings``: a failure that
+    was waived (``kind="waived_failure"``) or a waiver whose assertion
+    now passes and should be removed (``kind="stale_waiver"``)."""
+
+    kind: str
+    assertion: str
+    reason: str
+    detail: str | None = None
 
 
 @dataclass(frozen=True)
@@ -35,13 +48,14 @@ class PrintabilityDiagnostics:
     min_wall_at: tuple[float, float, float] | None = None
     overhang: Overhang | None = None
     assertions: tuple[AssertionResult, ...] = field(default_factory=tuple)
+    warnings: tuple[WarningEntry, ...] = field(default_factory=tuple)
 
 
 def _wall_assertion(wall: WallSample | None, method: FDM) -> AssertionResult:
     name = f"wall_min:{method.wall_min_mm}"
     if wall is None:
         return AssertionResult(name, False, "min wall could not be computed")
-    passed = wall.thickness_mm >= method.wall_min_mm
+    passed = wall.thickness_mm >= method.wall_min_mm - BOUND_EPSILON
     at = ", ".join(f"{c:.2f}" for c in wall.at)
     detail = (
         None
@@ -60,7 +74,7 @@ def _overhang_assertion(
     name = f"overhang_max:{method.overhang_max_deg}"
     if overhang is None:
         return AssertionResult(name, True, None)
-    passed = overhang.max_angle_deg <= method.overhang_max_deg
+    passed = overhang.max_angle_deg <= method.overhang_max_deg + BOUND_EPSILON
     detail = (
         None
         if passed
@@ -72,12 +86,60 @@ def _overhang_assertion(
     return AssertionResult(name, passed, detail)
 
 
+def _assertion_kind(name: str) -> str:
+    return name.split(":", 1)[0]
+
+
+def _apply_waivers(
+    assertions: tuple[AssertionResult, ...], waive: dict[str, str]
+) -> tuple[AssertionResult, ...]:
+    """Attach waiver rationales to failed assertions, matched by
+    assertion kind (``wall_min``, ``overhang_max``) — not the full
+    ``kind:threshold`` name, so waivers survive threshold changes and
+    thresholds stay honest. Unknown kinds are a caller error."""
+    unknown = sorted(waive.keys() - {_assertion_kind(a.name) for a in assertions})
+    if unknown:
+        kinds = ", ".join(sorted(_assertion_kind(a.name) for a in assertions))
+        raise ValueError(
+            f"waive keys match no assertion kind: {', '.join(unknown)}; "
+            f"known kinds: {kinds}"
+        )
+    return tuple(
+        replace(a, waived=waive[_assertion_kind(a.name)])
+        if a.passed is False and _assertion_kind(a.name) in waive
+        else a
+        for a in assertions
+    )
+
+
+def _warnings(
+    assertions: tuple[AssertionResult, ...], waive: dict[str, str]
+) -> tuple[WarningEntry, ...]:
+    waived = tuple(
+        WarningEntry("waived_failure", a.name, a.waived, a.detail)
+        for a in assertions
+        if a.waived is not None
+    )
+    stale = tuple(
+        WarningEntry(
+            "stale_waiver",
+            a.name,
+            waive[_assertion_kind(a.name)],
+            "assertion passed; remove the waiver",
+        )
+        for a in assertions
+        if a.passed is True and _assertion_kind(a.name) in waive
+    )
+    return waived + stale
+
+
 def inspect(
     part: Part,
     *,
     method: FDM,
     out: str | Path = "outputs",
     name: str = "part",
+    waive: dict[str, str] | None = None,
 ) -> PrintabilityDiagnostics:
     out_path = resolve_out(out)
     out_path.mkdir(parents=True, exist_ok=True)
@@ -87,11 +149,16 @@ def inspect(
         up_axis=method.up_axis,
         angle_threshold_deg=method.overhang_max_deg,
     )
-    assertions = (
-        _wall_assertion(wall, method),
-        _overhang_assertion(overhang, method),
+    waivers = waive or {}
+    assertions = _apply_waivers(
+        (
+            _wall_assertion(wall, method),
+            _overhang_assertion(overhang, method),
+        ),
+        waivers,
     )
-    failed = any(not a.passed for a in assertions)
+    warnings = _warnings(assertions, waivers)
+    failed = any(a.passed is False and a.waived is None for a in assertions)
     com = part.center()
     diagnostics = PrintabilityDiagnostics(
         name=name,
@@ -105,13 +172,19 @@ def inspect(
         min_wall_at=wall.at if wall else None,
         overhang=overhang,
         assertions=assertions,
+        warnings=warnings,
         status="assertion_failed" if failed else "ok",
     )
     json_path = out_path / f"{name}-printability.json"
     json_path.write_text(json.dumps(asdict(diagnostics), indent=2) + "\n")
+    for w in warnings:
+        print(
+            f"{name}: warning: {w.kind}: {w.assertion} — {w.reason}",
+            file=sys.stderr,
+        )
     if failed:
         for a in assertions:
-            if a.passed is False:
+            if a.passed is False and a.waived is None:
                 print(
                     f"{name}: assertion failed: {a.name} — {a.detail}",
                     file=sys.stderr,

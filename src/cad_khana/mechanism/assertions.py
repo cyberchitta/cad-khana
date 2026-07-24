@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from build123d import Location, Part, Plane, Vector
 
 from cad_khana.mechanism.diagnostics import (
+    BOUND_EPSILON,
     INTERFERENCE_VOLUME_EPSILON_MM3,
     AssertionResult,
 )
@@ -105,7 +106,7 @@ class Clearance:
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
         dist = parts[self.a].distance_to(parts[self.b])
-        passed = dist >= self.min_mm
+        passed = dist >= self.min_mm - BOUND_EPSILON
         detail = (
             None
             if passed
@@ -135,6 +136,8 @@ class Distance:
     ``min_mm`` / ``max_mm`` bound the result; either alone or both
     together ("close but not touching"). The measured value is recorded
     in the result's ``value`` even on pass, so runs are diffable.
+    Bound comparisons carry ``BOUND_EPSILON`` so geometry constructed
+    *from* the bound constant doesn't flip on solver noise.
     """
 
     a: str
@@ -171,8 +174,8 @@ class Distance:
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
         measured = self._measure(parts) - self.grow_a_mm - self.grow_b_mm
-        below = self.min_mm is not None and measured < self.min_mm
-        above = self.max_mm is not None and measured > self.max_mm
+        below = self.min_mm is not None and measured < self.min_mm - BOUND_EPSILON
+        above = self.max_mm is not None and measured > self.max_mm + BOUND_EPSILON
         detail = (
             f"distance {measured:.4f}mm below min {self.min_mm}mm"
             if below
@@ -204,8 +207,8 @@ class ScalarClaim:
         return replace(self, name=f"{prefix}.{self.name}")
 
     def evaluate(self) -> AssertionResult:
-        below = self.ge is not None and self.value < self.ge
-        above = self.le is not None and self.value > self.le
+        below = self.ge is not None and self.value < self.ge - BOUND_EPSILON
+        above = self.le is not None and self.value > self.le + BOUND_EPSILON
         failure = (
             f"value {self.value:.6g} below ge {self.ge}"
             if below

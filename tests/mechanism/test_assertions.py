@@ -537,3 +537,65 @@ def test_subassembly_detail_only_assertion_skips_when_composed():
     (result,) = evaluate(top)
     assert result.passed is None
     assert "u.bolt" in result.detail
+
+
+# --- bound-comparison epsilon -------------------------------------------
+
+
+def test_distance_bound_tolerates_solver_noise():
+    # The common consumer pattern: geometry placed *from* the bound
+    # constant, so measured == bound ± solver noise (1e-14 boolean
+    # noise, ~1e-7 bbox slop observed in the field).
+    a = (
+        Assembly()
+        .with_part("gear", _cube())
+        .with_part("pinion", _cube(), location=Location((10.2, 0, 0)))
+        .assert_distance("gear", "pinion", min_mm=0.2 + 1e-9)
+    )
+    (result,) = evaluate(a)
+    assert result.passed
+
+
+def test_distance_epsilon_does_not_mask_real_violations():
+    a = (
+        Assembly()
+        .with_part("gear", _cube())
+        .with_part("pinion", _cube(), location=Location((10.2, 0, 0)))
+        .assert_distance("gear", "pinion", min_mm=0.21)
+    )
+    (result,) = evaluate(a)
+    assert result.passed is False
+
+
+def test_distance_max_bound_tolerates_solver_noise():
+    a = (
+        Assembly()
+        .with_part("gear", _cube())
+        .with_part("pinion", _cube(), location=Location((10.2, 0, 0)))
+        .assert_distance("gear", "pinion", max_mm=0.2 - 1e-9)
+    )
+    (result,) = evaluate(a)
+    assert result.passed
+
+
+def test_clearance_bound_tolerates_solver_noise():
+    a = (
+        Assembly()
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((20, 0, 0)))
+        .assert_clearance("a", "b", min_mm=10 + 1e-9)
+    )
+    (result,) = evaluate(a)
+    assert result.passed
+
+
+def test_scalar_bound_tolerates_float_noise():
+    a = Assembly().assert_scalar("margin", 0.2 - 1e-9, ge=0.2)
+    (result,) = evaluate(a)
+    assert result.passed
+
+
+def test_scalar_epsilon_does_not_mask_real_violations():
+    a = Assembly().assert_scalar("margin", 0.19, ge=0.2)
+    (result,) = evaluate(a)
+    assert result.passed is False

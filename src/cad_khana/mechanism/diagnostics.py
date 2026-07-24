@@ -9,8 +9,15 @@ from build123d import Part
 if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
 
-SCHEMA_VERSION = "0.5"
+SCHEMA_VERSION = "0.6"
 INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
+
+# Absolute tolerance on assertion bound comparisons, in the bound's own
+# units (mm, deg, or a scalar claim's units). Consumers routinely derive
+# geometry from the same constant they bound against, so the measured
+# value lands exactly at the bound ± solver noise (1e-14 boolean noise,
+# ~1e-7 bbox slop observed); exact comparison flips on that noise.
+BOUND_EPSILON = 1e-6
 
 
 @dataclass(frozen=True)
@@ -47,12 +54,16 @@ class AssertionResult:
     Skipped assertions never fail a build. ``value`` carries the
     measured/claimed scalar for value-carrying assertions
     (``assert_distance``, ``assert_scalar``) even on pass — so runs
-    are diffable — and stays ``None`` for the boolean-only kinds."""
+    are diffable — and stays ``None`` for the boolean-only kinds.
+    ``waived`` is the waiver rationale when a failure was waived
+    (printability ``inspect(..., waive=...)``); ``passed`` stays
+    honestly ``False`` — a waived failure just doesn't fail the run."""
 
     name: str
     passed: bool | None
     detail: str | None = None
     value: float | None = None
+    waived: str | None = None
 
 
 @dataclass(frozen=True)

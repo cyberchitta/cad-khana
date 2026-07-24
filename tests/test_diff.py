@@ -124,6 +124,46 @@ def test_assertion_stably_skipped_is_not_reported():
     assert diff(_empty_mech() | skipped, _empty_mech() | skipped) == "no changes\n"
 
 
+def test_assertion_newly_waived_is_reported():
+    failing = {"name": "wall_min:1.5", "passed": False, "detail": "x"}
+    old = _empty_printability() | {"assertions": [failing | {"waived": None}]}
+    new = _empty_printability() | {"assertions": [failing | {"waived": "artifact"}]}
+    out = diff(old, new)
+    assert "changed: wall_min:1.5 unwaived → waived (artifact)" in out
+
+
+def test_assertion_stably_waived_is_not_reported():
+    waived = {
+        "assertions": [
+            {"name": "wall_min:1.5", "passed": False, "detail": "x", "waived": "artifact"}
+        ],
+        "warnings": [
+            {"kind": "waived_failure", "assertion": "wall_min:1.5", "reason": "artifact", "detail": "x"}
+        ],
+    }
+    assert (
+        diff(_empty_printability() | waived, _empty_printability() | waived)
+        == "no changes\n"
+    )
+
+
+def test_warning_added_and_removed():
+    old = _empty_printability() | {
+        "warnings": [
+            {"kind": "stale_waiver", "assertion": "overhang_max:45.0", "reason": "old", "detail": None}
+        ]
+    }
+    new = _empty_printability() | {
+        "warnings": [
+            {"kind": "waived_failure", "assertion": "wall_min:1.5", "reason": "artifact", "detail": "x"}
+        ]
+    }
+    out = diff(old, new)
+    assert "warnings:" in out
+    assert "added: waived_failure: wall_min:1.5 — artifact" in out
+    assert "removed: stale_waiver: overhang_max:45.0" in out
+
+
 # --- printability diff --------------------------------------------------
 
 

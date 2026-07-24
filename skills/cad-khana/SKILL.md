@@ -400,6 +400,11 @@ a = a.assert_scalar("ramp_slide_margin", tan(radians(RAMP_DEG)),
                     ge=MU_STATIC_BUDGET, detail="µ_s budget, ABS on PLA")
 ```
 
+Bound comparisons carry a 1e-6 absolute tolerance, so placing or
+sizing geometry *from* the same constant you bound against (gap ==
+`MESH_BACKLASH` exactly) passes despite solver noise — no need to
+hand-pad bounds with `- 0.01` margins.
+
 Parameter-sanity checks with no geometric content (a deliberately
 loose upper bound on a width) legitimately stay bare Python asserts.
 
@@ -708,12 +713,38 @@ printability constraints rather than placeholders:
   weaker cooling (ABS, PETG without a part fan) want a tighter threshold
   (35–40°); ASA / a well-cooled PLA / a slicer with aggressive overhang
   modifiers can go to 50–55°. Adjust intentionally per material, don't
-  default-loosen to silence the check.
+  default-loosen to silence the check — waive instead (below), so the
+  threshold keeps catching real overhangs.
 
 `inspect(part, method=FDM(), out="outputs", name="bracket")` writes
 `outputs/bracket-printability.json` and raises `SystemExit(1)` on
 failure. Each call is independent — pass a different `name=` per
 printed part.
+
+**Waiving a known-benign failure.** When a check fails for a reason
+you've verified is an artifact or an accepted trade-off (a sharp-edge
+sampling artifact, a 90° ceiling you'll print with supports), waive it
+with the rationale inline instead of loosening the threshold or
+wrapping the call in `try/except SystemExit`:
+
+```python
+inspect(
+    rotor(), method=FDM(), out="outputs", name="rotor",
+    waive={
+        "wall_min": "star-ridge sampling artifact; verified via min_wall_at",
+        "overhang_max": "accepted 90° ceiling, printed with supports",
+    },
+)
+```
+
+Keys are assertion *kinds* (`"wall_min"`, `"overhang_max"` — no
+threshold suffix). A waived failure keeps `passed: false` in the JSON,
+records your reason in `waived`, adds a `waived_failure` entry to
+`warnings[]`, and doesn't fail the run; unwaived failures still exit 1.
+If the waived check starts passing, a `stale_waiver` warning tells you
+to delete the waiver — don't leave waivers that no longer waive
+anything. Cite evidence in the reason (`min_wall_at` witness, a print
+plan), not just an assertion that it's fine.
 
 ## JSON diagnostics essentials
 
@@ -753,7 +784,10 @@ printed part.
   failing `wall_min:…` assertion repeats it in its `detail`.
 - `overhang` — `null` or `{area_mm2, max_angle_deg}`.
 - `assertions` — `wall_min:…` and `overhang_max:…` entries; `passed` +
-  `detail`.
+  `detail`, plus `waived` (the rationale) when a failure was waived.
+- `warnings` — non-fatal notices: `waived_failure` (a failed check that
+  was waived; carries the reason and the failure detail) and
+  `stale_waiver` (a waiver whose check now passes — remove it).
 
 ## Known limitations
 

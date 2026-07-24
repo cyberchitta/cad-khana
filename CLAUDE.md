@@ -156,7 +156,7 @@ equivalent, 1 when differences are found, 2 on error. `build` and
 `inspect()` call) even on failure, so the agent can always read structured
 error info.
 
-## Diagnostics JSON schemas (v0.5)
+## Diagnostics JSON schemas (v0.6)
 
 Version these from day one. Agents depend on field stability.
 
@@ -164,7 +164,7 @@ Version these from day one. Agents depend on field stability.
 
 ```json
 {
-  "schema_version": "0.5",
+  "schema_version": "0.6",
   "status": "ok | error | assertion_failed",
   "error": null,
   "hint": "Missing .part accessor — use `with BuildPart() as p: ...; return p.part`.",
@@ -184,7 +184,7 @@ Version these from day one. Agents depend on field stability.
     {"a": "lever", "b": "housing", "volume_mm3": 0.3, "centroid": [x,y,z]}
   ],
   "assertions": [
-    {"name": "lever_clears_housing", "passed": true, "detail": null, "value": null}
+    {"name": "lever_clears_housing", "passed": true, "detail": null, "value": null, "waived": null}
   ],
   "exports": ["outputs/assembly.stl", "outputs/assembly.step"]
 }
@@ -206,11 +206,16 @@ every nested assertion with part/anchor paths, names, and datum-plane
 targets qualified into its frame (`Assembly.all_assertions`), so a
 unit declares each claim once at the level that owns the knowledge.
 
+Assertion bound comparisons carry a small absolute tolerance
+(`BOUND_EPSILON`, 1e-6 in the bound's units): consumers routinely
+derive geometry from the same constant they bound against, so exact
+comparison flips on solver noise.
+
 `<name>-printability.json` — written by each `inspect()`:
 
 ```json
 {
-  "schema_version": "0.5",
+  "schema_version": "0.6",
   "kind": "printability",
   "status": "ok | assertion_failed",
   "name": "housing",
@@ -224,10 +229,21 @@ unit declares each claim once at the level that owns the knowledge.
   "min_wall_at": [x, y, z],
   "overhang": {"area_mm2": 42.1, "max_angle_deg": 58},
   "assertions": [
-    {"name": "wall_min:1.5", "passed": true, "detail": null}
+    {"name": "wall_min:1.5", "passed": false, "detail": "min wall 0.17mm below min 1.5mm at (x, y, z)", "waived": "ray-sampling artifact at thin annulus edges"}
+  ],
+  "warnings": [
+    {"kind": "waived_failure", "assertion": "wall_min:1.5", "reason": "ray-sampling artifact at thin annulus edges", "detail": "min wall 0.17mm below min 1.5mm at (x, y, z)"}
   ]
 }
 ```
+
+Waivers: `inspect(..., waive={"wall_min": "reason", "overhang_max":
+"reason"})`, keyed by assertion **kind** (the part before the `:`), so
+thresholds stay honest and waivers survive threshold changes. A waived
+failure keeps `passed: false` (the measurement is what it is), records
+the rationale in `waived`, lands in `warnings[]` as a
+`waived_failure`, and doesn't fail the run. A waiver whose assertion
+passes becomes a `stale_waiver` warning; an unknown waive key raises.
 
 Diagnostic JSONs are **ephemeral**: rewritten in full on every
 `check()` / `inspect()` run. `khana diff` requires both inputs at the

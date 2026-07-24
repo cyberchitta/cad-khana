@@ -49,6 +49,10 @@ def _assertion_state(passed: bool | None) -> str:
     return "passed" if passed is True else "failed" if passed is False else "skipped"
 
 
+def _waive_state(waived: str | None) -> str:
+    return f"waived ({waived})" if waived else "unwaived"
+
+
 def _value_moved(old: Any, new: Any) -> bool:
     if isinstance(old, (int, float)) and isinstance(new, (int, float)):
         return abs(float(old) - float(new)) > 1e-6
@@ -87,12 +91,19 @@ def _assertions_section(old: list[Diag], new: list[Diag]) -> list[str]:
         if old_map[name]["passed"] == new_map[name]["passed"]
         and _value_moved(old_map[name].get("value"), new_map[name].get("value"))
     ]
+    waive_changed = [
+        f"  changed: {name}"
+        f" {_waive_state(old_map[name].get('waived'))}"
+        f" → {_waive_state(new_map[name].get('waived'))}"
+        for name in sorted(common)
+        if old_map[name].get("waived") != new_map[name].get("waived")
+    ]
     added = [
         f"  added: {name} ({_assertion_state(new_map[name]['passed'])})"
         for name in sorted(new_map.keys() - old_map.keys())
     ]
     removed = [f"  removed: {name}" for name in sorted(old_map.keys() - new_map.keys())]
-    return regressed + fixed + skip_changed + value_changed + added + removed
+    return regressed + fixed + skip_changed + value_changed + waive_changed + added + removed
 
 
 # --- Mechanism diff -----------------------------------------------------
@@ -252,6 +263,24 @@ def _bbox_section(old: Any, new: Any) -> list[str]:
     return ["  bbox: changed"] if old != new else []
 
 
+def _warning_key(w: Diag) -> tuple[str, str]:
+    return (w["kind"], w["assertion"])
+
+
+def _warnings_section(old: list[Diag], new: list[Diag]) -> list[str]:
+    old_map = {_warning_key(w): w for w in old}
+    new_map = {_warning_key(w): w for w in new}
+    added = [
+        f"  added: {kind}: {assertion} — {new_map[(kind, assertion)]['reason']}"
+        for kind, assertion in sorted(new_map.keys() - old_map.keys())
+    ]
+    removed = [
+        f"  removed: {kind}: {assertion}"
+        for kind, assertion in sorted(old_map.keys() - new_map.keys())
+    ]
+    return added + removed
+
+
 def _diff_printability(old: Diag, new: Diag) -> str:
     name_section = (
         [f"  {old.get('name')} → {new.get('name')}"]
@@ -308,6 +337,10 @@ def _diff_printability(old: Diag, new: Diag) -> str:
             _assertions_section(
                 old.get("assertions", []), new.get("assertions", [])
             ),
+        ),
+        (
+            "warnings",
+            _warnings_section(old.get("warnings", []), new.get("warnings", [])),
         ),
     )
     blocks = [f"{title}:\n" + "\n".join(lines) for title, lines in sections if lines]

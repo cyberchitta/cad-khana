@@ -110,3 +110,111 @@ def test_inspect_fails_when_overhang_exceeds_threshold(tmp_path: Path):
         if "overhang" in a["name"] and not a["passed"]
     ]
     assert overhang_failures
+
+
+# --- waivers ------------------------------------------------------------
+
+
+def test_waived_failure_does_not_fail_the_run(tmp_path: Path):
+    result = inspect(
+        _plate(20, 20, 1),
+        method=FDM(wall_min_mm=5.0),
+        out=tmp_path,
+        name="plate",
+        waive={"wall_min": "ray-sampling artifact at thin annulus edges"},
+    )
+    assert result.status == "ok"
+    data = json.loads((tmp_path / "plate-printability.json").read_text())
+    assert data["status"] == "ok"
+    (wall,) = [a for a in data["assertions"] if a["name"].startswith("wall_min")]
+    assert wall["passed"] is False
+    assert wall["waived"] == "ray-sampling artifact at thin annulus edges"
+    (warning,) = data["warnings"]
+    assert warning["kind"] == "waived_failure"
+    assert warning["assertion"] == wall["name"]
+    assert warning["reason"] == wall["waived"]
+    assert "below min" in warning["detail"]
+
+
+def test_waiver_survives_threshold_change(tmp_path: Path):
+    # Keys match the assertion *kind*, not the kind:threshold name.
+    result = inspect(
+        _plate(20, 20, 1),
+        method=FDM(wall_min_mm=3.0),
+        out=tmp_path,
+        name="plate",
+        waive={"wall_min": "known artifact"},
+    )
+    assert result.status == "ok"
+
+
+def test_two_kind_waiver_in_one_block(tmp_path: Path):
+    # The m02 rotor case: wall artifact + accepted overhang, one call.
+    result = inspect(
+        _l_shape(),
+        method=FDM(wall_min_mm=5.0),
+        out=tmp_path,
+        name="rotor",
+        waive={
+            "wall_min": "sharp-edge sampling artifact",
+            "overhang_max": "accepted 90° ceiling; printed with supports",
+        },
+    )
+    assert result.status == "ok"
+    assert {w.kind for w in result.warnings} == {"waived_failure"}
+    assert len(result.warnings) == 2
+
+
+def test_unwaived_failure_still_exits_nonzero(tmp_path: Path):
+    # Both kinds fail; only wall_min waived — overhang still fails the run.
+    with pytest.raises(SystemExit) as exc:
+        inspect(
+            _l_shape(),
+            method=FDM(wall_min_mm=5.0),
+            out=tmp_path,
+            name="ell",
+            waive={"wall_min": "artifact"},
+        )
+    assert exc.value.code == 1
+    data = json.loads((tmp_path / "ell-printability.json").read_text())
+    assert data["status"] == "assertion_failed"
+    (wall,) = [a for a in data["assertions"] if a["name"].startswith("wall_min")]
+    assert wall["waived"] == "artifact"
+
+
+def test_stale_waiver_is_reported(tmp_path: Path, capsys):
+    result = inspect(
+        _cube(10),
+        method=FDM(),
+        out=tmp_path,
+        name="cube",
+        waive={"wall_min": "no longer needed"},
+    )
+    assert result.status == "ok"
+    (warning,) = result.warnings
+    assert warning.kind == "stale_waiver"
+    assert "remove the waiver" in warning.detail
+    assert "cube: warning: stale_waiver" in capsys.readouterr().err
+
+
+def test_unknown_waive_key_raises(tmp_path: Path):
+    with pytest.raises(ValueError, match="walls"):
+        inspect(
+            _cube(10),
+            method=FDM(),
+            out=tmp_path,
+            name="cube",
+            waive={"walls": "typo"},
+        )
+
+
+def test_waived_failure_prints_warning_to_stderr(tmp_path: Path, capsys):
+    inspect(
+        _plate(20, 20, 1),
+        method=FDM(wall_min_mm=5.0),
+        out=tmp_path,
+        name="plate",
+        waive={"wall_min": "artifact"},
+    )
+    err = capsys.readouterr().err
+    assert "plate: warning: waived_failure: wall_min:5.0 — artifact" in err
