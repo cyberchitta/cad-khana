@@ -120,8 +120,9 @@ Keep four sections, in order:
    propagates through everything.
 2. **Pure part functions** — each returns a `Part`. Take parameters with
    defaults; no hidden globals, no mutation.
-3. **Assembly composition** — build an `Assembly` by chaining `.with_part()`
-   and `.assert_*()` calls. Call `check(assembly, out="outputs")`.
+3. **Assembly composition** — build an `Assembly` by chaining
+   `.with_part()` / `.with_subassembly()` and `.assert_*()` calls.
+   Call `check(assembly, out="outputs")`.
 4. **Per-part printability** — one `inspect(part, method=FDM(), name=...)`
    call per printed part.
 
@@ -138,9 +139,17 @@ free.
 1. **Declare parts as pure functions.** One function per distinct
    printed body, taking parameters with defaults. No globals, no
    placement inside the function.
-2. **Wire the assembly with explicit `Location`s.** Compose with
-   `Assembly().with_part(name, part(), location=…)`. Names are stable IDs
-   the assertions and diagnostics reference.
+2. **Wire the assembly with explicit `Location`s, along its
+   rigid-body boundaries.** Every relocatable unit with its own local
+   frame, and every joint, is a `with_subassembly` node — declared
+   from the start (a joint at angle 0 is fine), not bolted on later
+   when animation needs it. A multi-part unit gets a
+   `build_<name>() -> Assembly` builder in its own canonical frame;
+   the parent places it via `location=`. A trivial mechanism with no
+   such boundaries is a flat chain of
+   `with_part(name, part(), location=…)` calls — the degenerate case,
+   not the default shape. Names are stable IDs the assertions and
+   diagnostics reference.
 3. **Add `assert_no_interference` between *every* candidate-overlap
    pair immediately** — before any clearance work. The cost of
    asserting a pair that will never collide is one line; the cost of
@@ -196,6 +205,10 @@ if __name__ == "__main__":
     # 4. printability checks for each printed part
     inspect(bracket(), method=FDM(), out="outputs", name="bracket")
 ```
+
+A two-part mechanism with no relocatable unit and no joint is the
+degenerate flat case — anything with either composes sub-assemblies
+(see **Designing a new mechanism** step 2 and **Animation**).
 
 ## Recommended style
 
@@ -277,6 +290,9 @@ For build123d's selector operators (`>`, `<`, `>>`, `<<`, `|`, `@`, `%`,
   last segment, so don't bake hierarchy into it — `"frame"` inside
   `platform_image` beats `"platform_image_frame"`; two instances of one
   builder are distinguished by their subtree, not by name prefixes.
+  A single-part sub-assembly yields a stuttered path (`rotor.rotor`) —
+  accept it; renaming the leaf to something generic (`body`) buys no
+  information and costs the searchable name.
   Sibling names must be unique within a level (`with_part` /
   `with_subassembly` enforce this) and sub-assembly names cannot
   contain `.`.
