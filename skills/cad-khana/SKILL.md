@@ -343,8 +343,11 @@ parameters, and valid type/size strings, load
 ## Available mechanism assertions
 
 Every assertion records a result in `mechanism.json`. If any fail,
-`check()` raises `SystemExit(1)`. All failures are collected — you get
-every problem in one pass, not just the first.
+`check()` raises `SystemExit(1)` after printing one line per failure
+(name + detail) to stderr — the terminal output alone names every
+failing assertion; the JSON has the full context. All failures are
+collected — you get every problem in one pass, not just the first.
+`inspect()` failures print the same way, prefixed with the part name.
 
 | Assertion | Checks |
 |---|---|
@@ -692,6 +695,10 @@ printed part.
 - `volume_mm3`, `bbox` — basic part metrics.
 - `min_wall_mm` — thinnest wall found by ray sampling; `null` if
   unmeasurable.
+- `min_wall_at` — `[x, y, z]` surface point where the thinnest wall was
+  measured (`null` when `min_wall_mm` is); use it to attribute a thin
+  reading to a concrete feature instead of bisecting parameters. The
+  failing `wall_min:…` assertion repeats it in its `detail`.
 - `overhang` — `null` or `{area_mm2, max_angle_deg}`.
 - `assertions` — `wall_min:…` and `overhang_max:…` entries; `passed` +
   `detail`.

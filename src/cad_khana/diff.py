@@ -284,6 +284,10 @@ def _diff_printability(old: Diag, new: Diag) -> str:
             "min_wall_mm",
             _scalar_line("min_wall_mm", old.get("min_wall_mm"), new.get("min_wall_mm")),
         ),
+        (
+            "min_wall_at",
+            _scalar_line("min_wall_at", old.get("min_wall_at"), new.get("min_wall_at")),
+        ),
         ("overhang", _overhang_section(old.get("overhang"), new.get("overhang"))),
         (
             "assertions",

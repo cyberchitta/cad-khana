@@ -1,5 +1,5 @@
 import pytest
-from build123d import Axis, Box, BuildPart, Color, Location, Pos
+from build123d import Axis, Box, BuildPart, Color, Location, Pos, ShapeList
 
 from cad_khana.mechanism.assembly import (
     Assembly,
@@ -12,6 +12,17 @@ def _cube(size: float = 10):
     with BuildPart() as p:
         Box(size, size, size)
     return p.part
+
+
+def test_with_part_rejects_shapelist_naming_the_part():
+    pieces = ShapeList([_cube(5), Pos(20, 0, 0) * _cube(5)])
+    with pytest.raises(TypeError, match=r"with_part\('bad'\).*ShapeList.*fuse"):
+        Assembly().with_part("bad", pieces)
+
+
+def test_with_part_rejects_non_shape():
+    with pytest.raises(TypeError, match=r"with_part\('bad'\).*int"):
+        Assembly().with_part("bad", 42)
 
 
 def test_empty_assembly_has_no_parts():

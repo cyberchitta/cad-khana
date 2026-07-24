@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 
-from build123d import Axis, Color, Compound, Location, Part
+from build123d import Axis, Color, Compound, Location, Part, Shape, ShapeList
 
 from cad_khana.mechanism.assertions import (
     AnchorsCoincident,
@@ -203,6 +203,22 @@ class Assembly:
         color: Color | None = None,
         material: str | None = None,
     ) -> "Assembly":
+        if not isinstance(part, Shape):
+            # Boundary check: builders can silently hand back a
+            # `ShapeList` (a `+` of disjoint pieces, an extrusion on a
+            # shifted plane), which only crashes much later inside
+            # assertion evaluation with no part context.
+            fix = (
+                " — a boolean of disjoint pieces or an extrusion on a "
+                "shifted plane can return a ShapeList; fuse into a "
+                "single shape first (e.g. `Part() + pieces`)"
+                if isinstance(part, ShapeList)
+                else ""
+            )
+            raise TypeError(
+                f"with_part({name!r}): expected a build123d Part, got "
+                f"{type(part).__name__}{fix}"
+            )
         self._check_sibling_name(name)
         placed = PlacedPart(name, part, location or Location(), color, material)
         return replace(self, parts=self.parts + (placed,))

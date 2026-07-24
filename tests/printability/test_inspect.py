@@ -61,6 +61,26 @@ def test_inspect_fails_when_wall_below_minimum(tmp_path: Path):
         a for a in data["assertions"] if "wall" in a["name"] and not a["passed"]
     ]
     assert wall_failures
+    assert " at (" in wall_failures[0]["detail"]
+
+
+def test_inspect_records_min_wall_witness(tmp_path: Path):
+    inspect(_plate(20, 20, 2), method=FDM(), out=tmp_path, name="plate")
+    data = json.loads((tmp_path / "plate-printability.json").read_text())
+    assert data["min_wall_mm"] == approx(2.0, abs=0.05)
+    at = data["min_wall_at"]
+    assert len(at) == 3
+    # The thin dimension is Z; the witness sits on a top/bottom face.
+    assert abs(at[2]) == approx(1.0, abs=0.05)
+
+
+def test_inspect_failure_prints_summary_to_stderr(tmp_path: Path, capsys):
+    method = FDM(wall_min_mm=5.0)
+    with pytest.raises(SystemExit):
+        inspect(_plate(20, 20, 1), method=method, out=tmp_path, name="plate")
+    err = capsys.readouterr().err
+    assert "plate: assertion failed: wall_min:5.0" in err
+    assert "plate-printability.json" in err
 
 
 def test_inspect_passes_on_thick_printable_part(tmp_path: Path):

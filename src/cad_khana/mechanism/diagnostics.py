@@ -9,7 +9,7 @@ from build123d import Part
 if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
 
-SCHEMA_VERSION = "0.3"
+SCHEMA_VERSION = "0.4"
 INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
 
 

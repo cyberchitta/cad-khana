@@ -140,6 +140,22 @@ def test_check_collects_all_assertion_failures(tmp_path: Path):
     assert all(not a["passed"] for a in data["assertions"])
 
 
+def test_check_failure_prints_summary_to_stderr(tmp_path: Path, capsys):
+    assembly = (
+        Assembly()
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((5, 0, 0)))
+        .assert_no_interference("a", "b", name="first")
+        .assert_clearance("a", "b", min_mm=0.2, name="second")
+    )
+    with pytest.raises(SystemExit):
+        check(assembly, out=tmp_path)
+    err = capsys.readouterr().err
+    assert "assertion failed: first — " in err
+    assert "assertion failed: second — " in err
+    assert "mechanism.json" in err
+
+
 def test_check_skipped_assertion_does_not_fail_the_run(tmp_path: Path):
     assembly = (
         Assembly()

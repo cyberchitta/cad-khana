@@ -19,7 +19,10 @@ overhang check in `cad_khana.core.tessellation`). For every triangle,
 take its centroid and outward normal; cast an `Axis` from a point just
 inside the surface along the inward normal; take the nearest forward
 hit on the part as the local wall thickness. The part's `min_wall_mm`
-is the minimum over all samples.
+is the minimum over all samples; `min_wall_at` is the surface point
+(triangle centroid) that minimum was cast from — read it to attribute
+a thin reading to a concrete feature (or to a sampling artifact at a
+sharp edge) instead of bisecting parameters.
 
 ### What it gets right
 

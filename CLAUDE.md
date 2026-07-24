@@ -72,7 +72,7 @@ cad-khana/
         check.py              # check() orchestrator + CheckResult
       printability/
         methods.py            # FDM dataclass (up_axis, wall_min, overhang_max)
-        wall.py               # min_wall_mm()
+        wall.py               # min_wall()
         overhangs.py          # detect_overhang() — honors FDM.up_axis
         inspect.py            # inspect() orchestrator + PrintabilityDiagnostics
       core/
@@ -156,7 +156,7 @@ equivalent, 1 when differences are found, 2 on error. `build` and
 `inspect()` call) even on failure, so the agent can always read structured
 error info.
 
-## Diagnostics JSON schemas (v0.3)
+## Diagnostics JSON schemas (v0.4)
 
 Version these from day one. Agents depend on field stability.
 
@@ -164,7 +164,7 @@ Version these from day one. Agents depend on field stability.
 
 ```json
 {
-  "schema_version": "0.3",
+  "schema_version": "0.4",
   "status": "ok | error | assertion_failed",
   "error": null,
   "hint": "Missing .part accessor — use `with BuildPart() as p: ...; return p.part`.",
@@ -200,7 +200,7 @@ assertions never set `status: "assertion_failed"`.
 
 ```json
 {
-  "schema_version": "0.3",
+  "schema_version": "0.4",
   "kind": "printability",
   "status": "ok | assertion_failed",
   "name": "housing",
@@ -211,6 +211,7 @@ assertions never set `status: "assertion_failed"`.
   "center_of_mass_mm": [x, y, z],
   "is_valid": true,
   "min_wall_mm": 1.8,
+  "min_wall_at": [x, y, z],
   "overhang": {"area_mm2": 42.1, "max_angle_deg": 58},
   "assertions": [
     {"name": "wall_min:1.5", "passed": true, "detail": null}

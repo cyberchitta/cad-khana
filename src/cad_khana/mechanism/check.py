@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
@@ -60,5 +61,12 @@ def check(
         )
     result = CheckResult(exports=exports, diagnostics=diagnostics)
     if failed:
+        for a in assertion_results:
+            if a.passed is False:
+                print(
+                    f"assertion failed: {a.name} — {a.detail}",
+                    file=sys.stderr,
+                )
+        print(f"see {out_path / 'mechanism.json'}", file=sys.stderr)
         raise SystemExit(1)
     return result

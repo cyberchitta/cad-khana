@@ -146,6 +146,13 @@ def test_printability_min_wall_delta():
     assert "min_wall_mm" in out
 
 
+def test_printability_min_wall_witness_move():
+    old = _empty_printability() | {"min_wall_at": [0.0, 0.0, 1.0]}
+    new = _empty_printability() | {"min_wall_at": [5.0, 0.0, 1.0]}
+    out = diff(old, new)
+    assert "min_wall_at" in out
+
+
 def test_printability_overhang_added():
     old = _empty_printability()
     new = _empty_printability() | {
