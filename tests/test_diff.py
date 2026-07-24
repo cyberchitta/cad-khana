@@ -303,3 +303,43 @@ def test_part_real_move_is_reported():
     old = _mech_with_part(0.5)
     new = _mech_with_part(0.501)
     assert "center_of_mass_mm" in diff(old, new)
+
+
+def test_assertion_value_drift_reported_when_state_unchanged():
+    old = _empty_mech() | {
+        "assertions": [
+            {"name": "distance:gear/pinion>=0.15", "passed": True, "detail": None, "value": 0.2}
+        ]
+    }
+    new = _empty_mech() | {
+        "assertions": [
+            {"name": "distance:gear/pinion>=0.15", "passed": True, "detail": None, "value": 0.24}
+        ]
+    }
+    out = diff(old, new)
+    assert "changed: distance:gear/pinion>=0.15 value" in out
+    assert "0.2 → 0.24" in out
+
+
+def test_assertion_value_noise_below_tolerance_not_reported():
+    old = _empty_mech() | {
+        "assertions": [{"name": "d", "passed": True, "detail": None, "value": 0.2}]
+    }
+    new = _empty_mech() | {
+        "assertions": [{"name": "d", "passed": True, "detail": None, "value": 0.2 + 1e-9}]
+    }
+    assert diff(old, new) == "no changes\n"
+
+
+def test_regressed_assertion_not_double_reported_as_value_change():
+    old = _empty_mech() | {
+        "assertions": [{"name": "d", "passed": True, "detail": None, "value": 0.2}]
+    }
+    new = _empty_mech() | {
+        "assertions": [
+            {"name": "d", "passed": False, "detail": "below min", "value": 0.1}
+        ]
+    }
+    out = diff(old, new)
+    assert "regressed: d" in out
+    assert "value" not in out

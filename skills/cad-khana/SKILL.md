@@ -353,6 +353,8 @@ collected — you get every problem in one pass, not just the first.
 |---|---|
 | `.assert_no_interference(a, b)` | Parts `a` and `b` don't overlap (intersection volume ≤ 0.001 mm³). |
 | `.assert_clearance(a, b, min_mm=…)` | Minimum distance between `a` and `b` is at least `min_mm`. |
+| `.assert_distance(a, b, min_mm=…, max_mm=…)` | Bounded distance from part `a` to part `b` **or a datum `Plane`**. Either bound alone, or both for "close but not touching" (a gear mesh). See below for `along=` and `grow_*_mm`. |
+| `.assert_scalar(name, value, ge=…, le=…)` | A named claim about a non-geometric scalar (friction budget, torque margin). No bounds = pure recorder. |
 | `.assert_interference(a, b, reason=…)` | Parts `a` and `b` **do** overlap (intersection volume > 0.001 mm³). Regression alarm for a documented, accepted overlap — fails if the overlap disappears, forcing the assertion to be removed when the design gap gets fixed. |
 
 Give assertions a `name=` when you'd benefit from a specific label in
@@ -364,6 +366,54 @@ yet (e.g., a junction whose bracket hasn't been designed). The
 `reason=` string is included in the failure message when the overlap
 goes away, so a future reader understands what the assertion was
 guarding against. Default to `assert_no_interference` everywhere else.
+
+### Distance and scalar claims
+
+Don't hand-derive from constants what the geometry already knows: a
+bare Python `assert` crashes the script (`status: "error"`) instead of
+recording a named, diffable result. `assert_distance` /
+`assert_scalar` turn those claims into first-class assertions, and
+both record their **measured value** in the JSON even on pass, so
+`khana diff` reports drift the pass/fail boolean can't see.
+
+```python
+# gear mesh: close but not touching (min AND max bound)
+a = a.assert_distance("ring_gear", "pinion",
+                      min_mm=BACKLASH, max_mm=BACKLASH + 0.1)
+
+# directed gap: how far `a` travels along the axis before touching `b`
+# (negative once the projections overlap) — axis name or vector,
+# read as the direction FROM a TOWARD b
+a = a.assert_distance("pulley", "housing", along="Z", min_mm=1.0)
+
+# datum plane target (declared in this assembly's frame; `along` must
+# be parallel to the plane normal). Z-invariant claims need no sweep.
+a = a.assert_distance("ramp", Plane.XY.offset(RIM_Z), along="-Z", min_mm=5.0)
+
+# measure from an outward offset: tip circle over a modeled pitch
+# cylinder (conservative — never reports more distance than the true
+# offset body has)
+a = a.assert_distance("pinion", "rails", min_mm=1.0, grow_a_mm=ADDENDUM)
+
+# non-geometric scalar: recorded, diffable, optionally bounded
+a = a.assert_scalar("ramp_slide_margin", tan(radians(RAMP_DEG)),
+                    ge=MU_STATIC_BUDGET, detail="µ_s budget, ABS on PLA")
+```
+
+Parameter-sanity checks with no geometric content (a deliberately
+loose upper bound on a width) legitimately stay bare Python asserts.
+
+### Declare assertions where the knowledge lives
+
+Sub-assembly assertions **propagate**: a composed parent evaluates
+every nested assertion with part/anchor paths, names, and datum-plane
+targets qualified into its frame (a plane declared in a unit's local
+frame moves with the unit's placement and joint). Declare each claim
+once, at the sub-assembly that owns it — standalone runs evaluate it
+directly, composed runs evaluate the qualified form (`u.clearance:a/b>=5`),
+and assertions against detail-only parts skip (`passed: null`) in runs
+that lack them. Don't mirror an assertion at both levels; that just
+evaluates it twice under two names.
 
 ### Group assertions
 
@@ -680,13 +730,15 @@ printed part.
   way to verify a boolean operation changed geometry: counts shift on
   success, stay the same on a silent no-op or OCCT failure.
 - `interferences` — list of overlapping part pairs with volume + centroid.
-- `assertions` — one entry per declared assertion; `passed` + `detail`.
-  `passed` is `true`/`false`/`null`: `null` means the assertion was
-  skipped because a part it references is absent from this run
-  (`detail` names the missing parts) — normal for assertions against
-  override-added detail parts in a standalone run. Skips never fail
-  the build; watch for an assertion that is *always* skipped, which
-  usually means a typo'd part name.
+- `assertions` — one entry per declared assertion; `passed` + `detail`
+  + `value`. `passed` is `true`/`false`/`null`: `null` means the
+  assertion was skipped because a part it references is absent from
+  this run (`detail` names the missing parts) — normal for assertions
+  against override-added detail parts in a standalone run. Skips never
+  fail the build; watch for an assertion that is *always* skipped,
+  which usually means a typo'd part name. `value` is the measured/
+  claimed scalar for `assert_distance` / `assert_scalar` (recorded
+  even on pass; `khana diff` reports its drift) and `null` otherwise.
 
 `<name>-printability.json` after every `inspect()`:
 

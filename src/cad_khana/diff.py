@@ -49,6 +49,12 @@ def _assertion_state(passed: bool | None) -> str:
     return "passed" if passed is True else "failed" if passed is False else "skipped"
 
 
+def _value_moved(old: Any, new: Any) -> bool:
+    if isinstance(old, (int, float)) and isinstance(new, (int, float)):
+        return abs(float(old) - float(new)) > 1e-6
+    return old != new
+
+
 def _assertions_section(old: list[Diag], new: list[Diag]) -> list[str]:
     old_map = {a["name"]: a for a in old}
     new_map = {a["name"]: a for a in new}
@@ -73,12 +79,20 @@ def _assertions_section(old: list[Diag], new: list[Diag]) -> list[str]:
         if old_map[name]["passed"] != new_map[name]["passed"]
         and None in (old_map[name]["passed"], new_map[name]["passed"])
     ]
+    # Recorded values (assert_distance / assert_scalar) that moved while
+    # the pass/fail state stayed put — drift the boolean can't see.
+    value_changed = [
+        f"  changed: {name} value {_delta(old_map[name].get('value'), new_map[name].get('value'))}"
+        for name in sorted(common)
+        if old_map[name]["passed"] == new_map[name]["passed"]
+        and _value_moved(old_map[name].get("value"), new_map[name].get("value"))
+    ]
     added = [
         f"  added: {name} ({_assertion_state(new_map[name]['passed'])})"
         for name in sorted(new_map.keys() - old_map.keys())
     ]
     removed = [f"  removed: {name}" for name in sorted(old_map.keys() - new_map.keys())]
-    return regressed + fixed + skip_changed + added + removed
+    return regressed + fixed + skip_changed + value_changed + added + removed
 
 
 # --- Mechanism diff -----------------------------------------------------

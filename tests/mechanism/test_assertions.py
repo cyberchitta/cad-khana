@@ -310,3 +310,230 @@ def test_anchors_coincident_honors_joint_angle_applied_after_declaration():
     assert at_rest.passed
     (rotated,) = evaluate(top.with_joint_angle("arm", 90.0))
     assert not rotated.passed
+
+
+# --- assert_distance ----------------------------------------------------
+
+
+def test_distance_min_bound_passes_and_records_value():
+    a = (
+        Assembly()
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((20, 0, 0)))
+        .assert_distance("a", "b", min_mm=5)
+    )
+    (result,) = evaluate(a)
+    assert result.passed
+    assert result.detail is None
+    assert abs(result.value - 10.0) < 1e-6
+
+
+def test_distance_max_bound_fails_when_too_far():
+    a = (
+        Assembly()
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((20, 0, 0)))
+        .assert_distance("a", "b", max_mm=5)
+    )
+    (result,) = evaluate(a)
+    assert result.passed is False
+    assert "above max" in result.detail
+    assert abs(result.value - 10.0) < 1e-6
+
+
+def test_distance_min_max_band_expresses_close_but_not_touching():
+    a = (
+        Assembly()
+        .with_part("gear", _cube())
+        .with_part("pinion", _cube(), location=Location((10.2, 0, 0)))
+        .assert_distance("gear", "pinion", min_mm=0.15, max_mm=0.25)
+    )
+    (result,) = evaluate(a)
+    assert result.passed
+    assert abs(result.value - 0.2) < 1e-6
+
+
+def test_distance_along_measures_directed_gap():
+    a = (
+        Assembly()
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((0, 0, 20)))
+        .assert_distance("a", "b", along="Z", min_mm=5)
+    )
+    (result,) = evaluate(a)
+    assert result.passed
+    assert abs(result.value - 10.0) < 1e-6
+
+
+def test_distance_along_is_negative_when_projections_overlap():
+    # Euclidean gap is 2 mm, but the Z projections coincide entirely.
+    a = (
+        Assembly()
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((12, 0, 0)))
+        .assert_distance("a", "b", along="Z", min_mm=1)
+    )
+    (result,) = evaluate(a)
+    assert result.passed is False
+    assert abs(result.value - (-10.0)) < 1e-6
+
+
+def test_distance_to_plane_directed():
+    from build123d import Plane
+
+    a = (
+        Assembly()
+        .with_part("ramp", _cube(), location=Location((0, 0, 20)))
+        .assert_distance("ramp", Plane.XY.offset(5), along="-Z", min_mm=5)
+    )
+    (result,) = evaluate(a)
+    assert result.passed
+    assert abs(result.value - 10.0) < 1e-6
+
+
+def test_distance_to_plane_undirected_is_zero_when_crossing():
+    from build123d import Plane
+
+    a = (
+        Assembly()
+        .with_part("a", _cube())
+        .assert_distance("a", Plane.XY, min_mm=1)
+    )
+    (result,) = evaluate(a)
+    assert result.passed is False
+    assert result.value == 0.0
+
+
+def test_distance_grow_measures_from_offset_surface():
+    a = (
+        Assembly()
+        .with_part("pinion", _cube())
+        .with_part("rails", _cube(), location=Location((20, 0, 0)))
+        .assert_distance("pinion", "rails", min_mm=1, grow_a_mm=3)
+    )
+    (result,) = evaluate(a)
+    assert result.passed
+    assert abs(result.value - 7.0) < 1e-6
+
+
+def test_distance_against_absent_part_is_skipped():
+    a = Assembly().with_part("a", _cube()).assert_distance("a", "bolt", min_mm=1)
+    (result,) = evaluate(a)
+    assert result.passed is None
+    assert "bolt" in result.detail
+
+
+def test_distance_to_plane_with_absent_part_is_skipped():
+    from build123d import Plane
+
+    a = (
+        Assembly()
+        .with_part("a", _cube())
+        .assert_distance("ghost", Plane.XY, min_mm=1)
+    )
+    (result,) = evaluate(a)
+    assert result.passed is None
+    assert "ghost" in result.detail
+
+
+def test_distance_requires_at_least_one_bound():
+    import pytest
+
+    with pytest.raises(ValueError, match="min_mm and/or max_mm"):
+        Assembly().with_part("a", _cube()).assert_distance("a", "b")
+
+
+def test_distance_plane_along_must_be_parallel_to_normal():
+    import pytest
+    from build123d import Plane
+
+    with pytest.raises(ValueError, match="parallel to the plane normal"):
+        Assembly().with_part("a", _cube()).assert_distance(
+            "a", Plane.XY, along="X", min_mm=1
+        )
+
+
+def test_distance_auto_name_carries_pair_axis_and_bounds():
+    a = (
+        Assembly()
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((20, 0, 0)))
+        .assert_distance("a", "b", along="-Z", min_mm=1, max_mm=2)
+    )
+    name = evaluate(a)[0].name
+    assert name == "distance:a/b@-Z>=1<=2"
+
+
+# --- assert_scalar ------------------------------------------------------
+
+
+def test_scalar_claim_passes_within_bound_and_records_value():
+    a = Assembly().assert_scalar("slide_margin", 0.5, ge=0.35)
+    (result,) = evaluate(a)
+    assert result.passed
+    assert result.value == 0.5
+    assert result.detail is None
+
+
+def test_scalar_claim_fails_below_ge_with_context():
+    a = Assembly().assert_scalar(
+        "slide_margin", 0.3, ge=0.35, detail="µ_s budget, ABS on PLA"
+    )
+    (result,) = evaluate(a)
+    assert result.passed is False
+    assert "below ge" in result.detail
+    assert "µ_s budget" in result.detail
+
+
+def test_scalar_claim_without_bounds_is_a_recorder():
+    a = Assembly().assert_scalar("ratio", 3.75, detail="belt reduction")
+    (result,) = evaluate(a)
+    assert result.passed
+    assert result.value == 3.75
+    assert result.detail == "belt reduction"
+
+
+# --- sub-assembly assertion propagation ---------------------------------
+
+
+def test_subassembly_assertions_evaluate_qualified_in_composed_run():
+    unit = (
+        Assembly()
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((20, 0, 0)))
+        .assert_clearance("a", "b", min_mm=5)
+    )
+    top = Assembly().with_subassembly("u", unit, location=Location((0, 0, 50)))
+    (result,) = evaluate(top)
+    assert result.passed
+    assert result.name == "u.clearance:a/b>=5"
+
+
+def test_subassembly_plane_target_tracks_placement():
+    # Declared once in the unit's frame; the same claim must hold when
+    # the unit is placed elsewhere, because the plane moves with it.
+    from build123d import Plane
+
+    unit = (
+        Assembly()
+        .with_part("ramp", _cube())
+        .assert_distance("ramp", Plane.XY.offset(-10), along="-Z", min_mm=5)
+    )
+    (standalone,) = evaluate(unit)
+    top = Assembly().with_subassembly("m05", unit, location=Location((0, 0, 100)))
+    (composed,) = evaluate(top)
+    assert standalone.passed and composed.passed
+    assert abs(standalone.value - composed.value) < 1e-6
+    assert composed.name == "m05." + standalone.name
+
+
+def test_subassembly_detail_only_assertion_skips_when_composed():
+    unit = (
+        Assembly()
+        .with_part("a", _cube())
+        .assert_clearance("a", "bolt", min_mm=0.2)
+    )
+    top = Assembly().with_subassembly("u", unit)
+    (result,) = evaluate(top)
+    assert result.passed is None
+    assert "u.bolt" in result.detail

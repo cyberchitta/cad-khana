@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from build123d import Part
+from build123d import Location, Part, Plane, Vector
 
 from cad_khana.mechanism.diagnostics import (
     INTERFERENCE_VOLUME_EPSILON_MM3,
@@ -32,11 +32,50 @@ def _intersection_volume(a: Part, b: Part) -> float:
     return sum(s.volume for s in intersection)
 
 
+def _extent(shape: Part, d: Vector) -> tuple[float, float]:
+    """Projection interval of ``shape`` onto the unit direction ``d``:
+    ``(min, max)`` of ``p . d`` over the shape's points. Computed by
+    rebasing the shape into a frame whose Z axis is ``d`` and reading
+    the bounding box, so it is exact for any direction."""
+    bb = Plane(origin=(0, 0, 0), z_dir=d).to_local_coords(shape).bounding_box()
+    return bb.min.Z, bb.max.Z
+
+
+def _plane_distance(shape: Part, plane: Plane, along: Vector | None) -> float:
+    """Distance from ``shape`` to the infinite datum ``plane``. With
+    ``along`` (parallel to the plane normal): the directed gap — how far
+    the shape travels along ``along`` before touching the plane
+    (negative once past it). Without: the unsigned distance from the
+    nearest point, 0 if the shape crosses the plane."""
+    if along is not None:
+        return plane.origin.dot(along) - _extent(shape, along)[1]
+    n = plane.z_dir
+    lo, hi = _extent(shape, n)
+    offset = plane.origin.dot(n)
+    return max(lo - offset, offset - hi, 0.0)
+
+
+def _qualified_plane(plane: Plane, location: Location) -> Plane:
+    return Plane(location * plane.location)
+
+
 @dataclass(frozen=True)
 class NoInterference:
     a: str
     b: str
     name: str
+
+    @property
+    def part_refs(self) -> tuple[str, ...]:
+        return (self.a, self.b)
+
+    def qualified(self, prefix: str, location: Location) -> "NoInterference":
+        return replace(
+            self,
+            a=f"{prefix}.{self.a}",
+            b=f"{prefix}.{self.b}",
+            name=f"{prefix}.{self.name}",
+        )
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
         volume = _intersection_volume(parts[self.a], parts[self.b])
@@ -52,6 +91,18 @@ class Clearance:
     min_mm: float
     name: str
 
+    @property
+    def part_refs(self) -> tuple[str, ...]:
+        return (self.a, self.b)
+
+    def qualified(self, prefix: str, location: Location) -> "Clearance":
+        return replace(
+            self,
+            a=f"{prefix}.{self.a}",
+            b=f"{prefix}.{self.b}",
+            name=f"{prefix}.{self.name}",
+        )
+
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
         dist = parts[self.a].distance_to(parts[self.b])
         passed = dist >= self.min_mm
@@ -61,6 +112,111 @@ class Clearance:
             else f"clearance {dist:.4f}mm below min {self.min_mm}mm"
         )
         return AssertionResult(self.name, passed, detail)
+
+
+@dataclass(frozen=True)
+class Distance:
+    """Bounded distance from part ``a`` to target ``b`` — another part,
+    or a datum ``Plane`` (infinite; declared in the asserting assembly's
+    frame and composed through placements like everything else).
+
+    Without ``along``: the minimum surface-to-surface distance (0 when
+    touching or overlapping). With ``along`` (a unit direction from
+    ``a`` toward ``b``): the directed gap between the projection
+    intervals — how far ``a`` travels along ``along`` before first
+    touching ``b``; negative when the projections already overlap.
+
+    ``grow_a_mm`` / ``grow_b_mm`` shrink the measured distance by an
+    outward offset of the named side — measuring from a tip circle
+    while the modeled body stays a pitch cylinder. Exact for a uniform
+    (ball) offset in both metrics, and conservative (never reports more
+    distance than the true offset body has) otherwise.
+
+    ``min_mm`` / ``max_mm`` bound the result; either alone or both
+    together ("close but not touching"). The measured value is recorded
+    in the result's ``value`` even on pass, so runs are diffable.
+    """
+
+    a: str
+    b: str | Plane
+    name: str
+    min_mm: float | None = None
+    max_mm: float | None = None
+    along: Vector | None = None
+    grow_a_mm: float = 0.0
+    grow_b_mm: float = 0.0
+
+    @property
+    def part_refs(self) -> tuple[str, ...]:
+        return (self.a,) if isinstance(self.b, Plane) else (self.a, self.b)
+
+    def qualified(self, prefix: str, location: Location) -> "Distance":
+        b = (
+            f"{prefix}.{self.b}"
+            if isinstance(self.b, str)
+            else _qualified_plane(self.b, location)
+        )
+        return replace(
+            self, a=f"{prefix}.{self.a}", b=b, name=f"{prefix}.{self.name}"
+        )
+
+    def _measure(self, parts: dict[str, Part]) -> float:
+        shape = parts[self.a]
+        if isinstance(self.b, Plane):
+            return _plane_distance(shape, self.b, self.along)
+        other = parts[self.b]
+        if self.along is None:
+            return shape.distance_to(other)
+        return _extent(other, self.along)[0] - _extent(shape, self.along)[1]
+
+    def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
+        measured = self._measure(parts) - self.grow_a_mm - self.grow_b_mm
+        below = self.min_mm is not None and measured < self.min_mm
+        above = self.max_mm is not None and measured > self.max_mm
+        detail = (
+            f"distance {measured:.4f}mm below min {self.min_mm}mm"
+            if below
+            else f"distance {measured:.4f}mm above max {self.max_mm}mm"
+            if above
+            else None
+        )
+        return AssertionResult(
+            self.name, not (below or above), detail, value=measured
+        )
+
+
+@dataclass(frozen=True)
+class ScalarClaim:
+    """A named, recorded claim about a non-geometric scalar (a friction
+    budget, a torque margin) — the value lands in diagnostics and diff
+    either way; ``ge`` / ``le`` bounds make it a pass/fail assertion,
+    with neither it is a pure recorder. ``detail`` is context carried
+    into the result (alone on pass, appended to the bound violation on
+    failure)."""
+
+    name: str
+    value: float
+    ge: float | None = None
+    le: float | None = None
+    detail: str | None = None
+
+    def qualified(self, prefix: str, location: Location) -> "ScalarClaim":
+        return replace(self, name=f"{prefix}.{self.name}")
+
+    def evaluate(self) -> AssertionResult:
+        below = self.ge is not None and self.value < self.ge
+        above = self.le is not None and self.value > self.le
+        failure = (
+            f"value {self.value:.6g} below ge {self.ge}"
+            if below
+            else f"value {self.value:.6g} above le {self.le}"
+            if above
+            else None
+        )
+        detail = "; ".join(s for s in (failure, self.detail) if s) or None
+        return AssertionResult(
+            self.name, not (below or above), detail, value=self.value
+        )
 
 
 @dataclass(frozen=True)
@@ -76,6 +232,18 @@ class ExpectedInterference:
     b: str
     name: str
     reason: str | None = None
+
+    @property
+    def part_refs(self) -> tuple[str, ...]:
+        return (self.a, self.b)
+
+    def qualified(self, prefix: str, location: Location) -> "ExpectedInterference":
+        return replace(
+            self,
+            a=f"{prefix}.{self.a}",
+            b=f"{prefix}.{self.b}",
+            name=f"{prefix}.{self.name}",
+        )
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
         volume = _intersection_volume(parts[self.a], parts[self.b])
@@ -103,6 +271,14 @@ class AnchorsCoincident:
     tol_mm: float
     name: str
 
+    def qualified(self, prefix: str, location: Location) -> "AnchorsCoincident":
+        return replace(
+            self,
+            a=f"{prefix}.{self.a}",
+            b=f"{prefix}.{self.b}",
+            name=f"{prefix}.{self.name}",
+        )
+
     def evaluate_on(self, assembly: Assembly) -> AssertionResult:
         pa = assembly.anchor(self.a).position
         pb = assembly.anchor(self.b).position
@@ -120,7 +296,14 @@ class AnchorsCoincident:
         return AssertionResult(self.name, passed, detail)
 
 
-Assertion = NoInterference | Clearance | ExpectedInterference | AnchorsCoincident
+Assertion = (
+    NoInterference
+    | Clearance
+    | ExpectedInterference
+    | AnchorsCoincident
+    | Distance
+    | ScalarClaim
+)
 
 
 def _placed(p: PlacedPart) -> Part:
@@ -128,7 +311,7 @@ def _placed(p: PlacedPart) -> Part:
 
 
 def _evaluate_part_assertion(
-    assertion: NoInterference | Clearance | ExpectedInterference,
+    assertion: NoInterference | Clearance | ExpectedInterference | Distance,
     parts: dict[str, Part],
 ) -> AssertionResult:
     """Skip (``passed=None``) instead of evaluating when a referenced
@@ -136,7 +319,7 @@ def _evaluate_part_assertion(
     error: detail geometry (fasteners, motors) is applied by an
     override, and a standalone sub-assembly run evaluates the same
     assertion list without those parts."""
-    missing = sorted(n for n in (assertion.a, assertion.b) if n not in parts)
+    missing = sorted(n for n in assertion.part_refs if n not in parts)
     if missing:
         names = ", ".join(missing)
         return AssertionResult(
@@ -150,6 +333,8 @@ def evaluate(assembly: Assembly) -> tuple[AssertionResult, ...]:
     return tuple(
         a.evaluate_on(assembly)
         if isinstance(a, AnchorsCoincident)
+        else a.evaluate()
+        if isinstance(a, ScalarClaim)
         else _evaluate_part_assertion(a, parts)
-        for a in assembly.assertions
+        for a in assembly.all_assertions
     )

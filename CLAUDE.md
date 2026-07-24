@@ -156,7 +156,7 @@ equivalent, 1 when differences are found, 2 on error. `build` and
 `inspect()` call) even on failure, so the agent can always read structured
 error info.
 
-## Diagnostics JSON schemas (v0.4)
+## Diagnostics JSON schemas (v0.5)
 
 Version these from day one. Agents depend on field stability.
 
@@ -164,7 +164,7 @@ Version these from day one. Agents depend on field stability.
 
 ```json
 {
-  "schema_version": "0.4",
+  "schema_version": "0.5",
   "status": "ok | error | assertion_failed",
   "error": null,
   "hint": "Missing .part accessor — use `with BuildPart() as p: ...; return p.part`.",
@@ -184,7 +184,7 @@ Version these from day one. Agents depend on field stability.
     {"a": "lever", "b": "housing", "volume_mm3": 0.3, "centroid": [x,y,z]}
   ],
   "assertions": [
-    {"name": "lever_clears_housing", "passed": true, "detail": null}
+    {"name": "lever_clears_housing", "passed": true, "detail": null, "value": null}
   ],
   "exports": ["outputs/assembly.stl", "outputs/assembly.step"]
 }
@@ -196,11 +196,21 @@ absent from the run (`detail` names the missing parts — the standalone
 sub-assembly case, where detail-override parts aren't applied). Skipped
 assertions never set `status: "assertion_failed"`.
 
+`assertions[].value` carries the measured/claimed scalar for
+value-carrying assertions (`assert_distance`, `assert_scalar`) even on
+pass — `khana diff` reports drift the boolean can't see — and is
+`null` for the boolean-only kinds.
+
+Sub-assembly assertion lists propagate: a composed parent evaluates
+every nested assertion with part/anchor paths, names, and datum-plane
+targets qualified into its frame (`Assembly.all_assertions`), so a
+unit declares each claim once at the level that owns the knowledge.
+
 `<name>-printability.json` — written by each `inspect()`:
 
 ```json
 {
-  "schema_version": "0.4",
+  "schema_version": "0.5",
   "kind": "printability",
   "status": "ok | assertion_failed",
   "name": "housing",

@@ -9,7 +9,7 @@ from build123d import Part
 if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
 
-SCHEMA_VERSION = "0.4"
+SCHEMA_VERSION = "0.5"
 INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
 
 
@@ -44,11 +44,15 @@ class AssertionResult:
     """``passed`` is tri-state: ``True``/``False`` for an evaluated
     assertion, ``None`` when it was skipped because a referenced part
     is absent from the run (``detail`` names the missing parts).
-    Skipped assertions never fail a build."""
+    Skipped assertions never fail a build. ``value`` carries the
+    measured/claimed scalar for value-carrying assertions
+    (``assert_distance``, ``assert_scalar``) even on pass — so runs
+    are diffable — and stays ``None`` for the boolean-only kinds."""
 
     name: str
     passed: bool | None
     detail: str | None = None
+    value: float | None = None
 
 
 @dataclass(frozen=True)

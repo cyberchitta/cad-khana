@@ -3,14 +3,27 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 
-from build123d import Axis, Color, Compound, Location, Part, Shape, ShapeList
+from build123d import (
+    Axis,
+    Color,
+    Compound,
+    Location,
+    Part,
+    Plane,
+    Shape,
+    ShapeList,
+    Vector,
+    VectorLike,
+)
 
 from cad_khana.mechanism.assertions import (
     AnchorsCoincident,
     Assertion,
     Clearance,
+    Distance,
     ExpectedInterference,
     NoInterference,
+    ScalarClaim,
 )
 
 
@@ -39,6 +52,56 @@ def _pair_assertion(
             a=a, b=b, name=f"interference:{a}/{b}", reason=reasons[key]
         )
     return NoInterference(a=a, b=b, name=f"no_interference:{a}/{b}")
+
+
+_AXIS_DIRECTIONS: dict[str, tuple[float, float, float]] = {
+    "X": (1, 0, 0),
+    "Y": (0, 1, 0),
+    "Z": (0, 0, 1),
+    "-X": (-1, 0, 0),
+    "-Y": (0, -1, 0),
+    "-Z": (0, 0, -1),
+}
+
+
+def _direction(along: str | VectorLike) -> Vector:
+    """Normalize an ``along=`` argument — an axis name (``"Z"``,
+    ``"-X"``) or any VectorLike — to a unit ``Vector``."""
+    if isinstance(along, str):
+        key = along.upper().lstrip("+")
+        if key not in _AXIS_DIRECTIONS:
+            raise ValueError(
+                f"along={along!r} — use one of {sorted(_AXIS_DIRECTIONS)} "
+                f"or a direction vector"
+            )
+        return Vector(_AXIS_DIRECTIONS[key])
+    return Vector(along).normalized()
+
+
+def _plane_label(plane: Plane) -> str:
+    n, o = plane.z_dir, plane.origin
+    return f"plane(n=({n.X:.3g},{n.Y:.3g},{n.Z:.3g}),d={o.dot(n):.6g})"
+
+
+def _distance_name(
+    a: str,
+    b: str | Plane,
+    along: str | VectorLike | None,
+    min_mm: float | None,
+    max_mm: float | None,
+) -> str:
+    target = b if isinstance(b, str) else _plane_label(b)
+    axis = (
+        ""
+        if along is None
+        else f"@{along if isinstance(along, str) else Vector(along).to_tuple()}"
+    )
+    bounds = "".join(
+        s
+        for s, v in ((f">={min_mm}", min_mm), (f"<={max_mm}", max_mm))
+        if v is not None
+    )
+    return f"distance:{a}/{target}{axis}{bounds}"
 
 
 @dataclass(frozen=True)
@@ -467,6 +530,79 @@ class Assembly:
         )
         return replace(self, assertions=self.assertions + (assertion,))
 
+    def assert_distance(
+        self,
+        a: str,
+        b: str | Plane,
+        *,
+        min_mm: float | None = None,
+        max_mm: float | None = None,
+        along: str | VectorLike | None = None,
+        grow_a_mm: float = 0.0,
+        grow_b_mm: float = 0.0,
+        name: str | None = None,
+    ) -> "Assembly":
+        """Assert a bounded distance from part ``a`` to ``b`` — another
+        part, or a datum ``Plane`` declared in this assembly's frame.
+
+        Without ``along``: minimum surface-to-surface distance. With
+        ``along`` (an axis name like ``"-Z"`` or a vector, read as the
+        direction from ``a`` toward ``b``): the directed gap between
+        the two projection intervals — negative once they overlap
+        along that axis. A ``Plane`` target with ``along`` requires
+        the direction parallel to the plane normal.
+
+        ``min_mm`` / ``max_mm`` bound the measurement (at least one
+        required; both together express "close but not touching").
+        ``grow_a_mm`` / ``grow_b_mm`` measure from an outward offset
+        of that side (a tip circle over a modeled pitch cylinder). The
+        measured value is recorded in the result even on pass, so
+        ``khana diff`` sees drift.
+        """
+        if min_mm is None and max_mm is None:
+            raise ValueError("assert_distance needs min_mm and/or max_mm")
+        d = None if along is None else _direction(along)
+        if (
+            isinstance(b, Plane)
+            and d is not None
+            and abs(d.dot(b.z_dir)) < 1 - 1e-9
+        ):
+            raise ValueError(
+                "assert_distance: along must be parallel to the plane "
+                "normal — any other direction never closes on an "
+                "infinite plane"
+            )
+        assertion = Distance(
+            a=a,
+            b=b,
+            name=name or _distance_name(a, b, along, min_mm, max_mm),
+            min_mm=min_mm,
+            max_mm=max_mm,
+            along=d,
+            grow_a_mm=grow_a_mm,
+            grow_b_mm=grow_b_mm,
+        )
+        return replace(self, assertions=self.assertions + (assertion,))
+
+    def assert_scalar(
+        self,
+        name: str,
+        value: float,
+        *,
+        ge: float | None = None,
+        le: float | None = None,
+        detail: str | None = None,
+    ) -> "Assembly":
+        """Record a named claim about a non-geometric scalar (a
+        friction budget, a torque margin). The value lands in
+        ``mechanism.json`` and diff either way; ``ge`` / ``le`` bounds
+        make it pass/fail, with neither it is a pure recorder.
+        ``detail`` is context carried into the result."""
+        assertion = ScalarClaim(
+            name=name, value=value, ge=ge, le=le, detail=detail
+        )
+        return replace(self, assertions=self.assertions + (assertion,))
+
     def assert_interference(
         self,
         a: str,
@@ -610,6 +746,26 @@ class Assembly:
                     continue
                 new.append(_pair_assertion(a, b, reasons))
         return replace(self, assertions=self.assertions + tuple(new))
+
+    @property
+    def all_assertions(self) -> tuple[Assertion, ...]:
+        """This level's assertions plus every sub-assembly's,
+        recursively, qualified into this frame — the assertion-side
+        mirror of ``placed_parts``. Part and anchor paths (and names)
+        gain the sub-assembly path prefix; datum-plane targets are
+        moved by each level's ``effective_location`` (joint included),
+        so a plane declared in a sub's local frame tracks its
+        placement. This is what lets a unit declare an assertion once,
+        at the level that owns the knowledge: standalone runs evaluate
+        it directly, composed runs evaluate the qualified form, and
+        the absent-part skip covers detail-only references either way.
+        """
+        nested = tuple(
+            a.qualified(s.name, s.effective_location)
+            for s in self.subassemblies
+            for a in s.assembly.all_assertions
+        )
+        return self.assertions + nested
 
     @property
     def placed_parts(self) -> tuple[PlacedPart, ...]:
