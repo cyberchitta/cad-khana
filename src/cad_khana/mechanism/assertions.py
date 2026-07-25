@@ -84,9 +84,16 @@ class JointWindow:
 
 @dataclass(frozen=True)
 class NoInterference:
+    """Assert ``a`` and ``b`` don't overlap. ``from_group`` marks a pair
+    emitted by a group expansion rather than declared by hand: a
+    blanket pair yields to an ``AllowedContact`` on the same pair
+    (``drop_contact_shadowed``), where a hand-written one stands and
+    contradicts it loudly."""
+
     a: str
     b: str
     name: str
+    from_group: bool = False
 
     @property
     def part_refs(self) -> tuple[str, ...]:
@@ -466,6 +473,38 @@ Assertion = (
     | Distance
     | ScalarClaim
 )
+
+
+def drop_contact_shadowed(
+    assertions: tuple[Assertion, ...],
+) -> tuple[Assertion, ...]:
+    """Drop group-derived ``NoInterference`` pairs that also carry an
+    ``AllowedContact`` in the same set: the contact claim already holds
+    the pair at every frame — inside its window to the overlap band,
+    outside it to plain no-interference — so a blanket pair from a
+    group expansion could only contradict it.
+
+    Derived over the assembled set rather than at expansion time so it
+    is order-free: a contact declared *after* the group call, or at a
+    level above it, wins just the same. Reading it at expansion made a
+    same-level contact declared below the group call invisible, and the
+    pair then failed as a plain interference — a real press fit reading
+    as a broken one, with nothing pointing at declaration order.
+    """
+    contacts = {
+        frozenset((a.a, a.b))
+        for a in assertions
+        if isinstance(a, AllowedContact)
+    }
+    return tuple(
+        a
+        for a in assertions
+        if not (
+            isinstance(a, NoInterference)
+            and a.from_group
+            and frozenset((a.a, a.b)) in contacts
+        )
+    )
 
 
 def _placed(p: PlacedPart) -> Part:

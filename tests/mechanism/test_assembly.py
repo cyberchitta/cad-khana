@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 from build123d import Axis, Box, BuildPart, Color, Location, Pos, ShapeList
 
@@ -6,7 +8,7 @@ from cad_khana.mechanism.assembly import (
     DetailOverride,
     RevoluteJoint,
 )
-from cad_khana.mechanism.assertions import JointWindow
+from cad_khana.mechanism.assertions import JointWindow, NoInterference
 
 
 def _cube(size: float = 10):
@@ -414,6 +416,16 @@ def _three_part_assembly():
     )
 
 
+def _hand_form(assertions):
+    """Group-emitted pairs carry ``from_group``; nothing else about them
+    differs from the hand-written form, and the flag never reaches the
+    JSON."""
+    return tuple(
+        replace(a, from_group=False) if isinstance(a, NoInterference) else a
+        for a in assertions
+    )
+
+
 def test_between_is_diff_identical_to_hand_loop():
     base = _three_part_assembly()
     hand = base
@@ -421,7 +433,7 @@ def test_between_is_diff_identical_to_hand_loop():
         for b in ("b1",):
             hand = hand.assert_no_interference(a, b)
     grouped = base.assert_no_interference_between(("a1", "a2"), ("b1",))
-    assert grouped.assertions == hand.assertions
+    assert _hand_form(grouped.assertions) == hand.assertions
 
 
 def test_within_is_diff_identical_to_hand_loop():
@@ -432,7 +444,7 @@ def test_within_is_diff_identical_to_hand_loop():
         for j in range(i + 1, len(names)):
             hand = hand.assert_no_interference(names[i], names[j])
     grouped = base.assert_no_interference_within(names)
-    assert grouped.assertions == hand.assertions
+    assert _hand_form(grouped.assertions) == hand.assertions
 
 
 def test_between_known_overlap_downgrades_order_independent():
@@ -498,7 +510,7 @@ def test_between_skips_pair_carrying_an_allowed_contact():
         "b1", "a1", max_overlap_mm3=5, reason="press fit"
     )
     grouped = base.assert_no_interference_between(("a1", "a2"), ("b1",))
-    assert [a.name for a in grouped.assertions[1:]] == [
+    assert [a.name for a in grouped.all_assertions[1:]] == [
         "no_interference:a2/b1"
     ]
 
@@ -511,7 +523,7 @@ def test_within_skips_phased_allowed_contact_pair():
         during=JointWindow("rotor", 5.4, 22.5),
     )
     grouped = base.assert_no_interference_within(("a1", "a2", "b1"))
-    assert [a.name for a in grouped.assertions[1:]] == [
+    assert [a.name for a in grouped.all_assertions[1:]] == [
         "no_interference:a1/b1",
         "no_interference:a2/b1",
     ]
@@ -532,9 +544,59 @@ def test_group_skips_contact_declared_in_a_subassembly():
     grouped = top.assert_no_interference_within(
         ("unit.pad", "unit.block", "outside")
     )
-    assert [a.name for a in grouped.assertions] == [
+    assert [a.name for a in grouped.all_assertions] == [
         "no_interference:unit.pad/outside",
         "no_interference:unit.block/outside",
+        "unit.allowed_contact:pad/block<=5",
+    ]
+
+
+def test_group_skip_is_free_of_declaration_order():
+    """The contact declared *below* the group call still wins — read at
+    expansion time it was invisible, and the pair failed as a plain
+    interference."""
+    after = (
+        _three_part_assembly()
+        .assert_no_interference_within(("a1", "a2", "b1"))
+        .assert_allowed_contact("a1", "a2", max_overlap_mm3=5)
+    )
+    assert [a.name for a in after.all_assertions] == [
+        "no_interference:a1/b1",
+        "no_interference:a2/b1",
+        "allowed_contact:a1/a2<=5",
+    ]
+
+
+def test_group_skip_honors_a_contact_declared_a_level_above():
+    sub = (
+        Assembly()
+        .with_part("pad", _cube())
+        .with_part("block", _cube(), location=Location((0, 0, 20)))
+        .assert_no_interference_within(("pad", "block"))
+    )
+    top = Assembly().with_subassembly("unit", sub).assert_allowed_contact(
+        "unit.pad", "unit.block", max_overlap_mm3=5
+    )
+    assert [a.name for a in top.all_assertions] == [
+        "allowed_contact:unit.pad/unit.block<=5"
+    ]
+    assert [a.name for a in sub.all_assertions] == [
+        "no_interference:pad/block"
+    ]
+
+
+def test_hand_written_no_interference_is_not_dropped_by_a_contact():
+    """Only a group's blanket pair yields. A hand-written pair beside a
+    contact claim is a contradiction the agent should see, not a
+    declaration to reconcile silently."""
+    both = (
+        _three_part_assembly()
+        .assert_no_interference("a1", "a2")
+        .assert_allowed_contact("a1", "a2", max_overlap_mm3=5)
+    )
+    assert [a.name for a in both.all_assertions] == [
+        "no_interference:a1/a2",
+        "allowed_contact:a1/a2<=5",
     ]
 
 
@@ -545,7 +607,9 @@ def test_known_overlap_overrides_the_allowed_contact_skip():
     grouped = base.assert_no_interference_between(
         ("a1",), ("b1",), known_overlaps=(("a1", "b1", "also alarmed"),)
     )
-    assert [a.name for a in grouped.assertions[1:]] == ["interference:a1/b1"]
+    assert [a.name for a in grouped.all_assertions[1:]] == [
+        "interference:a1/b1"
+    ]
 
 
 def test_group_path_missing_raises_keyerror():

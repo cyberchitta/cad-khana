@@ -27,6 +27,7 @@ from cad_khana.mechanism.assertions import (
     NoInterference,
     ScalarClaim,
     TangentContact,
+    drop_contact_shadowed,
 )
 
 
@@ -54,7 +55,9 @@ def _pair_assertion(
         return ExpectedInterference(
             a=a, b=b, name=f"interference:{a}/{b}", reason=reasons[key]
         )
-    return NoInterference(a=a, b=b, name=f"no_interference:{a}/{b}")
+    return NoInterference(
+        a=a, b=b, name=f"no_interference:{a}/{b}", from_group=True
+    )
 
 
 _AXIS_DIRECTIONS: dict[str, tuple[float, float, float]] = {
@@ -753,17 +756,6 @@ class Assembly:
                 return s.assembly._subassembly_at(rest) if rest else s
         raise KeyError(f"no sub-assembly named {head!r}")
 
-    @property
-    def _contact_pairs(self) -> set[frozenset[str]]:
-        """Pairs already carrying an ``AllowedContact`` declared at or
-        below this level, qualified into this frame — what group
-        expansion skips so the claim isn't restated as a suppression."""
-        return {
-            frozenset((a.a, a.b))
-            for a in self.all_assertions
-            if isinstance(a, AllowedContact)
-        }
-
     def _resolve_group(self, group: str | Iterable[str]) -> tuple[str, ...]:
         """A group selector → concrete part paths. A ``str`` is a dotted
         sub-assembly path and resolves to every part under that subtree,
@@ -803,15 +795,19 @@ class Assembly:
         unused. Same-name pairs are skipped, and if the groups overlap
         each unordered pair is emitted once (first encounter's order).
 
-        Pairs carrying an ``AllowedContact`` declared at or below this
-        level are skipped too, without being listed: the contact
+        Pairs carrying an ``AllowedContact`` anywhere in the assembled
+        tree are dropped too, without being listed: the contact
         assertion already holds the pair at every frame — inside its
         window to the overlap band, outside it to plain
         no-interference — so re-emitting ``NoInterference`` here could
         only contradict it. Restating them in ``suppressed`` was double
         bookkeeping that also went *wider* than the claim, since a
         suppression is blind at every frame where a phased claim is
-        not. Name the pair in ``known_overlaps`` to override the skip.
+        not. The drop happens over the assembled set
+        (``all_assertions``), so it doesn't matter whether the contact
+        is declared before or after this call, or above it. Name the
+        pair in ``known_overlaps`` to override it — a known overlap
+        emits ``ExpectedInterference``, which is never dropped.
 
         Emitted assertions are the plain single-pair forms with their
         usual auto-names, so replacing a hand-written double loop with
@@ -820,7 +816,6 @@ class Assembly:
         a_names = self._resolve_group(group_a)
         b_names = self._resolve_group(group_b)
         reasons, sup = _normalize_pair_maps(known_overlaps, suppressed)
-        skip = sup | (self._contact_pairs - set(reasons))
         new: list[Assertion] = []
         seen: set[frozenset[str]] = set()
         for a in a_names:
@@ -828,7 +823,7 @@ class Assembly:
                 if a == b:
                     continue
                 key = frozenset((a, b))
-                if key in skip or key in seen:
+                if key in sup or key in seen:
                     continue
                 seen.add(key)
                 new.append(_pair_assertion(a, b, reasons))
@@ -849,12 +844,11 @@ class Assembly:
         """
         names = self._resolve_group(group)
         reasons, sup = _normalize_pair_maps(known_overlaps, suppressed)
-        skip = sup | (self._contact_pairs - set(reasons))
         new: list[Assertion] = []
         for i in range(len(names)):
             for j in range(i + 1, len(names)):
                 a, b = names[i], names[j]
-                if a == b or frozenset((a, b)) in skip:
+                if a == b or frozenset((a, b)) in sup:
                     continue
                 new.append(_pair_assertion(a, b, reasons))
         return replace(self, assertions=self.assertions + tuple(new))
@@ -871,13 +865,18 @@ class Assembly:
         at the level that owns the knowledge: standalone runs evaluate
         it directly, composed runs evaluate the qualified form, and
         the absent-part skip covers detail-only references either way.
+
+        This is also where a group expansion's blanket pairs yield to a
+        declared ``AllowedContact`` on the same pair
+        (``drop_contact_shadowed``) — over the assembled set, so the
+        exclusion is free of declaration order.
         """
         nested = tuple(
             a.qualified(s.name, s.effective_location)
             for s in self.subassemblies
             for a in s.assembly.all_assertions
         )
-        return self.assertions + nested
+        return drop_contact_shadowed(self.assertions + nested)
 
     @property
     def joint_angles(self) -> dict[str, float]:
