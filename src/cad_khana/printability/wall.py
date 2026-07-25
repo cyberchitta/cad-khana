@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterator
 
 from build123d import Axis, Part, Vector
 
@@ -25,6 +24,10 @@ class WallSample:
     splay apart. A minimum reported at low alignment is the tip of a
     wedge-shaped feature rather than a wall — real material, but not a wall
     thickness. It is reported, never filtered.
+
+    It characterises the reading on its own because the entry alignment is
+    -1 by construction: a sample only ever spans the facet its ray was cast
+    for (see `_wall_span`).
     """
 
     thickness_mm: float
@@ -52,31 +55,45 @@ def _crossings(part: Part, triangle: Triangle) -> list[tuple[float, Vector, floa
     )
 
 
-def _spans(crossings: list[tuple[float, Vector, float]]) -> Iterator[WallSample]:
-    """Pair each entry into material with the next exit out of it.
+def _wall_span(crossings: list[tuple[float, Vector, float]]) -> WallSample | None:
+    """Measure the one span that starts at the facet the ray was cast for:
+    its first crossing (an entry, `alignment < 0`) paired with the next exit.
 
-    A crossing whose face points back along the ray (`alignment < 0`) is an
-    entry, one whose face points away (`alignment > 0`) an exit. Pairing them
-    measures material actually traversed, so a ray that never entered
-    contributes nothing — the rejection is geometric, never by magnitude.
+    Only that span is a thickness — the ray is normal to its entry face by
+    construction. A ray carries on for the whole depth of the part, and every
+    later entry is into some *other* feature downstream, crossed at whatever
+    oblique angle the originating facet happens to make with it. Those chords
+    are real material but not wall thicknesses, and a grazed corner yields an
+    arbitrarily short one. Restricting to the originating span costs no
+    coverage: every face is sampled from its own facets, so every wall is
+    measured by a ray normal to it.
+
+    A ray whose first crossing is an exit started inside material — the
+    backed-off origin fell in a crevice narrower than the backoff — and never
+    entered here, so it contributes nothing. The rejection stays geometric,
+    never by magnitude.
     """
-    entry: tuple[float, Vector] | None = None
-    for distance, point, alignment in crossings:
-        if distance < 0:
-            continue
-        if alignment < 0:
-            entry = (distance, point)
-        elif entry is not None:
-            span, at = distance - entry[0], entry[1]
-            if span > MIN_SPAN_MM:
-                yield WallSample(span, (at.X, at.Y, at.Z), alignment)
-            entry = None
+    forward = [c for c in crossings if c[0] >= 0]
+    if not forward or forward[0][2] >= 0:
+        return None
+    entered, at, _ = forward[0]
+    leaving = next(((d, a) for d, _, a in forward[1:] if a > 0), None)
+    if leaving is None:
+        return None
+    span, alignment = leaving[0] - entered, leaving[1]
+    return (
+        WallSample(span, (at.X, at.Y, at.Z), alignment)
+        if span > MIN_SPAN_MM
+        else None
+    )
 
 
-def _samples(part: Part, triangle: Triangle) -> Iterator[WallSample]:
-    return _spans(_crossings(part, triangle)) if triangle.area > 0 else iter(())
+def _sample(part: Part, triangle: Triangle) -> WallSample | None:
+    return _wall_span(_crossings(part, triangle)) if triangle.area > 0 else None
 
 
 def min_wall(part: Part) -> WallSample | None:
-    samples = tuple(s for t in _tessellate(part) for s in _samples(part, t))
-    return min(samples, key=lambda s: s.thickness_mm) if samples else None
+    samples = (
+        s for t in _tessellate(part) if (s := _sample(part, t)) is not None
+    )
+    return min(samples, key=lambda s: s.thickness_mm, default=None)

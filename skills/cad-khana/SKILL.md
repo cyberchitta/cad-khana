@@ -839,6 +839,9 @@ the model to fix, not to waive. Only a low alignment supports a
   near `1.0` means two near-parallel faces genuinely are that far
   apart, so a tiny reading is a **real sliver in the model**, not a
   measurement artifact — investigate the geometry rather than waiving it.
+  This one number decides the question because every reading is taken
+  perpendicular to the face it starts from (see the limitation below),
+  so only the far side's angle is ever in doubt.
 - `overhang` — `null` or `{area_mm2, max_angle_deg}`.
 - `assertions` — `wall_min:…` and `overhang_max:…` entries; `passed` +
   `detail`, plus `waived` (the rationale) when a failure was waived.
@@ -849,8 +852,9 @@ the model to fix, not to waive. Only a low alignment supports a
 ## Known limitations
 
 - **Min wall thickness is approximate.** Rays are cast from tessellated
-  faces and paired entry-to-exit against the exact solid, so a reading
-  always spans material actually traversed; it can still miss diagonal
+  faces against the exact solid, and each ray measures only where it
+  crosses the face it was cast from — perpendicular to that face, so
+  the reading is a thickness of *that* wall. It can still miss diagonal
   pinch points. Readings at sharp features are *real* short material
   paths rather than noise — check `min_wall_alignment` to tell a wedge
   tip from a wall. See `references/printability.md` for details.

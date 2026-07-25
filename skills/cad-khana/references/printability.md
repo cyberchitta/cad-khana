@@ -20,12 +20,14 @@ take its centroid and outward normal, and cast an `Axis` along the
 inward normal — from an origin backed off `BACKOFF_MM` *outside* the
 surface. Collect every crossing of the solid, classifying each by its
 face's outward normal projected on the ray: negative is an **entry**
-into material, positive an **exit**. Each entry paired with its next
-exit is one local thickness. `min_wall_mm` is the minimum over all
-such spans, `min_wall_at` the entry point that minimum was measured
+into material, positive an **exit**. The ray's *first* crossing is its
+entry through the facet it was cast for; paired with the next exit,
+that span is the local thickness of the wall the facet sits on. Each
+ray contributes exactly that one sample. `min_wall_mm` is the minimum
+over all rays, `min_wall_at` the entry point that minimum was measured
 from, and `min_wall_alignment` the exit face's projection there.
 
-Two properties follow, and both are deliberate:
+Three properties follow, and all three are deliberate:
 
 - **A reading always spans material actually traversed.** The origin
   is backed off because a facet centroid sags into the void by up to
@@ -44,6 +46,16 @@ Two properties follow, and both are deliberate:
   the chance of hiding a genuine thin region — the worse failure for
   a printability check. A thin reading is therefore always real
   material; `min_wall_alignment` tells you *what kind*.
+- **A reading is always perpendicular to the face it starts from.** A
+  ray carries on for the whole depth of the part, and each later entry
+  is into some *other* feature downstream, crossed at whatever oblique
+  angle the originating facet happens to make with it. Those chords are
+  real material but say nothing about the feature's thickness, and a
+  grazed corner yields an arbitrarily short one — an unrelated 20×6 mm
+  plate clipped at 75° reported 0.09 mm. Counting only the originating
+  span costs no coverage, because every face is sampled from its own
+  facets. It is also what lets `min_wall_alignment` decide a waiver on
+  its own: the entry angle is fixed at -1, so only the exit is in doubt.
 
 ### What it gets right
 

@@ -264,20 +264,27 @@ comparison flips on solver noise.
 }
 ```
 
-Wall thickness is measured by pairing each ray's **entry** into
-material with its next **exit**, so a reading always spans material
-actually traversed. This matters because a tessellation facet centroid
-sags into the void by up to the tessellation tolerance on curved faces:
-a ray started there re-hits the surface it came from, which is what
-produced the sub-0.2 mm readings on large-radius annuli that consumers
-had been waiving as "ray-sampling artifacts". Rays are rejected only on
-that geometric ground — **never** by magnitude, and there is no
-quantile or robustness statistic, because hiding a genuine thin region
-is a worse failure than reporting a wedge tip.
+Wall thickness is measured by pairing a ray's **entry** into material
+with its next **exit**, so a reading always spans material actually
+traversed. This matters because a tessellation facet centroid sags into
+the void by up to the tessellation tolerance on curved faces: a ray
+started there re-hits the surface it came from, which is what produced
+the sub-0.2 mm readings on large-radius annuli that consumers had been
+waiving as "ray-sampling artifacts". Each ray contributes exactly one
+sample — the span through the facet it was cast for, which it meets
+perpendicular by construction. Later spans along the same ray are
+chords through *unrelated* features at oblique angles, so a grazed
+corner reads arbitrarily thin; those features are measured properly by
+rays cast from their own facets, so dropping the chords costs no
+coverage. Rays are rejected only on geometric grounds — **never** by
+magnitude, and there is no quantile or robustness statistic, because
+hiding a genuine thin region is a worse failure than reporting a wedge
+tip.
 
 `min_wall_alignment` is the evidence field for the readings that
-remain: the exit face's outward normal projected on the ray, `1.0` for
-parallel faces and falling toward `0` as they splay. Below ~0.7 the
+remain, and it settles the question alone because the entry angle is
+fixed at `-1`: the exit face's outward normal projected on the ray,
+`1.0` for parallel faces and falling toward `0` as they splay. Below ~0.7 the
 minimum sits at the tip of a wedge feature (real material, but not a
 wall thickness); near `1.0` a tiny reading is a genuine sliver in the
 model and should be fixed rather than waived.

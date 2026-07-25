@@ -1,7 +1,16 @@
-from build123d import Box, BuildPart, Cone, Cylinder, Locations, Mode
+from build123d import (
+    Box,
+    BuildPart,
+    Cone,
+    Cylinder,
+    Location,
+    Locations,
+    Mode,
+)
 from pytest import approx
 
-from cad_khana.printability.wall import min_wall
+from cad_khana.core.tessellation import _tessellate
+from cad_khana.printability.wall import _crossings, min_wall
 
 
 def _cube(size: float = 10):
@@ -89,6 +98,56 @@ def test_thin_feature_of_small_area_is_never_discarded():
 
 def test_slab_reads_full_alignment():
     assert min_wall(_plate(20, 20, 2)).alignment == approx(1.0, abs=0.05)
+
+
+def _corner_clip():
+    # Two disjoint 4 mm plates. The ray cast from the facet centred on
+    # (-3.333, -2, -1) crosses its own plate (span 4 mm), travels ~47 mm
+    # through air, and clips the far corner of the second plate — entering
+    # its long face and leaving through the end face 0.1 mm later. The
+    # second plate is placed and rotated so that chord is a near miss.
+    with BuildPart() as p:
+        Box(20, 4, 6)
+        with Locations(Location((-7.8283, 40, 0), (0, 0, 75))):
+            Box(20, 4, 6)
+    return p.part
+
+
+def _clipping_ray(part):
+    triangle = next(
+        t
+        for t in _tessellate(part)
+        if abs(t.centroid.X + 10 / 3) < 0.01 and abs(t.centroid.Y + 2) < 0.01
+    )
+    return _crossings(part, triangle)
+
+
+def test_fixture_still_grazes_the_far_corner():
+    # Guards the regression test below: if the tessellation ever shifts the
+    # ray off the corner, this fails loudly rather than passing vacuously.
+    crossings = _clipping_ray(_corner_clip())
+    forward = [c for c in crossings if c[0] >= 0]
+    assert len(forward) == 4
+    assert forward[3][0] - forward[2][0] == approx(0.1, abs=0.01)
+
+
+def test_downstream_chord_is_not_a_wall_thickness():
+    # Both plates are 4 mm thick. The 0.1 mm corner chord is real material
+    # but not a wall: the ray enters it at 75 deg, so its length says nothing
+    # about the plate. Measuring only the originating span reports 4 mm; the
+    # far corner is measured properly by rays cast from its own facets.
+    sample = min_wall(_corner_clip())
+    assert sample.thickness_mm == approx(4.0, abs=0.02)
+
+
+def test_grazing_chord_reads_as_high_alignment():
+    # Why the chord cannot be screened out after the fact: its exit alignment
+    # is 0.97, indistinguishable from a genuine sliver between parallel faces.
+    # Only the entry — the facet the ray was cast for — separates the cases.
+    crossings = _clipping_ray(_corner_clip())
+    forward = [c for c in crossings if c[0] >= 0]
+    assert forward[2][2] == approx(-0.259, abs=0.01)
+    assert forward[3][2] == approx(0.966, abs=0.01)
 
 
 def test_wedge_tip_is_reported_with_low_alignment():
