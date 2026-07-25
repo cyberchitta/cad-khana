@@ -355,6 +355,8 @@ collected — you get every problem in one pass, not just the first.
 | `.assert_clearance(a, b, min_mm=…)` | Minimum distance between `a` and `b` is at least `min_mm`. |
 | `.assert_distance(a, b, min_mm=…, max_mm=…)` | Bounded distance from part `a` to part `b` **or a datum `Plane`**. Either bound alone, or both for "close but not touching" (a gear mesh). See below for `along=` and `grow_*_mm`. |
 | `.assert_scalar(name, value, ge=…, le=…)` | A named claim about a non-geometric scalar (friction budget, torque margin). No bounds = pure recorder. |
+| `.assert_tangent_contact(a, b, tol_mm=…)` | Parts `a` and `b` **touch**: surface gap ≤ `tol_mm` (default 1e-3, noise allowance — not a design gap) and no real overlap. A gap fails, an overlap fails. See below. |
+| `.assert_allowed_contact(a, b, max_overlap_mm3=…, min_overlap_mm3=…)` | Design-intended overlap stays within bounds (a press-fit modeled at its true interference). A gap passes unless `min_overlap_mm3` makes engagement itself the claim. See below. |
 | `.assert_interference(a, b, reason=…)` | Parts `a` and `b` **do** overlap (intersection volume > 0.001 mm³). Regression alarm for a documented, accepted overlap — fails if the overlap disappears, forcing the assertion to be removed when the design gap gets fixed. |
 
 Give assertions a `name=` when you'd benefit from a specific label in
@@ -407,6 +409,43 @@ hand-pad bounds with `- 0.01` margins.
 
 Parameter-sanity checks with no geometric content (a deliberately
 loose upper bound on a width) legitimately stay bare Python asserts.
+
+### Contact claims
+
+Two contact assertions, split by what the design intends:
+
+- **Required contact** — a tangent rest (foot-on-rail, plate-on-flange,
+  gear-on-collar) where the parts must touch. `assert_no_interference`
+  alone is a trap here: it also passes with the parts floating 3 mm
+  apart, so nothing asserts the contact *exists*. Use
+  `assert_tangent_contact` — a gap beyond `tol_mm` fails and a real
+  overlap fails. When a part must rest against a specific surface,
+  assert the tangent contact against the surface it must face; that
+  pins the orientation too.
+- **Allowed contact** — a press-fit or interference fit. Model the
+  **true** interference (don't oversize a bore to appease
+  `assert_no_interference` — the model then lies about the fit) and
+  declare it with `assert_allowed_contact`. `min_overlap_mm3` makes
+  the engagement itself the claim, so the fit drifting back to a
+  clearance fit fails loudly.
+
+```python
+# tangent rest: must touch, must not overlap (tol is noise allowance)
+a = a.assert_tangent_contact("foot", "rail")
+
+# press-fit modeled at true interference; bounds from one honest run
+a = a.assert_allowed_contact("drive_pulley_shaft", "hub_shaft_stub",
+                             max_overlap_mm3=60, min_overlap_mm3=20,
+                             reason="press fit, 0.2 mm on Ø8")
+```
+
+Both record a measured value in the JSON even on pass (`tangent`: the
+gap in mm; `allowed`: the overlap volume in mm³), so `khana diff` sees
+drift. A tangent pair has no overlap, so it coexists with group
+`assert_no_interference_*` checks; an allowed-contact pair genuinely
+overlaps — exclude it from any group check covering it (`suppressed=`,
+since `assert_allowed_contact` already carries the claim), or the
+group check re-flags the intended contact.
 
 ### Declare assertions where the knowledge lives
 

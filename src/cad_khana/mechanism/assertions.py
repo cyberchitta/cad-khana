@@ -116,6 +116,107 @@ class Clearance:
 
 
 @dataclass(frozen=True)
+class TangentContact:
+    """Assert ``a`` and ``b`` touch: surface gap ≤ ``tol_mm`` and no
+    real overlap (intersection volume ≤ epsilon). The required-contact
+    face of the contact pair — where ``assert_no_interference`` on a
+    tangent rest would also pass with the parts floating 3mm apart,
+    this fails on the gap. The measured gap is recorded in ``value``
+    even on pass, so ``khana diff`` sees a rest drifting within
+    tolerance."""
+
+    a: str
+    b: str
+    name: str
+    tol_mm: float = 1e-3
+
+    @property
+    def part_refs(self) -> tuple[str, ...]:
+        return (self.a, self.b)
+
+    def qualified(self, prefix: str, location: Location) -> "TangentContact":
+        return replace(
+            self,
+            a=f"{prefix}.{self.a}",
+            b=f"{prefix}.{self.b}",
+            name=f"{prefix}.{self.name}",
+        )
+
+    def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
+        overlap = _intersection_volume(parts[self.a], parts[self.b])
+        if overlap > INTERFERENCE_VOLUME_EPSILON_MM3:
+            return AssertionResult(
+                self.name,
+                False,
+                f"contact overlaps: volume {overlap:.4f}mm^3",
+                value=0.0,
+            )
+        gap = parts[self.a].distance_to(parts[self.b])
+        passed = gap <= self.tol_mm + BOUND_EPSILON
+        detail = (
+            None
+            if passed
+            else f"no contact: gap {gap:.4f}mm exceeds tol {self.tol_mm}mm"
+        )
+        return AssertionResult(self.name, passed, detail, value=gap)
+
+
+@dataclass(frozen=True)
+class AllowedContact:
+    """Assert any overlap between ``a`` and ``b`` stays within bounds —
+    design-intended contact (a press-fit modeled at its true
+    interference) declared instead of fudged away. A gap passes:
+    contact is allowed, not required. ``min_overlap_mm3`` makes
+    engagement itself the claim — a press-fit that drifts back to a
+    clearance fit fails rather than silently passing. The measured
+    overlap volume is recorded in ``value`` even on pass, so runs are
+    diffable. ``reason`` documents the intent and is appended to the
+    failure detail."""
+
+    a: str
+    b: str
+    name: str
+    max_overlap_mm3: float
+    min_overlap_mm3: float | None = None
+    reason: str | None = None
+
+    @property
+    def part_refs(self) -> tuple[str, ...]:
+        return (self.a, self.b)
+
+    def qualified(self, prefix: str, location: Location) -> "AllowedContact":
+        return replace(
+            self,
+            a=f"{prefix}.{self.a}",
+            b=f"{prefix}.{self.b}",
+            name=f"{prefix}.{self.name}",
+        )
+
+    def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
+        overlap = _intersection_volume(parts[self.a], parts[self.b])
+        above = overlap > self.max_overlap_mm3 + BOUND_EPSILON
+        below = (
+            self.min_overlap_mm3 is not None
+            and overlap < self.min_overlap_mm3 - BOUND_EPSILON
+        )
+        failure = (
+            f"overlap {overlap:.4f}mm^3 above max {self.max_overlap_mm3}mm^3"
+            if above
+            else f"overlap {overlap:.4f}mm^3 below min {self.min_overlap_mm3}mm^3"
+            if below
+            else None
+        )
+        detail = (
+            f"{failure}; reason: {self.reason}"
+            if failure and self.reason
+            else failure
+        )
+        return AssertionResult(
+            self.name, not (above or below), detail, value=overlap
+        )
+
+
+@dataclass(frozen=True)
 class Distance:
     """Bounded distance from part ``a`` to target ``b`` — another part,
     or a datum ``Plane`` (infinite; declared in the asserting assembly's
@@ -302,6 +403,8 @@ class AnchorsCoincident:
 Assertion = (
     NoInterference
     | Clearance
+    | TangentContact
+    | AllowedContact
     | ExpectedInterference
     | AnchorsCoincident
     | Distance
@@ -314,7 +417,12 @@ def _placed(p: PlacedPart) -> Part:
 
 
 def _evaluate_part_assertion(
-    assertion: NoInterference | Clearance | ExpectedInterference | Distance,
+    assertion: NoInterference
+    | Clearance
+    | TangentContact
+    | AllowedContact
+    | ExpectedInterference
+    | Distance,
     parts: dict[str, Part],
 ) -> AssertionResult:
     """Skip (``passed=None``) instead of evaluating when a referenced

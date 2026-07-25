@@ -312,6 +312,200 @@ def test_anchors_coincident_honors_joint_angle_applied_after_declaration():
     assert not rotated.passed
 
 
+# --- assert_tangent_contact ---------------------------------------------
+
+
+def test_tangent_contact_passes_for_face_touching_parts():
+    a = (
+        Assembly()
+        .with_part("foot", _cube())
+        .with_part("rail", _cube(), location=Location((10, 0, 0)))
+        .assert_tangent_contact("foot", "rail")
+    )
+    (result,) = evaluate(a)
+    assert result.passed
+    assert result.detail is None
+    assert abs(result.value) < 1e-6
+
+
+def test_tangent_contact_fails_on_gap_with_gap_in_detail():
+    # The case assert_no_interference can't see: a rest that floated
+    # 3 mm off its support still passes the no-overlap check.
+    a = (
+        Assembly()
+        .with_part("foot", _cube())
+        .with_part("rail", _cube(), location=Location((13, 0, 0)))
+        .assert_tangent_contact("foot", "rail")
+    )
+    (result,) = evaluate(a)
+    assert result.passed is False
+    assert "gap" in result.detail
+    assert abs(result.value - 3.0) < 1e-6
+
+
+def test_tangent_contact_fails_on_overlap():
+    a = (
+        Assembly()
+        .with_part("foot", _cube())
+        .with_part("rail", _cube(), location=Location((5, 0, 0)))
+        .assert_tangent_contact("foot", "rail")
+    )
+    (result,) = evaluate(a)
+    assert result.passed is False
+    assert "overlap" in result.detail
+
+
+def test_tangent_contact_tol_absorbs_placement_noise():
+    a = (
+        Assembly()
+        .with_part("foot", _cube())
+        .with_part("rail", _cube(), location=Location((10.0005, 0, 0)))
+        .assert_tangent_contact("foot", "rail")
+    )
+    assert evaluate(a)[0].passed
+
+
+def test_tangent_contact_gap_above_tol_fails():
+    a = (
+        Assembly()
+        .with_part("foot", _cube())
+        .with_part("rail", _cube(), location=Location((10.1, 0, 0)))
+        .assert_tangent_contact("foot", "rail")
+    )
+    assert evaluate(a)[0].passed is False
+
+
+def test_tangent_contact_custom_tol_is_respected():
+    a = (
+        Assembly()
+        .with_part("foot", _cube())
+        .with_part("rail", _cube(), location=Location((10.1, 0, 0)))
+        .assert_tangent_contact("foot", "rail", tol_mm=0.2)
+    )
+    assert evaluate(a)[0].passed
+
+
+def test_tangent_contact_against_absent_part_is_skipped():
+    a = Assembly().with_part("a", _cube()).assert_tangent_contact("a", "bolt")
+    (result,) = evaluate(a)
+    assert result.passed is None
+    assert "bolt" in result.detail
+
+
+def test_tangent_contact_auto_name():
+    a = (
+        Assembly()
+        .with_part("foot", _cube())
+        .with_part("rail", _cube(), location=Location((10, 0, 0)))
+        .assert_tangent_contact("foot", "rail")
+    )
+    assert evaluate(a)[0].name == "tangent_contact:foot/rail"
+
+
+# --- assert_allowed_contact ---------------------------------------------
+
+
+def test_allowed_contact_passes_within_max_and_records_volume():
+    # 1 mm penetration of 10x10 faces: 100 mm^3 of intended overlap.
+    a = (
+        Assembly()
+        .with_part("shaft", _cube())
+        .with_part("bore", _cube(), location=Location((9, 0, 0)))
+        .assert_allowed_contact("shaft", "bore", max_overlap_mm3=150)
+    )
+    (result,) = evaluate(a)
+    assert result.passed
+    assert result.detail is None
+    assert abs(result.value - 100.0) < 1e-3
+
+
+def test_allowed_contact_fails_above_max():
+    a = (
+        Assembly()
+        .with_part("shaft", _cube())
+        .with_part("bore", _cube(), location=Location((9, 0, 0)))
+        .assert_allowed_contact("shaft", "bore", max_overlap_mm3=50)
+    )
+    (result,) = evaluate(a)
+    assert result.passed is False
+    assert "above max" in result.detail
+
+
+def test_allowed_contact_gap_passes_without_min():
+    # Contact is allowed, not required.
+    a = (
+        Assembly()
+        .with_part("shaft", _cube())
+        .with_part("bore", _cube(), location=Location((20, 0, 0)))
+        .assert_allowed_contact("shaft", "bore", max_overlap_mm3=150)
+    )
+    (result,) = evaluate(a)
+    assert result.passed
+    assert result.value == 0.0
+
+
+def test_allowed_contact_min_makes_engagement_the_claim():
+    # A press-fit drifting back to a clearance fit must fail loudly —
+    # the original workaround modeled the bore oversize to appease
+    # assert_no_interference, and nothing caught the lie.
+    a = (
+        Assembly()
+        .with_part("shaft", _cube())
+        .with_part("bore", _cube(), location=Location((20, 0, 0)))
+        .assert_allowed_contact(
+            "shaft", "bore", max_overlap_mm3=150, min_overlap_mm3=50
+        )
+    )
+    (result,) = evaluate(a)
+    assert result.passed is False
+    assert "below min" in result.detail
+
+
+def test_allowed_contact_reason_appears_in_failure_detail():
+    a = (
+        Assembly()
+        .with_part("shaft", _cube())
+        .with_part("bore", _cube(), location=Location((9, 0, 0)))
+        .assert_allowed_contact(
+            "shaft", "bore", max_overlap_mm3=50, reason="press fit"
+        )
+    )
+    (result,) = evaluate(a)
+    assert "press fit" in result.detail
+
+
+def test_allowed_contact_bound_tolerates_solver_noise():
+    a = (
+        Assembly()
+        .with_part("shaft", _cube())
+        .with_part("bore", _cube(), location=Location((9, 0, 0)))
+        .assert_allowed_contact("shaft", "bore", max_overlap_mm3=100 - 1e-9)
+    )
+    assert evaluate(a)[0].passed
+
+
+def test_allowed_contact_against_absent_part_is_skipped():
+    a = (
+        Assembly()
+        .with_part("a", _cube())
+        .assert_allowed_contact("a", "bolt", max_overlap_mm3=1)
+    )
+    (result,) = evaluate(a)
+    assert result.passed is None
+
+
+def test_allowed_contact_auto_name_carries_bounds():
+    a = (
+        Assembly()
+        .with_part("shaft", _cube())
+        .with_part("bore", _cube(), location=Location((9, 0, 0)))
+        .assert_allowed_contact(
+            "shaft", "bore", max_overlap_mm3=150, min_overlap_mm3=50
+        )
+    )
+    assert evaluate(a)[0].name == "allowed_contact:shaft/bore>=50<=150"
+
+
 # --- assert_distance ----------------------------------------------------
 
 
@@ -525,6 +719,19 @@ def test_subassembly_plane_target_tracks_placement():
     assert standalone.passed and composed.passed
     assert abs(standalone.value - composed.value) < 1e-6
     assert composed.name == "m05." + standalone.name
+
+
+def test_subassembly_contact_assertions_qualify_when_composed():
+    unit = (
+        Assembly()
+        .with_part("foot", _cube())
+        .with_part("rail", _cube(), location=Location((10, 0, 0)))
+        .assert_tangent_contact("foot", "rail")
+    )
+    top = Assembly().with_subassembly("u", unit, location=Location((0, 0, 50)))
+    (result,) = evaluate(top)
+    assert result.passed
+    assert result.name == "u.tangent_contact:foot/rail"
 
 
 def test_subassembly_detail_only_assertion_skips_when_composed():

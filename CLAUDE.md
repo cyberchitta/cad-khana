@@ -181,7 +181,7 @@ equivalent, 1 when differences are found, 2 on error. `build` and
 `inspect()` call) even on failure, so the agent can always read structured
 error info.
 
-## Diagnostics JSON schemas (v0.6)
+## Diagnostics JSON schemas (v0.7)
 
 Version these from day one. Agents depend on field stability.
 
@@ -189,7 +189,7 @@ Version these from day one. Agents depend on field stability.
 
 ```json
 {
-  "schema_version": "0.6",
+  "schema_version": "0.7",
   "status": "ok | error | assertion_failed",
   "error": null,
   "hint": "Missing .part accessor — use `with BuildPart() as p: ...; return p.part`.",
@@ -222,9 +222,10 @@ sub-assembly case, where detail-override parts aren't applied). Skipped
 assertions never set `status: "assertion_failed"`.
 
 `assertions[].value` carries the measured/claimed scalar for
-value-carrying assertions (`assert_distance`, `assert_scalar`) even on
-pass — `khana diff` reports drift the boolean can't see — and is
-`null` for the boolean-only kinds.
+value-carrying assertions (`assert_distance`, `assert_scalar`,
+`assert_tangent_contact` gap in mm, `assert_allowed_contact` overlap
+in mm³) even on pass — `khana diff` reports drift the boolean can't
+see — and is `null` for the boolean-only kinds.
 
 Sub-assembly assertion lists propagate: a composed parent evaluates
 every nested assertion with part/anchor paths, names, and datum-plane
@@ -240,7 +241,7 @@ comparison flips on solver noise.
 
 ```json
 {
-  "schema_version": "0.6",
+  "schema_version": "0.7",
   "kind": "printability",
   "status": "ok | assertion_failed",
   "name": "housing",

@@ -17,6 +17,7 @@ from build123d import (
 )
 
 from cad_khana.mechanism.assertions import (
+    AllowedContact,
     AnchorsCoincident,
     Assertion,
     Clearance,
@@ -24,6 +25,7 @@ from cad_khana.mechanism.assertions import (
     ExpectedInterference,
     NoInterference,
     ScalarClaim,
+    TangentContact,
 )
 
 
@@ -102,6 +104,17 @@ def _distance_name(
         if v is not None
     )
     return f"distance:{a}/{target}{axis}{bounds}"
+
+
+def _allowed_contact_name(
+    a: str, b: str, min_mm3: float | None, max_mm3: float
+) -> str:
+    bounds = "".join(
+        s
+        for s, v in ((f">={min_mm3}", min_mm3), (f"<={max_mm3}", max_mm3))
+        if v is not None
+    )
+    return f"allowed_contact:{a}/{b}{bounds}"
 
 
 @dataclass(frozen=True)
@@ -600,6 +613,56 @@ class Assembly:
         ``detail`` is context carried into the result."""
         assertion = ScalarClaim(
             name=name, value=value, ge=ge, le=le, detail=detail
+        )
+        return replace(self, assertions=self.assertions + (assertion,))
+
+    def assert_tangent_contact(
+        self,
+        a: str,
+        b: str,
+        *,
+        tol_mm: float = 1e-3,
+        name: str | None = None,
+    ) -> "Assembly":
+        """Assert ``a`` and ``b`` touch: surface gap ≤ ``tol_mm`` and
+        no real overlap. The required-contact claim for tangent rests
+        (foot-on-rail, plate-on-flange) — ``assert_no_interference``
+        alone also passes with the parts floating apart; this fails on
+        the gap. ``tol_mm`` absorbs placement/solver noise, not design
+        gaps. The measured gap is recorded in the result even on pass,
+        so ``khana diff`` sees drift."""
+        assertion = TangentContact(
+            a=a, b=b, tol_mm=tol_mm, name=name or f"tangent_contact:{a}/{b}"
+        )
+        return replace(self, assertions=self.assertions + (assertion,))
+
+    def assert_allowed_contact(
+        self,
+        a: str,
+        b: str,
+        *,
+        max_overlap_mm3: float,
+        min_overlap_mm3: float | None = None,
+        reason: str | None = None,
+        name: str | None = None,
+    ) -> "Assembly":
+        """Assert any overlap between ``a`` and ``b`` stays within
+        bounds — declare design-intended contact (a press-fit modeled
+        at its true interference) instead of fudging the model to
+        appease ``assert_no_interference``. A gap passes: contact is
+        allowed, not required. ``min_overlap_mm3`` makes engagement
+        itself the claim — the fit failing back to a clearance fit
+        then fails loudly. The measured overlap volume is recorded in
+        the result even on pass, so ``khana diff`` sees drift.
+        ``reason`` documents the intent, appended to failure detail."""
+        assertion = AllowedContact(
+            a=a,
+            b=b,
+            max_overlap_mm3=max_overlap_mm3,
+            min_overlap_mm3=min_overlap_mm3,
+            reason=reason,
+            name=name
+            or _allowed_contact_name(a, b, min_overlap_mm3, max_overlap_mm3),
         )
         return replace(self, assertions=self.assertions + (assertion,))
 
