@@ -7,6 +7,7 @@ from pathlib import Path
 
 from build123d import Part
 
+from cad_khana import _failures
 from cad_khana._paths import resolve_out
 from cad_khana.mechanism.diagnostics import (
     BOUND_EPSILON,
@@ -199,5 +200,5 @@ def inspect(
                     file=sys.stderr,
                 )
         print(f"see {json_path}", file=sys.stderr)
-        raise SystemExit(1)
+        _failures.fail(_failures.Failure(name, json_path))
     return diagnostics

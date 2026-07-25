@@ -9,7 +9,7 @@ from typing import Annotated
 
 import typer
 
-from cad_khana import environment
+from cad_khana import _failures, environment
 from cad_khana import draw as _draw
 from cad_khana import viewer
 from cad_khana.diff import NO_CHANGES, diff as compute_diff
@@ -94,28 +94,53 @@ def _package_module_spec(script: Path) -> tuple[str, Path] | None:
     return ".".join(parts), root.parent
 
 
+def _exec_script(script: Path) -> None:
+    spec = _package_module_spec(script)
+    if spec is None:
+        runpy.run_path(str(script), run_name="__main__")
+    else:
+        # Package members run with ``python -m`` semantics so their
+        # relative imports resolve; alter_sys makes the module the
+        # real ``__main__`` (out= anchoring reads its __file__).
+        module, root = spec
+        if str(root) not in sys.path:
+            sys.path.insert(0, str(root))
+        runpy.run_module(module, run_name="__main__", alter_sys=True)
+
+
 def _run_script(script: Path, out: Path | None, command: str) -> None:
+    """Run a user script with failures deferred to this boundary.
+
+    Every ``check()``/``inspect()`` in the script runs, so all of its
+    diagnostics JSON is current when the agent reads it; the failures are
+    rolled up here and exit nonzero once. Only the boundary can defer —
+    see ``_failures``.
+    """
     if out is None:
         out = script.resolve().parent / "outputs"
+    _failures.defer()
     try:
-        spec = _package_module_spec(script)
-        if spec is None:
-            runpy.run_path(str(script), run_name="__main__")
-        else:
-            # Package members run with ``python -m`` semantics so their
-            # relative imports resolve; alter_sys makes the module the
-            # real ``__main__`` (out= anchoring reads its __file__).
-            module, root = spec
-            if str(root) not in sys.path:
-                sys.path.insert(0, str(root))
-            runpy.run_module(module, run_name="__main__", alter_sys=True)
-    except (SystemExit, typer.Exit):
+        _exec_script(script)
+    except SystemExit as exc:
+        if exc.code:
+            raise
+    except typer.Exit:
         raise
     except BaseException as exc:
         tb = traceback.format_exc()
         typer.echo(tb, err=True)
         typer.echo(f"khana {command} failed: {type(exc).__name__}: {exc}", err=True)
         _write_error_diagnostics(out, tb)
+        raise typer.Exit(code=1)
+    finally:
+        failed = _failures.take()
+    if failed:
+        typer.echo(
+            f"khana {command}: {len(failed)} of the run's diagnostics failed:",
+            err=True,
+        )
+        for f in failed:
+            typer.echo(f"  {f.name} — {f.diagnostics}", err=True)
         raise typer.Exit(code=1)
 
 

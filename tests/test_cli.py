@@ -704,6 +704,79 @@ def _mech_json(tmp_path: Path, name: str, **overrides) -> Path:
     return path
 
 
+def _sweep_script(out: Path, thicknesses: tuple[float, ...]) -> str:
+    # One inspect() per plate, thinnest first, so anything that stops at
+    # the first failure leaves the later parts unwritten.
+    return (
+        "from build123d import Box, BuildPart\n"
+        "from cad_khana.printability.inspect import inspect\n"
+        "from cad_khana.printability.methods import FDM\n"
+        "def plate(t):\n"
+        "    with BuildPart() as p:\n"
+        "        Box(20, 20, t)\n"
+        "    return p.part\n"
+        f"for i, t in enumerate({thicknesses!r}):\n"
+        "    inspect(plate(t), method=FDM(wall_min_mm=1.5),\n"
+        f"            out={str(out)!r}, name=f'p{{i}}')\n"
+    )
+
+
+def test_failing_part_does_not_abort_the_rest_of_the_sweep(tmp_path: Path):
+    """A red part must not stop the run: the agent needs every part's JSON
+    current in one pass, and the files a stopped run leaves behind are
+    stale while still reading as this run's output."""
+    script = tmp_path / "sweep.py"
+    script.write_text(_sweep_script(tmp_path, (0.4, 3.0, 4.0)))
+    result = runner.invoke(app, ["check", str(script), "--out", str(tmp_path)])
+
+    assert result.exit_code == 1
+    written = {
+        p.stem: json.loads(p.read_text())
+        for p in tmp_path.glob("*-printability.json")
+    }
+    assert set(written) == {"p0-printability", "p1-printability", "p2-printability"}
+    assert written["p0-printability"]["status"] == "assertion_failed"
+    assert written["p1-printability"]["status"] == "ok"
+    assert written["p2-printability"]["status"] == "ok"
+
+
+def test_boundary_rolls_up_every_failure_with_its_json_path(tmp_path: Path):
+    script = tmp_path / "sweep.py"
+    script.write_text(_sweep_script(tmp_path, (0.4, 0.5, 4.0)))
+    result = runner.invoke(app, ["check", str(script), "--out", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "2 of the run's diagnostics failed" in result.output
+    assert "p0 — " in result.output and "p1 — " in result.output
+    assert "p2" not in result.output.split("diagnostics failed")[1]
+
+
+def test_clean_sweep_still_exits_zero(tmp_path: Path):
+    script = tmp_path / "sweep.py"
+    script.write_text(_sweep_script(tmp_path, (3.0, 4.0)))
+    result = runner.invoke(app, ["check", str(script), "--out", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+
+
+def test_deferral_does_not_leak_between_runs(tmp_path: Path):
+    """A failed run must not colour the next one — the collector is reset
+    at the boundary, not left for the next invocation to inherit."""
+    bad, good = tmp_path / "bad.py", tmp_path / "good.py"
+    bad.write_text(_sweep_script(tmp_path, (0.4,)))
+    good.write_text(_sweep_script(tmp_path, (3.0,)))
+
+    assert runner.invoke(app, ["check", str(bad), "--out", str(tmp_path)]).exit_code == 1
+    result = runner.invoke(app, ["check", str(good), "--out", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+
+
+def test_script_raising_its_own_nonzero_exit_is_not_masked(tmp_path: Path):
+    script = tmp_path / "s.py"
+    script.write_text("raise SystemExit(3)\n")
+    result = runner.invoke(app, ["check", str(script), "--out", str(tmp_path)])
+    assert result.exit_code == 3
+
+
 def test_diff_identical_exits_zero(tmp_path: Path):
     a = _mech_json(tmp_path, "a.json")
     b = _mech_json(tmp_path, "b.json")

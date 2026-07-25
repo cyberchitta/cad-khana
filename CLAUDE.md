@@ -411,7 +411,16 @@ for end-user install, `uvx khana ...` for ephemeral use.
   leaving a diagnostic behind. Inside the library, trust inputs — no
   defensive checks.
 - **Assertions collect, don't short-circuit.** Evaluate every assertion
-  and record all results; the agent wants every failure at once.
+  and record all results; the agent wants every failure at once. This
+  holds *across* calls too: under the CLI, a failing `check()`/`inspect()`
+  records the failure and returns, the script runs to completion so every
+  diagnostics JSON on disk is current, and `cli._run_script` rolls the
+  failures up and exits nonzero once. Deferral is a boundary decision
+  (`_failures`), never the library's — outside the CLI these still raise
+  on the first failure, because nothing else is positioned to exit
+  nonzero afterwards and a silent green run is the worse failure.
+  `atexit` cannot do it: a `SystemExit` raised from an exit handler is
+  reported as "Exception ignored" and the process still exits 0.
 
 ## References
 

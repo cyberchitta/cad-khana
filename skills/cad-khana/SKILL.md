@@ -343,11 +343,21 @@ parameters, and valid type/size strings, load
 ## Available mechanism assertions
 
 Every assertion records a result in `mechanism.json`. If any fail,
-`check()` raises `SystemExit(1)` after printing one line per failure
-(name + detail) to stderr — the terminal output alone names every
-failing assertion; the JSON has the full context. All failures are
-collected — you get every problem in one pass, not just the first.
-`inspect()` failures print the same way, prefixed with the part name.
+`check()` prints one line per failure (name + detail) to stderr — the
+terminal output alone names every failing assertion; the JSON has the
+full context. All failures are collected — you get every problem in one
+pass, not just the first. `inspect()` failures print the same way,
+prefixed with the part name.
+
+**Under the `khana` CLI the whole script runs, then it exits nonzero
+once.** A red part no longer aborts the run, so a script that checks or
+inspects many parts leaves *every* diagnostics JSON current in one pass,
+and the CLI ends with a roll-up naming each failure and its JSON path.
+Run the same script with a bare interpreter and the old behaviour
+applies — the first failure raises `SystemExit(1)` — because nothing
+there can exit nonzero after the fact. **Prefer `khana check` for
+multi-part scripts**; a bare run stops early and leaves the later parts'
+JSON stale from a previous run while it still reads as current.
 
 | Assertion | Checks |
 |---|---|
@@ -756,15 +766,18 @@ printability constraints rather than placeholders:
   threshold keeps catching real overhangs.
 
 `inspect(part, method=FDM(), out="outputs", name="bracket")` writes
-`outputs/bracket-printability.json` and raises `SystemExit(1)` on
-failure. Each call is independent — pass a different `name=` per
-printed part.
+`outputs/bracket-printability.json` and fails the run on an unwaived
+failure — under `khana` at the end of the script, standalone
+immediately (see "Available mechanism assertions"). Each call is
+independent — pass a different `name=` per printed part.
 
 **Waiving a known-benign failure.** When a check fails for a reason
 you've verified is an artifact or an accepted trade-off (a sharp-edge
 sampling artifact, a 90° ceiling you'll print with supports), waive it
 with the rationale inline instead of loosening the threshold or
-wrapping the call in `try/except SystemExit`:
+wrapping the call in `try/except SystemExit` — under the CLI that
+`except` no longer fires at all, so it silently becomes dead code while
+the failure still counts against the run:
 
 ```python
 inspect(

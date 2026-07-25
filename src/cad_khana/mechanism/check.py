@@ -5,7 +5,7 @@ import sys
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
-from cad_khana import draw, viewer
+from cad_khana import _failures, draw, viewer
 from cad_khana._paths import resolve_out
 from cad_khana.export import export_assembly
 from cad_khana.mechanism.assembly import Assembly
@@ -45,9 +45,8 @@ def check(
         assertions=assertion_results,
         status="assertion_failed" if failed else "ok",
     )
-    (out_path / "mechanism.json").write_text(
-        json.dumps(asdict(diagnostics), indent=2) + "\n"
-    )
+    json_path = out_path / "mechanism.json"
+    json_path.write_text(json.dumps(asdict(diagnostics), indent=2) + "\n")
     if viewer.auto_enabled():
         viewer.push(assembly)
     if draw.auto_enabled():
@@ -67,6 +66,6 @@ def check(
                     f"assertion failed: {a.name} — {a.detail}",
                     file=sys.stderr,
                 )
-        print(f"see {out_path / 'mechanism.json'}", file=sys.stderr)
-        raise SystemExit(1)
+        print(f"see {json_path}", file=sys.stderr)
+        _failures.fail(_failures.Failure("mechanism", json_path))
     return result
