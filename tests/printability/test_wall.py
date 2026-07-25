@@ -1,4 +1,4 @@
-from build123d import Box, BuildPart, Locations
+from build123d import Box, BuildPart, Cone, Cylinder, Locations, Mode
 from pytest import approx
 
 from cad_khana.printability.wall import min_wall
@@ -42,3 +42,61 @@ def test_min_wall_witness_lands_on_thin_feature():
     x, _, z = sample.at
     assert x > 5.0
     assert abs(z) == approx(0.5, abs=0.05)
+
+
+def _tube(r_outer: float, wall: float, height: float):
+    with BuildPart() as p:
+        Cylinder(r_outer, height)
+        Cylinder(r_outer - wall, height, mode=Mode.SUBTRACT)
+    return p.part
+
+
+def test_curved_wall_is_not_underestimated_by_facet_sag():
+    # A facet centroid on a curved face sags into the void by up to the
+    # tessellation tolerance; a ray started there re-hits the surface it
+    # came from. Before entry/exit pairing this read 0.146 mm.
+    assert min_wall(_tube(60, 1.2, 6)).thickness_mm == approx(1.2, abs=0.02)
+
+
+def test_facet_sag_error_does_not_grow_with_radius():
+    # The re-hit distance scales with the facet chord, so the artifact got
+    # worse on larger radii while the true wall stayed put.
+    small, large = min_wall(_tube(10, 1.5, 5)), min_wall(_tube(120, 1.5, 5))
+    assert small.thickness_mm == approx(1.5, abs=0.02)
+    assert large.thickness_mm == approx(1.5, abs=0.02)
+
+
+def test_tapered_wall_measures_perpendicular_thickness():
+    # Cone shells offset 1.2 mm radially over a 14.9 deg taper: the true
+    # perpendicular wall is 1.2 * cos(14.9 deg). Read 0.99 mm before pairing.
+    with BuildPart() as p:
+        Cone(20, 12, 30)
+        Cone(18.8, 10.8, 30, mode=Mode.SUBTRACT)
+    assert min_wall(p.part).thickness_mm == approx(1.16, abs=0.02)
+
+
+def test_thin_feature_of_small_area_is_never_discarded():
+    # The false-negative guard: rejection is geometric (a ray that never
+    # entered material), never by magnitude or by how little area is thin.
+    with BuildPart() as p:
+        Box(40, 30, 10)
+        with Locations((0, 0, 0.3)):
+            Box(4, 30, 9.4, mode=Mode.SUBTRACT)
+    sample = min_wall(p.part)
+    assert sample.thickness_mm == approx(0.6, abs=0.02)
+    assert sample.alignment == approx(1.0, abs=0.05)
+
+
+def test_slab_reads_full_alignment():
+    assert min_wall(_plate(20, 20, 2)).alignment == approx(1.0, abs=0.05)
+
+
+def test_wedge_tip_is_reported_with_low_alignment():
+    # A solid cone has no wall, but the rim is a genuine wedge of material.
+    # It is reported (never filtered), and low alignment is the tell that
+    # the minimum sits at a feature tip rather than between parallel faces.
+    with BuildPart() as p:
+        Cone(5.0, 0.0, 8.0)
+    sample = min_wall(p.part)
+    assert sample.thickness_mm < 0.5
+    assert sample.alignment < 0.7

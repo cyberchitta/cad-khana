@@ -16,13 +16,34 @@ wall-thickness floor, overhang threshold, and print `up_axis`; see
 Tessellate the part (mesh tolerance `TESSELLATION_TOLERANCE_MM`,
 angular tolerance `TESSELLATION_ANGULAR_TOLERANCE`, shared with the
 overhang check in `cad_khana.core.tessellation`). For every triangle,
-take its centroid and outward normal; cast an `Axis` from a point just
-inside the surface along the inward normal; take the nearest forward
-hit on the part as the local wall thickness. The part's `min_wall_mm`
-is the minimum over all samples; `min_wall_at` is the surface point
-(triangle centroid) that minimum was cast from — read it to attribute
-a thin reading to a concrete feature (or to a sampling artifact at a
-sharp edge) instead of bisecting parameters.
+take its centroid and outward normal, and cast an `Axis` along the
+inward normal — from an origin backed off `BACKOFF_MM` *outside* the
+surface. Collect every crossing of the solid, classifying each by its
+face's outward normal projected on the ray: negative is an **entry**
+into material, positive an **exit**. Each entry paired with its next
+exit is one local thickness. `min_wall_mm` is the minimum over all
+such spans, `min_wall_at` the entry point that minimum was measured
+from, and `min_wall_alignment` the exit face's projection there.
+
+Two properties follow, and both are deliberate:
+
+- **A reading always spans material actually traversed.** The origin
+  is backed off because a facet centroid sags into the void by up to
+  the tessellation tolerance on curved faces; a ray started at the
+  centroid re-hits the surface it came from within that distance,
+  which reads as a wall a fraction of a millimetre thick. The error
+  grows with the facet chord, so it got *worse* on larger radii — the
+  source of the sub-0.2 mm readings on large-radius annuli that were
+  historically waived as "ray-sampling artifacts". Pairing also
+  removes a systematic underestimate on curved and tapered walls
+  (a 1.2 mm wall on a Ø120 tube read 1.05 mm before; it now reads
+  1.2004 mm).
+- **Rays are rejected on geometric grounds only, never by magnitude.**
+  There is no quantile, no robustness statistic and no alignment
+  threshold, because every one of those trades a false positive for
+  the chance of hiding a genuine thin region — the worse failure for
+  a printability check. A thin reading is therefore always real
+  material; `min_wall_alignment` tells you *what kind*.
 
 ### What it gets right
 
@@ -32,16 +53,18 @@ sharp edge) instead of bisecting parameters.
 
 ### What it misses or over-reports
 
-- **Sliver triangles near edges.** Tessellation near convex edges can
-  produce small triangles whose centroid is close to an adjacent face.
-  The inward ray may hit that adjacent face at a short distance and
-  report a misleadingly small wall — especially for chamfered or
-  filleted edges. To suppress this noise, hits closer than
-  `SLIVER_HIT_DISTANCE_MM` (0.05 mm) are ignored; real walls thinner
-  than ~50 µm will therefore read as None and fail `assert_min_wall`
-  for "min wall could not be computed". That cutoff is well below any
-  printable feature, but it is a floor — don't expect meaningful
-  numbers for sub-0.05 mm geometry.
+- **Wedge tips read as thin walls.** Where two faces meet at a sharp
+  edge — a knife-edge runout, a V-groove root, a cone rim — the
+  material path across the wedge near its tip really is short, so the
+  minimum lands there and is *not* a measurement error. It is also not
+  a wall thickness. `min_wall_alignment` is the discriminator: below
+  ~0.7 the bounding faces splay apart and the reading is a wedge tip;
+  near 1.0 they are parallel and the reading is a genuine wall (or, if
+  it is tiny, a genuine sliver in the model). Filtering these out was
+  measured and rejected — the alignment threshold that suppresses a
+  cone rim (0.87) also discards a legitimate 45°-tapered rib.
+- **A floor at `MIN_SPAN_MM` (1e-4 mm).** Spans below it are dropped as
+  tangency noise. Far below any printable feature, but it is a floor.
 - **Non-perpendicular thinness.** If a wall's thinnest cross-section is
   not aligned with any face's outward normal (e.g., diagonal pinch
   points), ray-casting inward from face centroids will overestimate
@@ -56,8 +79,12 @@ sharp edge) instead of bisecting parameters.
 ### When to trust it
 
 Use `min_wall_mm` as a floor, not a ceiling: if it reports 0.4 mm on a
-part you think has 2 mm walls, investigate. If it reports 2 mm on a
-part with a hidden diagonal pinch, it may still be wrong.
+part you think has 2 mm walls, investigate — and read
+`min_wall_alignment` first, since it decides whether "investigate"
+means *fix the model* (alignment near 1.0: two parallel faces really
+are that close) or *accept a feature tip* (low alignment). If it
+reports 2 mm on a part with a hidden diagonal pinch, it may still be
+wrong.
 
 ## Overhangs
 

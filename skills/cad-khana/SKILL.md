@@ -770,7 +770,9 @@ wrapping the call in `try/except SystemExit`:
 inspect(
     rotor(), method=FDM(), out="outputs", name="rotor",
     waive={
-        "wall_min": "star-ridge sampling artifact; verified via min_wall_at",
+        "wall_min": "knife-edge runout at the star ridge — min_wall_at "
+                    "(87.2, -42.3, 21.0) with alignment 0.31 puts it at a "
+                    "wedge tip, not between parallel faces",
         "overhang_max": "accepted 90° ceiling, printed with supports",
     },
 )
@@ -782,8 +784,15 @@ records your reason in `waived`, adds a `waived_failure` entry to
 `warnings[]`, and doesn't fail the run; unwaived failures still exit 1.
 If the waived check starts passing, a `stale_waiver` warning tells you
 to delete the waiver — don't leave waivers that no longer waive
-anything. Cite evidence in the reason (`min_wall_at` witness, a print
-plan), not just an assertion that it's fine.
+anything. Cite evidence in the reason (`min_wall_at` witness,
+`min_wall_alignment`, a print plan), not just an assertion that it's fine.
+
+**"Sampling artifact" is no longer a valid `wall_min` rationale on its
+own.** Wall readings now span material actually traversed, so a thin
+number is real material. Check `min_wall_alignment` before waiving: near
+`1.0` means two near-parallel faces genuinely that close — a sliver in
+the model to fix, not to waive. Only a low alignment supports a
+"geometry is fine, the metric isn't measuring a wall here" waiver.
 
 ## JSON diagnostics essentials
 
@@ -821,6 +830,15 @@ plan), not just an assertion that it's fine.
   measured (`null` when `min_wall_mm` is); use it to attribute a thin
   reading to a concrete feature instead of bisecting parameters. The
   failing `wall_min:…` assertion repeats it in its `detail`.
+- `min_wall_alignment` — how parallel the two surfaces bounding the
+  measurement are: `1.0` is a slab with parallel faces, falling toward
+  `0` as they splay apart. Read it before writing a waiver. A low value
+  (below ~0.7) means the minimum sits at the **tip of a wedge feature**
+  — a knife edge, a V-groove root, a rib runout — where the material
+  really is that thin but the number isn't a wall thickness. A value
+  near `1.0` means two near-parallel faces genuinely are that far
+  apart, so a tiny reading is a **real sliver in the model**, not a
+  measurement artifact — investigate the geometry rather than waiving it.
 - `overhang` — `null` or `{area_mm2, max_angle_deg}`.
 - `assertions` — `wall_min:…` and `overhang_max:…` entries; `passed` +
   `detail`, plus `waived` (the rationale) when a failure was waived.
@@ -830,9 +848,12 @@ plan), not just an assertion that it's fine.
 
 ## Known limitations
 
-- **Min wall thickness is approximate.** Ray-sampling from tessellated
-  faces; it can miss diagonal pinch points and can be noisy near sharp
-  convex edges. See `references/printability.md` for details.
+- **Min wall thickness is approximate.** Rays are cast from tessellated
+  faces and paired entry-to-exit against the exact solid, so a reading
+  always spans material actually traversed; it can still miss diagonal
+  pinch points. Readings at sharp features are *real* short material
+  paths rather than noise — check `min_wall_alignment` to tell a wedge
+  tip from a wall. See `references/printability.md` for details.
 - **Overhang detection excludes the build-plate face.** Faces coplanar
   with the min-`up_axis` plane aren't flagged. Faces that face downward
   but sit above the build plate (ledge undersides, cavity ceilings) are

@@ -17,7 +17,7 @@ from cad_khana.mechanism.diagnostics import (
 )
 from cad_khana.printability.methods import FDM
 from cad_khana.printability.overhangs import Overhang, detect_overhang
-from cad_khana.printability.wall import WallSample, min_wall
+from cad_khana.printability.wall import WEDGE_ALIGNMENT, WallSample, min_wall
 
 
 @dataclass(frozen=True)
@@ -46,6 +46,7 @@ class PrintabilityDiagnostics:
     is_valid: bool = True
     min_wall_mm: float | None = None
     min_wall_at: tuple[float, float, float] | None = None
+    min_wall_alignment: float | None = None
     overhang: Overhang | None = None
     assertions: tuple[AssertionResult, ...] = field(default_factory=tuple)
     warnings: tuple[WarningEntry, ...] = field(default_factory=tuple)
@@ -57,12 +58,19 @@ def _wall_assertion(wall: WallSample | None, method: FDM) -> AssertionResult:
         return AssertionResult(name, False, "min wall could not be computed")
     passed = wall.thickness_mm >= method.wall_min_mm - BOUND_EPSILON
     at = ", ".join(f"{c:.2f}" for c in wall.at)
+    wedge = (
+        ""
+        if wall.alignment >= WEDGE_ALIGNMENT
+        else " — the faces splay apart here, so this is the tip of a wedge "
+        "feature rather than a wall between parallel faces"
+    )
     detail = (
         None
         if passed
         else (
             f"min wall {wall.thickness_mm:.4f}mm below min "
-            f"{method.wall_min_mm}mm at ({at})"
+            f"{method.wall_min_mm}mm at ({at}), "
+            f"alignment {wall.alignment:.2f}{wedge}"
         )
     )
     return AssertionResult(name, passed, detail)
@@ -170,6 +178,7 @@ def inspect(
         is_valid=part.is_valid,
         min_wall_mm=wall.thickness_mm if wall else None,
         min_wall_at=wall.at if wall else None,
+        min_wall_alignment=wall.alignment if wall else None,
         overhang=overhang,
         assertions=assertions,
         warnings=warnings,

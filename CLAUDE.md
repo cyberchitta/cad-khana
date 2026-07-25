@@ -181,7 +181,7 @@ equivalent, 1 when differences are found, 2 on error. `build` and
 `inspect()` call) even on failure, so the agent can always read structured
 error info.
 
-## Diagnostics JSON schemas (v0.7)
+## Diagnostics JSON schemas (v0.8)
 
 Version these from day one. Agents depend on field stability.
 
@@ -189,7 +189,7 @@ Version these from day one. Agents depend on field stability.
 
 ```json
 {
-  "schema_version": "0.7",
+  "schema_version": "0.8",
   "status": "ok | error | assertion_failed",
   "error": null,
   "hint": "Missing .part accessor — use `with BuildPart() as p: ...; return p.part`.",
@@ -241,7 +241,7 @@ comparison flips on solver noise.
 
 ```json
 {
-  "schema_version": "0.7",
+  "schema_version": "0.8",
   "kind": "printability",
   "status": "ok | assertion_failed",
   "name": "housing",
@@ -253,15 +253,34 @@ comparison flips on solver noise.
   "is_valid": true,
   "min_wall_mm": 1.8,
   "min_wall_at": [x, y, z],
+  "min_wall_alignment": 1.0,
   "overhang": {"area_mm2": 42.1, "max_angle_deg": 58},
   "assertions": [
-    {"name": "wall_min:1.5", "passed": false, "detail": "min wall 0.17mm below min 1.5mm at (x, y, z)", "waived": "ray-sampling artifact at thin annulus edges"}
+    {"name": "wall_min:1.5", "passed": false, "detail": "min wall 0.31mm below min 1.5mm at (x, y, z), alignment 0.24 — the faces splay apart here, so this is the tip of a wedge feature rather than a wall between parallel faces", "waived": "knife-edge runout at the star ridge, alignment 0.24"}
   ],
   "warnings": [
-    {"kind": "waived_failure", "assertion": "wall_min:1.5", "reason": "ray-sampling artifact at thin annulus edges", "detail": "min wall 0.17mm below min 1.5mm at (x, y, z)"}
+    {"kind": "waived_failure", "assertion": "wall_min:1.5", "reason": "knife-edge runout at the star ridge, alignment 0.24", "detail": "min wall 0.31mm below min 1.5mm at (x, y, z), alignment 0.24 — ..."}
   ]
 }
 ```
+
+Wall thickness is measured by pairing each ray's **entry** into
+material with its next **exit**, so a reading always spans material
+actually traversed. This matters because a tessellation facet centroid
+sags into the void by up to the tessellation tolerance on curved faces:
+a ray started there re-hits the surface it came from, which is what
+produced the sub-0.2 mm readings on large-radius annuli that consumers
+had been waiving as "ray-sampling artifacts". Rays are rejected only on
+that geometric ground — **never** by magnitude, and there is no
+quantile or robustness statistic, because hiding a genuine thin region
+is a worse failure than reporting a wedge tip.
+
+`min_wall_alignment` is the evidence field for the readings that
+remain: the exit face's outward normal projected on the ray, `1.0` for
+parallel faces and falling toward `0` as they splay. Below ~0.7 the
+minimum sits at the tip of a wedge feature (real material, but not a
+wall thickness); near `1.0` a tiny reading is a genuine sliver in the
+model and should be fixed rather than waived.
 
 Waivers: `inspect(..., waive={"wall_min": "reason", "overhang_max":
 "reason"})`, keyed by assertion **kind** (the part before the `:`), so
