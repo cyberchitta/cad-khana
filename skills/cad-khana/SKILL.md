@@ -453,9 +453,9 @@ Both record a measured value in the JSON even on pass (`tangent`: the
 gap in mm; `allowed`: the overlap volume in mm³), so `khana diff` sees
 drift. A tangent pair has no overlap, so it coexists with group
 `assert_no_interference_*` checks; an allowed-contact pair genuinely
-overlaps — exclude it from any group check covering it (`suppressed=`,
-since `assert_allowed_contact` already carries the claim), or the
-group check re-flags the intended contact.
+overlaps, and group checks skip it automatically — the declaration is
+the whole of it, with no `suppressed=` entry to keep in step (see
+[Group assertions](#group-assertions)).
 
 **Contact that only happens in one phase of a motion** — a lifter pad
 against the platform it lifts, a cam against its follower — takes a
@@ -522,6 +522,16 @@ Both take two keyword options:
 - `suppressed=[(a, b), …]` — skips those pairs entirely (e.g. a
   design-intended contact during motion with no clean per-frame
   predicate).
+
+Pairs carrying an `assert_allowed_contact` declared at or below this
+level are skipped **without being listed** — the contact assertion
+already holds the pair at every frame (inside its window to the
+overlap band, outside it to plain no-interference), so re-emitting
+`no_interference` there could only contradict it. Don't restate them
+in `suppressed=`: that is bookkeeping to keep in step, and it goes
+*wider* than the claim — a suppression is blind at every frame where a
+phased claim is not. Naming the pair in `known_overlaps=` overrides
+the skip, if you want the regression alarm too.
 
 Expanded assertions are the plain single-pair forms with their usual
 auto-names, so migrating a hand-written loop to a group call leaves

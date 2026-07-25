@@ -6,6 +6,7 @@ from cad_khana.mechanism.assembly import (
     DetailOverride,
     RevoluteJoint,
 )
+from cad_khana.mechanism.assertions import JointWindow
 
 
 def _cube(size: float = 10):
@@ -490,6 +491,61 @@ def test_group_path_selects_subtree_parts_sorted():
         "no_interference:unit.inner.a_part/outside",
         "no_interference:unit.inner.z_part/outside",
     ]
+
+
+def test_between_skips_pair_carrying_an_allowed_contact():
+    base = _three_part_assembly().assert_allowed_contact(
+        "b1", "a1", max_overlap_mm3=5, reason="press fit"
+    )
+    grouped = base.assert_no_interference_between(("a1", "a2"), ("b1",))
+    assert [a.name for a in grouped.assertions[1:]] == [
+        "no_interference:a2/b1"
+    ]
+
+
+def test_within_skips_phased_allowed_contact_pair():
+    base = _three_part_assembly().assert_allowed_contact(
+        "a1",
+        "a2",
+        max_overlap_mm3=5,
+        during=JointWindow("rotor", 5.4, 22.5),
+    )
+    grouped = base.assert_no_interference_within(("a1", "a2", "b1"))
+    assert [a.name for a in grouped.assertions[1:]] == [
+        "no_interference:a1/b1",
+        "no_interference:a2/b1",
+    ]
+
+
+def test_group_skips_contact_declared_in_a_subassembly():
+    sub = (
+        Assembly()
+        .with_part("pad", _cube())
+        .assert_allowed_contact("pad", "block", max_overlap_mm3=5)
+        .with_part("block", _cube(), location=Location((0, 0, 20)))
+    )
+    top = (
+        Assembly()
+        .with_subassembly("unit", sub)
+        .with_part("outside", _cube(), location=Location((0, 0, 40)))
+    )
+    grouped = top.assert_no_interference_within(
+        ("unit.pad", "unit.block", "outside")
+    )
+    assert [a.name for a in grouped.assertions] == [
+        "no_interference:unit.pad/outside",
+        "no_interference:unit.block/outside",
+    ]
+
+
+def test_known_overlap_overrides_the_allowed_contact_skip():
+    base = _three_part_assembly().assert_allowed_contact(
+        "a1", "b1", max_overlap_mm3=5
+    )
+    grouped = base.assert_no_interference_between(
+        ("a1",), ("b1",), known_overlaps=(("a1", "b1", "also alarmed"),)
+    )
+    assert [a.name for a in grouped.assertions[1:]] == ["interference:a1/b1"]
 
 
 def test_group_path_missing_raises_keyerror():

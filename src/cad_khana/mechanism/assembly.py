@@ -672,7 +672,12 @@ class Assembly:
         no-interference, so the claim keeps its teeth at every other
         frame instead of going blind like a suppressed pair. Use
         ``khana``'s ``sweep``/``classify`` to derive the window from
-        geometry rather than guessing it."""
+        geometry rather than guessing it.
+
+        Group ``assert_no_interference_*`` calls covering this pair
+        skip it on the strength of this declaration — declaring the
+        contact is the whole of it, with no matching ``suppressed=``
+        entry to keep in step."""
         assertion = AllowedContact(
             a=a,
             b=b,
@@ -748,6 +753,17 @@ class Assembly:
                 return s.assembly._subassembly_at(rest) if rest else s
         raise KeyError(f"no sub-assembly named {head!r}")
 
+    @property
+    def _contact_pairs(self) -> set[frozenset[str]]:
+        """Pairs already carrying an ``AllowedContact`` declared at or
+        below this level, qualified into this frame — what group
+        expansion skips so the claim isn't restated as a suppression."""
+        return {
+            frozenset((a.a, a.b))
+            for a in self.all_assertions
+            if isinstance(a, AllowedContact)
+        }
+
     def _resolve_group(self, group: str | Iterable[str]) -> tuple[str, ...]:
         """A group selector → concrete part paths. A ``str`` is a dotted
         sub-assembly path and resolves to every part under that subtree,
@@ -787,6 +803,16 @@ class Assembly:
         unused. Same-name pairs are skipped, and if the groups overlap
         each unordered pair is emitted once (first encounter's order).
 
+        Pairs carrying an ``AllowedContact`` declared at or below this
+        level are skipped too, without being listed: the contact
+        assertion already holds the pair at every frame — inside its
+        window to the overlap band, outside it to plain
+        no-interference — so re-emitting ``NoInterference`` here could
+        only contradict it. Restating them in ``suppressed`` was double
+        bookkeeping that also went *wider* than the claim, since a
+        suppression is blind at every frame where a phased claim is
+        not. Name the pair in ``known_overlaps`` to override the skip.
+
         Emitted assertions are the plain single-pair forms with their
         usual auto-names, so replacing a hand-written double loop with
         this call leaves ``mechanism.json`` unchanged.
@@ -794,6 +820,7 @@ class Assembly:
         a_names = self._resolve_group(group_a)
         b_names = self._resolve_group(group_b)
         reasons, sup = _normalize_pair_maps(known_overlaps, suppressed)
+        skip = sup | (self._contact_pairs - set(reasons))
         new: list[Assertion] = []
         seen: set[frozenset[str]] = set()
         for a in a_names:
@@ -801,7 +828,7 @@ class Assembly:
                 if a == b:
                     continue
                 key = frozenset((a, b))
-                if key in sup or key in seen:
+                if key in skip or key in seen:
                     continue
                 seen.add(key)
                 new.append(_pair_assertion(a, b, reasons))
@@ -817,16 +844,17 @@ class Assembly:
         """Assert no interference for every unordered pair within
         ``group`` (pair order follows the group's order: ``(names[i],
         names[j])`` for ``i < j``). Group selectors, ``known_overlaps``,
-        ``suppressed``, and name-stability semantics are exactly as in
-        ``assert_no_interference_between``.
+        ``suppressed``, the ``AllowedContact`` skip, and name-stability
+        semantics are exactly as in ``assert_no_interference_between``.
         """
         names = self._resolve_group(group)
         reasons, sup = _normalize_pair_maps(known_overlaps, suppressed)
+        skip = sup | (self._contact_pairs - set(reasons))
         new: list[Assertion] = []
         for i in range(len(names)):
             for j in range(i + 1, len(names)):
                 a, b = names[i], names[j]
-                if a == b or frozenset((a, b)) in sup:
+                if a == b or frozenset((a, b)) in skip:
                     continue
                 new.append(_pair_assertion(a, b, reasons))
         return replace(self, assertions=self.assertions + tuple(new))
