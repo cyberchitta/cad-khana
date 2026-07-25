@@ -46,6 +46,31 @@ humans.
   pure part functions, declarative assemblies) is a SKILL.md concern, not a
   runtime constraint.
 
+## Demand-driven development
+
+cad-khana changes only when a live consumer need drives it. Today the
+consumer is **sorted-studs**; that grounding is what keeps the library
+honest.
+
+- **A feature starts from an observed need** — a field-note, an
+  adoption-inventory row, or a bug — never from the idea backlog
+  alone. Survey-sourced rows in `_notes/research/ideas.md` are
+  accepted *in intent* and wait for a driver to surface in the
+  consumer (geometric diff is the standing example: Impact H, parked
+  until a sorted-studs driver appears).
+- **Discovery is a demand-side sweep, not brainstorming.** When
+  sequencing is unclear, sweep sorted-studs' `cad/` for sites where a
+  putative feature would fit — existing workarounds mapped to the
+  call shape the consumer wishes it could write. The pattern is
+  `_notes/adoption-inventory.md` (2026-07-24): each mapped site
+  doubles as the feature's ready-made exercise slice.
+- **The exercise slice closes the loop.** A feature's row closes only
+  when its consumer sites are actually converted in sorted-studs —
+  code shipped here is "done" only after real use over there.
+- **Bugs are exempt** — fix immediately (see the promotion policy's
+  bug exception). The gate shapes features and defaults, never delays
+  fixes.
+
 ## Architecture
 
 ```
