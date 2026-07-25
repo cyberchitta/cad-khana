@@ -497,6 +497,15 @@ and assertions against detail-only parts skip (`passed: null`) in runs
 that lack them. Don't mirror an assertion at both levels; that just
 evaluates it twice under two names.
 
+**Geometry that exists only to be asserted against** — a sightline
+cone, a tool-access envelope — is an ordinary `with_part`, so nothing
+in the library marks it as un-manufacturable: `check()` exports
+whatever assembly it is handed. Keep it out of the exported one. Build
+two: the real assembly, and a copy that adds the probe parts and their
+assertions, handed to `check()`. Relying on `khana check` not
+exporting is not the separation — the same script under `khana build`
+writes the probes into the STL and STEP beside the real parts.
+
 ### Group assertions
 
 When "assert every pair" is the intent, say so — don't hand-write the
@@ -751,6 +760,15 @@ geometry on every `khana check` instead of depending on which `t`
 values someone sampled. Use `angles_bracketing` (the outer bound), not
 `angles_at_contact` (the inner one): too wide only weakens the claim,
 too narrow reddens runs that were always fine.
+
+Before feeding a bracket into a `during=`, **read the per-frame
+overlaps and check the profile rises and falls once** across the span.
+That is what makes the bracket safe: finer sampling can then only find
+contact *inside* it. Overlap that dips back to zero mid-span means the
+samples straddle more than one contact event, and the bracket edges say
+nothing about where the second one really starts — re-sample denser, or
+window each event separately. The field can't signal this; only the
+table can.
 
 ### glTF / GLB export
 
