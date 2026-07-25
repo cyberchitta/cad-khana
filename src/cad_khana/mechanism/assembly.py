@@ -23,6 +23,7 @@ from cad_khana.mechanism.assertions import (
     Clearance,
     Distance,
     ExpectedInterference,
+    JointWindow,
     NoInterference,
     ScalarClaim,
     TangentContact,
@@ -107,14 +108,21 @@ def _distance_name(
 
 
 def _allowed_contact_name(
-    a: str, b: str, min_mm3: float | None, max_mm3: float
+    a: str,
+    b: str,
+    min_mm3: float | None,
+    max_mm3: float,
+    during: JointWindow | None,
 ) -> str:
     bounds = "".join(
         s
         for s, v in ((f">={min_mm3}", min_mm3), (f"<={max_mm3}", max_mm3))
         if v is not None
     )
-    return f"allowed_contact:{a}/{b}{bounds}"
+    # The phase is part of the claim's identity: one pair can carry a
+    # different band in each phase, and the names must not collide.
+    phase = "" if during is None else f"@{during.describe()}"
+    return f"allowed_contact:{a}/{b}{bounds}{phase}"
 
 
 @dataclass(frozen=True)
@@ -644,6 +652,7 @@ class Assembly:
         max_overlap_mm3: float,
         min_overlap_mm3: float | None = None,
         reason: str | None = None,
+        during: JointWindow | None = None,
         name: str | None = None,
     ) -> "Assembly":
         """Assert any overlap between ``a`` and ``b`` stays within
@@ -654,15 +663,27 @@ class Assembly:
         itself the claim — the fit failing back to a clearance fit
         then fails loudly. The measured overlap volume is recorded in
         the result even on pass, so ``khana diff`` sees drift.
-        ``reason`` documents the intent, appended to failure detail."""
+        ``reason`` documents the intent, appended to failure detail.
+
+        ``during`` (a ``JointWindow``) confines the claim to a
+        kinematic phase — the contact a lifter makes with the part it
+        lifts, allowed while the lifter is raised and a real fault at
+        rest. Outside the window the pair is held to plain
+        no-interference, so the claim keeps its teeth at every other
+        frame instead of going blind like a suppressed pair. Use
+        ``khana``'s ``sweep``/``classify`` to derive the window from
+        geometry rather than guessing it."""
         assertion = AllowedContact(
             a=a,
             b=b,
             max_overlap_mm3=max_overlap_mm3,
             min_overlap_mm3=min_overlap_mm3,
             reason=reason,
+            during=during,
             name=name
-            or _allowed_contact_name(a, b, min_overlap_mm3, max_overlap_mm3),
+            or _allowed_contact_name(
+                a, b, min_overlap_mm3, max_overlap_mm3, during
+            ),
         )
         return replace(self, assertions=self.assertions + (assertion,))
 
@@ -829,6 +850,26 @@ class Assembly:
             for a in s.assembly.all_assertions
         )
         return self.assertions + nested
+
+    @property
+    def joint_angles(self) -> dict[str, float]:
+        """Dotted sub-assembly path → joint angle in degrees, for every
+        jointed sub-assembly in the tree — the kinematic-state mirror of
+        ``placed_parts``, and what resolves an assertion's
+        ``JointWindow`` phase. Unjointed sub-assemblies contribute
+        nothing but are still walked through.
+        """
+        own = {
+            s.name: s.joint.angle_deg
+            for s in self.subassemblies
+            if s.joint is not None
+        }
+        nested = {
+            f"{s.name}.{k}": v
+            for s in self.subassemblies
+            for k, v in s.assembly.joint_angles.items()
+        }
+        return own | nested
 
     @property
     def placed_parts(self) -> tuple[PlacedPart, ...]:

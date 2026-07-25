@@ -740,3 +740,32 @@ def test_assert_anchors_coincident_fails_fast_on_missing_path():
     a = Assembly().with_anchor("datum", Location())
     with pytest.raises(KeyError):
         a.assert_anchors_coincident("datum", "ghost.datum")
+
+
+def test_joint_angles_maps_dotted_paths_to_degrees():
+    inner = Assembly().with_subassembly(
+        "tilt", Assembly(), joint=RevoluteJoint(axis=Axis.Y, angle_deg=12.5)
+    )
+    a = Assembly().with_subassembly(
+        "rotor", inner, joint=RevoluteJoint(axis=Axis.Z, angle_deg=90)
+    )
+    assert a.joint_angles == {"rotor": 90.0, "rotor.tilt": 12.5}
+
+
+def test_joint_angles_walks_through_unjointed_levels():
+    inner = Assembly().with_subassembly(
+        "tilt", Assembly(), joint=RevoluteJoint(axis=Axis.Y, angle_deg=5)
+    )
+    a = Assembly().with_subassembly("frame", inner)
+    assert a.joint_angles == {"frame.tilt": 5.0}
+
+
+def test_joint_angles_is_empty_without_joints():
+    assert Assembly().with_subassembly("frame", Assembly()).joint_angles == {}
+
+
+def test_joint_angles_tracks_with_joint_angle():
+    a = Assembly().with_subassembly(
+        "rotor", Assembly(), joint=RevoluteJoint(axis=Axis.Z)
+    )
+    assert a.with_joint_angle("rotor", 45).joint_angles == {"rotor": 45.0}

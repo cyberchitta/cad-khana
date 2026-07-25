@@ -9,28 +9,11 @@ from cad_khana.mechanism.diagnostics import (
     BOUND_EPSILON,
     INTERFERENCE_VOLUME_EPSILON_MM3,
     AssertionResult,
+    intersection_volume,
 )
 
 if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
-
-
-def _intersection_volume(a: Part, b: Part) -> float:
-    """Volume of the boolean intersection `a & b`, tolerant to the
-    several shapes build123d can return:
-      - `None`                  — no overlap (new API, some versions).
-      - A single `Shape`/`Part` — single-component intersection.
-      - A `ShapeList` / iterable — multi-component intersection, or an
-        empty list when one of the inputs is itself a multi-body
-        compound. Sum the volumes.
-    """
-    intersection = a & b
-    if intersection is None:
-        return 0.0
-    if hasattr(intersection, "volume"):
-        return intersection.volume
-    # ShapeList or other iterable container of shapes.
-    return sum(s.volume for s in intersection)
 
 
 def _extent(shape: Part, d: Vector) -> tuple[float, float]:
@@ -61,6 +44,45 @@ def _qualified_plane(plane: Plane, location: Location) -> Plane:
 
 
 @dataclass(frozen=True)
+class JointWindow:
+    """The kinematic phase a claim applies in: the named revolute
+    joint's angle within ``[min_deg, max_deg]`` (either bound optional,
+    both ``BOUND_EPSILON``-tolerant).
+
+    Gating on a joint angle rather than on an animation parameter is
+    deliberate — the joint is the physical DOF, so re-timing or
+    re-sampling the animation cannot invalidate the claim, and a
+    standalone run of the owning sub-assembly reads the same state.
+    ``path`` is a dotted sub-assembly path (``Assembly.joint_angles``),
+    qualified into the parent frame along with the rest of the
+    assertion.
+    """
+
+    path: str
+    min_deg: float | None = None
+    max_deg: float | None = None
+
+    def contains(self, angle_deg: float) -> bool:
+        return (
+            self.min_deg is None or angle_deg >= self.min_deg - BOUND_EPSILON
+        ) and (
+            self.max_deg is None or angle_deg <= self.max_deg + BOUND_EPSILON
+        )
+
+    def describe(self) -> str:
+        bounds = (
+            f"[{self.min_deg:g}, {self.max_deg:g}]deg"
+            if self.min_deg is not None and self.max_deg is not None
+            else f">={self.min_deg:g}deg"
+            if self.min_deg is not None
+            else f"<={self.max_deg:g}deg"
+            if self.max_deg is not None
+            else "any angle"
+        )
+        return f"{self.path} {bounds}"
+
+
+@dataclass(frozen=True)
 class NoInterference:
     a: str
     b: str
@@ -79,7 +101,7 @@ class NoInterference:
         )
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
-        volume = _intersection_volume(parts[self.a], parts[self.b])
+        volume = intersection_volume(parts[self.a], parts[self.b])
         passed = volume <= INTERFERENCE_VOLUME_EPSILON_MM3
         detail = None if passed else f"interference volume {volume:.4f}mm^3"
         return AssertionResult(self.name, passed, detail)
@@ -143,7 +165,7 @@ class TangentContact:
         )
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
-        overlap = _intersection_volume(parts[self.a], parts[self.b])
+        overlap = intersection_volume(parts[self.a], parts[self.b])
         if overlap > INTERFERENCE_VOLUME_EPSILON_MM3:
             return AssertionResult(
                 self.name,
@@ -171,7 +193,14 @@ class AllowedContact:
     clearance fit fails rather than silently passing. The measured
     overlap volume is recorded in ``value`` even on pass, so runs are
     diffable. ``reason`` documents the intent and is appended to the
-    failure detail."""
+    failure detail.
+
+    ``during`` narrows the claim to a kinematic phase: inside the
+    window the overlap band stands, outside it contact is not allowed
+    at all. That is the difference between declaring a contact and
+    suppressing a pair — a suppressed pair is invisible at every frame,
+    where a phased claim still fails if the contact shows up in the
+    wrong phase."""
 
     a: str
     b: str
@@ -179,6 +208,7 @@ class AllowedContact:
     max_overlap_mm3: float
     min_overlap_mm3: float | None = None
     reason: str | None = None
+    during: JointWindow | None = None
 
     @property
     def part_refs(self) -> tuple[str, ...]:
@@ -190,10 +220,36 @@ class AllowedContact:
             a=f"{prefix}.{self.a}",
             b=f"{prefix}.{self.b}",
             name=f"{prefix}.{self.name}",
+            during=(
+                None
+                if self.during is None
+                else replace(self.during, path=f"{prefix}.{self.during.path}")
+            ),
+        )
+
+    def for_angle(self, angle_deg: float) -> "AllowedContact":
+        """This claim resolved against the joint's current angle, so it
+        evaluates from ``parts`` alone like every other assertion.
+        Inside the window the band is unchanged; outside it the band
+        collapses to the interference epsilon — any real overlap in the
+        wrong phase then fails, naming the window it fell outside."""
+        window = self.during
+        if window.contains(angle_deg):
+            return replace(self, during=None)
+        phase = (
+            f"contact declared only during {window.describe()}, "
+            f"joint at {angle_deg:g}deg"
+        )
+        return replace(
+            self,
+            during=None,
+            max_overlap_mm3=INTERFERENCE_VOLUME_EPSILON_MM3,
+            min_overlap_mm3=None,
+            reason="; ".join(s for s in (self.reason, phase) if s),
         )
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
-        overlap = _intersection_volume(parts[self.a], parts[self.b])
+        overlap = intersection_volume(parts[self.a], parts[self.b])
         above = overlap > self.max_overlap_mm3 + BOUND_EPSILON
         below = (
             self.min_overlap_mm3 is not None
@@ -350,7 +406,7 @@ class ExpectedInterference:
         )
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
-        volume = _intersection_volume(parts[self.a], parts[self.b])
+        volume = intersection_volume(parts[self.a], parts[self.b])
         passed = volume > INTERFERENCE_VOLUME_EPSILON_MM3
         if passed:
             detail = None
@@ -439,13 +495,35 @@ def _evaluate_part_assertion(
     return assertion.evaluate(parts)
 
 
+def _evaluate_one(
+    assertion: Assertion,
+    assembly: Assembly,
+    parts: dict[str, Part],
+    angles: dict[str, float],
+) -> AssertionResult:
+    if isinstance(assertion, AnchorsCoincident):
+        return assertion.evaluate_on(assembly)
+    if isinstance(assertion, ScalarClaim):
+        return assertion.evaluate()
+    if isinstance(assertion, AllowedContact) and assertion.during is not None:
+        # A joint absent from this run is the same legitimate state as an
+        # absent part — a sub-assembly checked standalone below the level
+        # that owns the joint. Skip rather than guess a phase.
+        path = assertion.during.path
+        if path not in angles:
+            return AssertionResult(
+                assertion.name,
+                None,
+                f"skipped: joint absent from this run: {path}",
+            )
+        assertion = assertion.for_angle(angles[path])
+    return _evaluate_part_assertion(assertion, parts)
+
+
 def evaluate(assembly: Assembly) -> tuple[AssertionResult, ...]:
     parts = {p.name: _placed(p) for p in assembly.placed_parts}
+    angles = assembly.joint_angles
     return tuple(
-        a.evaluate_on(assembly)
-        if isinstance(a, AnchorsCoincident)
-        else a.evaluate()
-        if isinstance(a, ScalarClaim)
-        else _evaluate_part_assertion(a, parts)
+        _evaluate_one(a, assembly, parts, angles)
         for a in assembly.all_assertions
     )

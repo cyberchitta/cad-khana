@@ -80,6 +80,24 @@ class Diagnostics:
     exports: tuple[str, ...] = ()
 
 
+def intersection_volume(a: Part, b: Part) -> float:
+    """Volume of the boolean intersection `a & b`, tolerant to the
+    several shapes build123d can return:
+      - `None`                  — no overlap (new API, some versions).
+      - A single `Shape`/`Part` — single-component intersection.
+      - A `ShapeList` / iterable — multi-component intersection, or an
+        empty list when one of the inputs is itself a multi-body
+        compound. Sum the volumes.
+    """
+    intersection = a & b
+    if intersection is None:
+        return 0.0
+    if hasattr(intersection, "volume"):
+        return intersection.volume
+    # ShapeList or other iterable container of shapes.
+    return sum(s.volume for s in intersection)
+
+
 def _placed(p: PlacedPart) -> Part:
     return p.part.moved(p.location)
 

@@ -94,6 +94,7 @@ cad-khana/
         assembly.py           # Assembly class: named parts + locations
         assertions.py         # NoInterference, Clearance + evaluate()
         diagnostics.py        # bbox, volume, interferences
+        sweep.py              # sampled-motion queries: sweep/classify/onset
         check.py              # check() orchestrator + CheckResult
       printability/
         methods.py            # FDM dataclass (up_axis, wall_min, overhang_max)
@@ -218,8 +219,31 @@ Version these from day one. Agents depend on field stability.
 `assertions[].passed` is tri-state: `true`/`false` for an evaluated
 assertion, `null` when it was skipped because a referenced part is
 absent from the run (`detail` names the missing parts — the standalone
-sub-assembly case, where detail-override parts aren't applied). Skipped
-assertions never set `status: "assertion_failed"`.
+sub-assembly case, where detail-override parts aren't applied), or
+because a phased claim's joint is absent. Skipped assertions never set
+`status: "assertion_failed"`.
+
+`assert_allowed_contact(..., during=JointWindow(path, lo, hi))` scopes a
+contact to a kinematic phase: inside the window the overlap band
+applies, outside it the pair is held to plain no-interference — the
+difference between declaring a contact and suppressing a pair, which is
+blind at every frame. The window is a **joint angle**, not an animation
+parameter: the joint is the physical DOF, so re-timing an animation
+can't invalidate the claim, and a contact recurring at several
+parameters is typically one angle window over several disjoint `t`
+intervals (measured on m03's lifter pad — two `t` intervals, one 5.4–22.5°
+window). Windows are derived from geometry via `mechanism.sweep`, not
+guessed.
+
+`mechanism/sweep.py` is the sampled-motion surface — `sweep(factory, ts)`
+→ per-pair overlap volumes and per-frame joint angles, `classify` →
+`always`/`never`/`transient` with contact intervals and angle spans,
+`onset` → bracketed-then-bisected first contact. Its primitive is a
+`factory(t) -> Assembly`, not a joint plus a range, because real motion
+drives several joints at once from non-linear schedules. It is pure (no
+I/O) and **sampled**, therefore an inner approximation: `never` means
+"at none of the sampled parameters". Sweeps derive a claim; assertions
+hold it.
 
 `assertions[].value` carries the measured/claimed scalar for
 value-carrying assertions (`assert_distance`, `assert_scalar`,

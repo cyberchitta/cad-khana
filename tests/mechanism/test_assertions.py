@@ -1,7 +1,7 @@
-from build123d import Box, BuildPart, Location
+from build123d import Axis, Box, BuildPart, Location
 
-from cad_khana.mechanism.assembly import Assembly
-from cad_khana.mechanism.assertions import evaluate
+from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
+from cad_khana.mechanism.assertions import JointWindow, evaluate
 
 
 def _cube(size: float = 10):
@@ -806,3 +806,77 @@ def test_scalar_epsilon_does_not_mask_real_violations():
     a = Assembly().assert_scalar("margin", 0.19, ge=0.2)
     (result,) = evaluate(a)
     assert result.passed is False
+
+
+# --- Phased contact (assert_allowed_contact during=) ---------------------
+
+
+def _lifter(angle_deg: float, window=None):
+    """A cube on a Z revolute joint at the origin, clear of a fixed
+    cube at 0deg and fully overlapping it at 90deg."""
+    arm = Assembly().with_part("arm", _cube(), location=Location((20, 0, 0)))
+    a = (
+        Assembly()
+        .with_part("post", _cube(), location=Location((0, 20, 0)))
+        .with_subassembly(
+            "swing", arm, joint=RevoluteJoint(axis=Axis.Z, angle_deg=angle_deg)
+        )
+    )
+    return a.assert_allowed_contact(
+        "post", "swing.arm", max_overlap_mm3=2000, during=window
+    )
+
+
+def test_phased_contact_passes_inside_its_window():
+    a = _lifter(90, JointWindow("swing", 80, 100))
+    (result,) = evaluate(a)
+    assert result.passed
+    assert result.value > 0
+
+
+def test_phased_contact_fails_for_the_same_overlap_outside_its_window():
+    a = _lifter(90, JointWindow("swing", 0, 10))
+    (result,) = evaluate(a)
+    assert result.passed is False
+    assert "contact declared only during" in result.detail
+    assert "swing [0, 10]deg" in result.detail
+
+
+def test_phased_contact_passes_outside_its_window_when_parts_are_clear():
+    a = _lifter(0, JointWindow("swing", 80, 100))
+    (result,) = evaluate(a)
+    assert result.passed
+
+
+def test_phased_contact_without_a_window_is_blind_to_the_angle():
+    """The unphased form is the pre-existing behaviour: the band alone
+    decides, at every angle."""
+    assert evaluate(_lifter(90))[0].passed
+    assert evaluate(_lifter(0))[0].passed
+
+
+def test_phased_contact_skips_when_the_joint_is_absent_from_this_run():
+    a = (
+        Assembly()
+        .with_part("post", _cube())
+        .with_part("arm", _cube(), location=Location((5, 0, 0)))
+        .assert_allowed_contact(
+            "post", "arm", max_overlap_mm3=2000, during=JointWindow("swing")
+        )
+    )
+    (result,) = evaluate(a)
+    assert result.passed is None
+    assert "joint absent" in result.detail
+
+
+def test_phased_contact_window_qualifies_into_a_parent_frame():
+    unit = _lifter(90, JointWindow("swing", 80, 100))
+    parent = Assembly().with_subassembly("m03", unit)
+    (result,) = evaluate(parent)
+    assert result.passed
+    assert result.name.startswith("m03.")
+
+
+def test_phased_contact_name_records_the_window():
+    a = _lifter(90, JointWindow("swing", 80, 100))
+    assert "swing [80, 100]deg" in evaluate(a)[0].name

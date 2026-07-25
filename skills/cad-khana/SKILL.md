@@ -457,6 +457,34 @@ overlaps — exclude it from any group check covering it (`suppressed=`,
 since `assert_allowed_contact` already carries the claim), or the
 group check re-flags the intended contact.
 
+**Contact that only happens in one phase of a motion** — a lifter pad
+against the platform it lifts, a cam against its follower — takes a
+`during=` window instead of being suppressed at every frame:
+
+```python
+from cad_khana.mechanism.assertions import JointWindow
+
+a = a.assert_allowed_contact(
+    "platform.frame", "servo_arm.arm", max_overlap_mm3=20,
+    during=JointWindow("rotor.platform", 5.4, 22.5),
+    reason="servo pad lifts the platform's drop block",
+)
+```
+
+Inside the window the overlap band applies; **outside it the pair is
+held to plain no-interference**, so the same contact appearing at rest
+fails instead of passing unnoticed. That is the whole difference
+between declaring a contact and suppressing a pair: a suppressed pair
+is blind at every frame.
+
+Window the **joint angle, not `t`**. The joint is the physical DOF, so
+re-timing the animation can't invalidate the claim — and a contact that
+recurs at several parameters (a pad touched on the way up and again on
+the way down) is usually *one* angle window even though it is two
+disjoint `t` intervals. Derive the window from geometry with
+`classify` (below) rather than guessing it; if the joint is absent from
+a run, the assertion skips like an absent part.
+
 ### Declare assertions where the knowledge lives
 
 Sub-assembly assertions **propagate**: a composed parent evaluates
@@ -671,6 +699,48 @@ TRS lerp would chord through curved paths).
   Validate any geometry or joint-wiring change via `factory(0.0)` +
   `khana check` (or a single `export_glb`) before fanning out to
   the full animated sweep.
+
+### Sweep diagnostics: what touches what, and when
+
+`cad_khana.mechanism.sweep` answers questions about a *motion* rather
+than a pose. All three take the same `factory(t) -> Assembly`:
+
+```python
+from cad_khana.mechanism.sweep import classify, onset, sweep
+
+result = sweep(build_at, ts)                    # every pair, bbox-prefiltered
+result = sweep(build_at, ts, pairs=[(a, b)])    # just these pairs
+
+for phase in classify(result):
+    print(phase.kind, phase.t_intervals, phase.angles_bracketing)
+
+o = onset(build_at, ("pad", "block"), over=ts)  # first contact, bisected
+```
+
+`classify` labels each pair `always` / `never` / `transient` and reports
+the `t` intervals and joint-angle spans it was in contact over. Use it
+to **replace a hand-curated suppression list**: the list of pairs
+becomes a property of the geometry, while the kinematic reason each
+pair is there stays human-written — that's a design statement, not
+something a sweep can derive. Feed `angles_bracketing` straight into a
+`during=` window.
+
+`onset` finds where contact begins. It scans for the first
+clear→contact interval and bisects inside it — bisection alone would
+assume contact only ever starts once, and `Onset.brackets` tells you
+how many transitions the samples actually showed.
+
+**All of this is sampled, and sampling a motion is an inner
+approximation.** `never` means "at none of the sampled parameters",
+which is not the same as never — a real m03 sweep at 9 frames saw one
+contact frame where 37 frames show two whole contact phases. So:
+sweeps are for *deriving* a claim, assertions are for *holding* it.
+Once you know the window, declare it with
+`assert_allowed_contact(..., during=...)`, which re-derives from
+geometry on every `khana check` instead of depending on which `t`
+values someone sampled. Use `angles_bracketing` (the outer bound), not
+`angles_at_contact` (the inner one): too wide only weakens the claim,
+too narrow reddens runs that were always fine.
 
 ### glTF / GLB export
 
