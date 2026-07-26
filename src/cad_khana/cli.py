@@ -2,6 +2,7 @@ import json
 import runpy
 import sys
 import traceback
+from collections.abc import Callable
 from dataclasses import asdict
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
@@ -13,8 +14,11 @@ from cad_khana import _failures, environment
 from cad_khana import draw as _draw
 from cad_khana import viewer
 from cad_khana.diff import NO_CHANGES, diff as compute_diff
-from cad_khana.mechanism.check import _set_export_default
+from cad_khana.export import export_assembly
+from cad_khana.mechanism.assembly import Assembly
+from cad_khana.mechanism.check import _set_export_default, check as check_assembly
 from cad_khana.mechanism.diagnostics import Diagnostics
+from cad_khana.target import Target, TargetError, package_module_spec, resolve
 
 app = typer.Typer(
     name="khana",
@@ -61,7 +65,7 @@ ScriptArg = Annotated[
         file_okay=True,
         dir_okay=False,
         readable=True,
-        help="Python script that composes an assembly and calls check()/inspect().",
+        help="Python script executed for effect (orchestration, not declarations).",
     ),
 ]
 
@@ -77,25 +81,37 @@ OutOpt = Annotated[
     ),
 ]
 
+TargetArg = Annotated[
+    str,
+    typer.Argument(
+        metavar="TARGET",
+        help=(
+            "Module path with an optional factory: `unit/assembly.py` or "
+            "`unit/assembly.py:build_rotor`. A named factory is called with "
+            "its defaults (= the master design); without one the module's "
+            "`assembly` name is used — called if callable, accepted as a "
+            "value otherwise."
+        ),
+    ),
+]
 
-def _package_module_spec(script: Path) -> tuple[str, Path] | None:
-    """Dotted module name + ``sys.path`` root for a script that is a
-    package member (its directory and every ancestor up to the package
-    root carry an ``__init__.py``). ``None`` for plain scripts."""
-    script = script.resolve()
-    if not (script.parent / "__init__.py").exists():
-        return None
-    root = script.parent
-    while (root.parent / "__init__.py").exists():
-        root = root.parent
-    parts = script.relative_to(root.parent).with_suffix("").parts
-    if not all(p.isidentifier() for p in parts):
-        return None
-    return ".".join(parts), root.parent
+TargetOutOpt = Annotated[
+    Path | None,
+    typer.Option(
+        "--out",
+        help=(
+            "Directory for this target's outputs. Defaults to "
+            "<module-dir>/outputs for a unit's `assembly.py`, and to "
+            "<module-dir>/outputs/<slug> for any other target, so co-located "
+            "targets never overwrite each other. An explicit value is taken "
+            "as cwd-relative."
+        ),
+    ),
+]
 
 
 def _exec_script(script: Path) -> None:
-    spec = _package_module_spec(script)
+    spec = package_module_spec(script)
     if spec is None:
         runpy.run_path(str(script), run_name="__main__")
     else:
@@ -144,36 +160,103 @@ def _run_script(script: Path, out: Path | None, command: str) -> None:
         raise typer.Exit(code=1)
 
 
+def _run_target(
+    spec: str,
+    out: Path | None,
+    command: str,
+    verb: Callable[[Assembly, Path], None],
+) -> None:
+    """Import a target's module, resolve one member, run one verb.
+
+    The error boundary of ``_run_script`` applies here too — a factory
+    that raises still leaves ``status: "error"`` behind. Failure
+    deferral does not: one member, one evaluation.
+    """
+    target = Target.parse(spec)
+    if not target.path.is_file():
+        typer.echo(f"error: no such file: {target.path}", err=True)
+        raise typer.Exit(code=2)
+    # Absolute up front: there is no running script for ``resolve_out``
+    # to anchor a relative path to, and an explicit --out is user-typed
+    # (cwd-relative) either way.
+    out_path = target.default_out if out is None else Path.cwd() / out
+    try:
+        verb(resolve(target), out_path)
+    except TargetError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2)
+    except SystemExit as exc:
+        if exc.code:
+            raise
+    except typer.Exit:
+        raise
+    except BaseException as exc:
+        tb = traceback.format_exc()
+        typer.echo(tb, err=True)
+        typer.echo(f"khana {command} failed: {type(exc).__name__}: {exc}", err=True)
+        _write_error_diagnostics(out_path, tb)
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def check(target: TargetArg, out: TargetOutOpt = None) -> None:
+    """Import a module, resolve its assembly, and write diagnostics.
+
+    Computes diagnostics, evaluates every assertion the assembly (and
+    anything it composes) declares, writes `mechanism.json`, and exits
+    nonzero if any assertion failed. No export, no viewer push.
+    """
+    _run_target(target, out, "check", lambda a, o: check_assembly(a, out=o))
+
+
+@app.command()
+def export(target: TargetArg, out: TargetOutOpt = None) -> None:
+    """Import a module, resolve its assembly, and write STL + STEP."""
+    _run_target(target, out, "export", _write_exports)
+
+
+def _write_exports(assembly: Assembly, out: Path) -> None:
+    for path in export_assembly(assembly, out):
+        typer.echo(str(path))
+
+
+@app.command()
+def view(target: TargetArg, out: TargetOutOpt = None) -> None:
+    """Import a module and push its assembly to the OCP viewer."""
+    _run_target(target, out, "view", lambda a, _out: viewer.push(a))
+
+
+@app.command()
+def run(script: ScriptArg, out: OutOpt = None) -> None:
+    """Execute an orchestration script (sweeps, inspect() batches, exports).
+
+    Declarations belong in modules the import-model commands consume;
+    this is the escape hatch for genuinely imperative work. `check()`
+    called from here writes diagnostics only.
+    """
+    _run_script(script, out, "run")
+
+
 @app.command()
 def build(script: ScriptArg, out: OutOpt = None) -> None:
-    """Run a user script to compose an assembly and export geometry."""
-    _run_script(script, out, "build")
-
-
-@app.command()
-def check(script: ScriptArg, out: OutOpt = None) -> None:
-    """Run a user script and write diagnostics only (no STL/STEP export)."""
-    _set_export_default(False)
+    """Deprecated: execute a script and export geometry. Retires next release."""
+    typer.echo(
+        "khana build is deprecated and retires in the next release: use "
+        "`khana export <target>` for STL/STEP and `khana run <script>` for "
+        "orchestration.",
+        err=True,
+    )
+    _set_export_default(True)
     try:
-        _run_script(script, out, "check")
+        _run_script(script, out, "build")
     finally:
-        _set_export_default(True)
-
-
-@app.command()
-def view(script: ScriptArg, out: OutOpt = None) -> None:
-    """Run a user script and push the resulting assembly to the OCP viewer."""
-    viewer.set_auto(True)
-    try:
-        _run_script(script, out, "view")
-    finally:
-        viewer.set_auto(False)
+        _set_export_default(False)
 
 
 @app.command()
 def draw(
-    script: ScriptArg,
-    out: OutOpt = None,
+    target: TargetArg,
+    out: TargetOutOpt = None,
     views_dir: Annotated[
         Path | None,
         typer.Option(
@@ -219,9 +302,9 @@ def draw(
         ),
     ] = None,
 ) -> None:
-    """Run a user script and write orthographic + isometric engineering
-    drawings (HLR line-art). For shaded photo-real PNGs use chitra-cad's
-    `render` instead."""
+    """Import a module and write orthographic + isometric engineering
+    drawings (HLR line-art) for its assembly. For shaded photo-real PNGs
+    use chitra-cad's `render` instead."""
     views = tuple(v.strip() for v in view.split(",")) if view else None
     if views is not None:
         unknown = tuple(v for v in views if v not in _draw.VIEW_PRESETS)
@@ -232,13 +315,19 @@ def draw(
                 err=True,
             )
             raise typer.Exit(code=2)
-    _draw.set_auto(
-        True, views_dir, format, themeable=themeable, views=views, part=part
+    _run_target(
+        target,
+        out,
+        "draw",
+        lambda a, o: _draw.draw(
+            a,
+            views_dir or o / "views",
+            views=views,
+            part=part,
+            format=format,
+            themeable=themeable,
+        ),
     )
-    try:
-        _run_script(script, out, "draw")
-    finally:
-        _draw.set_auto(False)
 
 
 DiagArg = Annotated[

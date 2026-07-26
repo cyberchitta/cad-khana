@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from cad_khana import draw, environment, viewer
+from cad_khana import environment, viewer
 from cad_khana.cli import app
 from cad_khana.mechanism.diagnostics import SCHEMA_VERSION
 
@@ -46,28 +46,11 @@ def test_view_pushes_named_parts_to_viewer(
 
     monkeypatch.setattr(viewer, "show", fake_show)
 
-    out = tmp_path / "out"
-    script = tmp_path / "asm.py"
-    script.write_text(
-        "from build123d import Box, BuildPart, Location\n"
-        "from cad_khana.mechanism.assembly import Assembly\n"
-        "from cad_khana.mechanism.check import check\n"
-        "\n"
-        "with BuildPart() as a:\n"
-        "    Box(10, 10, 10)\n"
-        "with BuildPart() as b:\n"
-        "    Box(5, 5, 5)\n"
-        "check(\n"
-        "    Assembly()\n"
-        "        .with_part('big', a.part)\n"
-        "        .with_part('small', b.part, location=Location((20, 0, 0))),\n"
-        f"    out=r'{out}',\n"
-        ")\n"
-    )
-    result = runner.invoke(app, ["view", str(script)])
+    module = tmp_path / "asm.py"
+    module.write_text(_two_part_module())
+    result = runner.invoke(app, ["view", str(module)])
     assert result.exit_code == 0, result.output
     assert calls == [{"count": 2, "names": ["big", "small"]}]
-    assert not viewer.auto_enabled(), "auto-view toggle must be cleared after view"
 
 
 def test_build_does_not_push_to_viewer(
@@ -92,19 +75,13 @@ def test_build_does_not_push_to_viewer(
     assert calls == []
 
 
-def test_check_writes_diagnostics_without_exports(tmp_path: Path):
+def test_run_writes_diagnostics_without_exports(tmp_path: Path):
+    """`check()` under `khana run` is diagnostics-only: a command script
+    gets no exports without asking, and needs no `export=False`."""
     out = tmp_path / "out"
     script = tmp_path / "good.py"
-    script.write_text(
-        "from build123d import Box, BuildPart\n"
-        "from cad_khana.mechanism.assembly import Assembly\n"
-        "from cad_khana.mechanism.check import check\n"
-        "\n"
-        "with BuildPart() as p:\n"
-        "    Box(10, 10, 10)\n"
-        f"check(Assembly().with_part('cube', p.part), out=r'{out}')\n"
-    )
-    result = runner.invoke(app, ["check", str(script)])
+    script.write_text(_cube_script(out))
+    result = runner.invoke(app, ["run", str(script)])
     assert result.exit_code == 0, result.output
     data = json.loads((out / "mechanism.json").read_text())
     assert data["status"] == "ok"
@@ -113,40 +90,27 @@ def test_check_writes_diagnostics_without_exports(tmp_path: Path):
     assert not (out / "assembly.step").exists()
 
 
-def test_build_after_check_still_exports(tmp_path: Path):
+def test_build_exports_and_restores_the_default(tmp_path: Path):
+    """The deprecated `build` flips the export toggle for its own run
+    only — the next `run` in the same process is diagnostics-only."""
     out = tmp_path / "out"
     script = tmp_path / "good.py"
-    script.write_text(
-        "from build123d import Box, BuildPart\n"
-        "from cad_khana.mechanism.assembly import Assembly\n"
-        "from cad_khana.mechanism.check import check\n"
-        "\n"
-        "with BuildPart() as p:\n"
-        "    Box(10, 10, 10)\n"
-        f"check(Assembly().with_part('cube', p.part), out=r'{out}')\n"
-    )
-    runner.invoke(app, ["check", str(script)])
-    result = runner.invoke(app, ["build", str(script)])
-    assert result.exit_code == 0, result.output
+    script.write_text(_cube_script(out))
+    assert runner.invoke(app, ["build", str(script)]).exit_code == 0
     assert (out / "assembly.stl").exists()
-    assert (out / "assembly.step").exists()
+    (out / "assembly.stl").unlink()
+    (out / "assembly.step").unlink()
+    result = runner.invoke(app, ["run", str(script)])
+    assert result.exit_code == 0, result.output
+    assert not (out / "assembly.stl").exists()
 
 
 def test_draw_writes_png_views(tmp_path: Path):
-    out = tmp_path / "out"
     views = tmp_path / "views"
-    script = tmp_path / "asm.py"
-    script.write_text(
-        "from build123d import Box, BuildPart\n"
-        "from cad_khana.mechanism.assembly import Assembly\n"
-        "from cad_khana.mechanism.check import check\n"
-        "\n"
-        "with BuildPart() as p:\n"
-        "    Box(10, 10, 10)\n"
-        f"check(Assembly().with_part('cube', p.part), out=r'{out}')\n"
-    )
+    module = tmp_path / "asm.py"
+    module.write_text(_cube_module())
     result = runner.invoke(
-        app, ["draw", str(script), "--views-dir", str(views)]
+        app, ["draw", str(module), "--views-dir", str(views)]
     )
     assert result.exit_code == 0, result.output
     expected = {
@@ -155,7 +119,6 @@ def test_draw_writes_png_views(tmp_path: Path):
         "iso_ne.png", "iso_nw.png", "iso_se.png", "iso_sw.png",
     }
     assert expected == {p.name for p in views.iterdir()}
-    assert not draw.auto_enabled(), "draw auto toggle must be cleared"
 
 
 def test_build_writes_error_diagnostics_on_script_failure(tmp_path: Path):
@@ -185,7 +148,7 @@ def test_inspect_runs_from_script(tmp_path: Path):
         f"check(Assembly().with_part('cube', p.part), out=r'{out}')\n"
         f"inspect(p.part, method=FDM(wall_min_mm=1.0, overhang_max_deg=95.0), out=r'{out}', name='cube')\n"
     )
-    result = runner.invoke(app, ["check", str(script)])
+    result = runner.invoke(app, ["run", str(script)])
     assert result.exit_code == 0, result.output
     assert (out / "mechanism.json").exists()
     assert (out / "cube-printability.json").exists()
@@ -215,7 +178,7 @@ def test_relative_out_anchors_to_script_directory(
         "inspect(p.part, method=FDM(wall_min_mm=1.0, overhang_max_deg=95.0),"
         " out='outputs', name='cube')\n"
     )
-    result = runner.invoke(app, ["check", str(script)])
+    result = runner.invoke(app, ["run", str(script)])
     assert result.exit_code == 0, result.output
     assert (script_dir / "outputs" / "mechanism.json").exists()
     assert (script_dir / "outputs" / "cube-printability.json").exists()
@@ -260,6 +223,7 @@ def test_cli_explicit_out_stays_cwd_relative(
 
 
 def _cube_script(out: Path) -> str:
+    """An orchestration script: executed for effect by `run`/`build`."""
     return (
         "from build123d import Box, BuildPart\n"
         "from cad_khana.mechanism.assembly import Assembly\n"
@@ -271,13 +235,24 @@ def _cube_script(out: Path) -> str:
     )
 
 
+def _cube_module() -> str:
+    """A declaration module: imported by a verb, calls nothing effectful."""
+    return (
+        "from build123d import Box, BuildPart\n"
+        "from cad_khana.mechanism.assembly import Assembly\n"
+        "\n"
+        "with BuildPart() as p:\n"
+        "    Box(10, 10, 10)\n"
+        "assembly = Assembly().with_part('cube', p.part)\n"
+    )
+
+
 def test_draw_svg_format_writes_svg_views(tmp_path: Path):
-    out = tmp_path / "out"
     views = tmp_path / "views"
-    script = tmp_path / "asm.py"
-    script.write_text(_cube_script(out))
+    module = tmp_path / "asm.py"
+    module.write_text(_cube_module())
     result = runner.invoke(
-        app, ["draw", str(script), "--views-dir", str(views), "--format", "svg"]
+        app, ["draw", str(module), "--views-dir", str(views), "--format", "svg"]
     )
     assert result.exit_code == 0, result.output
     expected = {
@@ -293,24 +268,22 @@ def test_draw_svg_format_writes_svg_views(tmp_path: Path):
 def test_draw_svg_files_are_valid_xml(tmp_path: Path):
     import xml.etree.ElementTree as ET
 
-    out = tmp_path / "out"
     views = tmp_path / "views"
-    script = tmp_path / "asm.py"
-    script.write_text(_cube_script(out))
+    module = tmp_path / "asm.py"
+    module.write_text(_cube_module())
     runner.invoke(
-        app, ["draw", str(script), "--views-dir", str(views), "--format", "svg"]
+        app, ["draw", str(module), "--views-dir", str(views), "--format", "svg"]
     )
     for svg_file in views.glob("*.svg"):
         ET.parse(svg_file)  # raises if invalid XML
 
 
 def test_draw_both_format_writes_png_and_svg(tmp_path: Path):
-    out = tmp_path / "out"
     views = tmp_path / "views"
-    script = tmp_path / "asm.py"
-    script.write_text(_cube_script(out))
+    module = tmp_path / "asm.py"
+    module.write_text(_cube_module())
     result = runner.invoke(
-        app, ["draw", str(script), "--views-dir", str(views), "--format", "both"]
+        app, ["draw", str(module), "--views-dir", str(views), "--format", "both"]
     )
     assert result.exit_code == 0, result.output
     names = {p.name for p in views.iterdir()}
@@ -323,12 +296,11 @@ def test_draw_both_format_writes_png_and_svg(tmp_path: Path):
 
 
 def test_draw_default_format_unchanged(tmp_path: Path):
-    out = tmp_path / "out"
     views = tmp_path / "views"
-    script = tmp_path / "asm.py"
-    script.write_text(_cube_script(out))
+    module = tmp_path / "asm.py"
+    module.write_text(_cube_module())
     result = runner.invoke(
-        app, ["draw", str(script), "--views-dir", str(views)]
+        app, ["draw", str(module), "--views-dir", str(views)]
     )
     assert result.exit_code == 0, result.output
     names = {p.name for p in views.iterdir()}
@@ -337,13 +309,12 @@ def test_draw_default_format_unchanged(tmp_path: Path):
 
 
 def test_draw_svg_themeable_adds_classes(tmp_path: Path):
-    out = tmp_path / "out"
     views = tmp_path / "views"
-    script = tmp_path / "asm.py"
-    script.write_text(_cube_script(out))
+    module = tmp_path / "asm.py"
+    module.write_text(_cube_module())
     result = runner.invoke(
         app,
-        ["draw", str(script), "--views-dir", str(views),
+        ["draw", str(module), "--views-dir", str(views),
          "--format", "svg", "--themeable"],
     )
     assert result.exit_code == 0, result.output
@@ -354,36 +325,33 @@ def test_draw_svg_themeable_adds_classes(tmp_path: Path):
 
 
 def test_draw_svg_default_no_classes(tmp_path: Path):
-    out = tmp_path / "out"
     views = tmp_path / "views"
-    script = tmp_path / "asm.py"
-    script.write_text(_cube_script(out))
+    module = tmp_path / "asm.py"
+    module.write_text(_cube_module())
     runner.invoke(
-        app, ["draw", str(script), "--views-dir", str(views), "--format", "svg"]
+        app, ["draw", str(module), "--views-dir", str(views), "--format", "svg"]
     )
     svg = (views / "front.svg").read_text()
     assert "class=" not in svg
 
 
-def _cylinder_script(out: Path) -> str:
+def _cylinder_module() -> str:
     return (
         "from build123d import BuildPart, Cylinder\n"
         "from cad_khana.mechanism.assembly import Assembly\n"
-        "from cad_khana.mechanism.check import check\n"
         "\n"
         "with BuildPart() as p:\n"
         "    Cylinder(radius=5, height=10)\n"
-        f"check(Assembly().with_part('cyl', p.part), out=r'{out}')\n"
+        "assembly = Assembly().with_part('cyl', p.part)\n"
     )
 
 
 def test_draw_svg_cube_has_no_arcs(tmp_path: Path):
-    out = tmp_path / "out"
     views = tmp_path / "views"
-    script = tmp_path / "asm.py"
-    script.write_text(_cube_script(out))
+    module = tmp_path / "asm.py"
+    module.write_text(_cube_module())
     runner.invoke(
-        app, ["draw", str(script), "--views-dir", str(views), "--format", "svg"]
+        app, ["draw", str(module), "--views-dir", str(views), "--format", "svg"]
     )
     svg = (views / "iso_se.svg").read_text()
     assert "<polyline" in svg
@@ -391,12 +359,11 @@ def test_draw_svg_cube_has_no_arcs(tmp_path: Path):
 
 
 def test_draw_svg_cylinder_emits_arc_paths(tmp_path: Path):
-    out = tmp_path / "out"
     views = tmp_path / "views"
-    script = tmp_path / "asm.py"
-    script.write_text(_cylinder_script(out))
+    module = tmp_path / "asm.py"
+    module.write_text(_cylinder_module())
     result = runner.invoke(
-        app, ["draw", str(script), "--views-dir", str(views), "--format", "svg"]
+        app, ["draw", str(module), "--views-dir", str(views), "--format", "svg"]
     )
     assert result.exit_code == 0, result.output
     iso = (views / "iso_se.svg").read_text()
@@ -405,12 +372,11 @@ def test_draw_svg_cylinder_emits_arc_paths(tmp_path: Path):
 
 
 def test_draw_svg_cylinder_top_view_is_full_circle(tmp_path: Path):
-    out = tmp_path / "out"
     views = tmp_path / "views"
-    script = tmp_path / "asm.py"
-    script.write_text(_cylinder_script(out))
+    module = tmp_path / "asm.py"
+    module.write_text(_cylinder_module())
     runner.invoke(
-        app, ["draw", str(script), "--views-dir", str(views), "--format", "svg"]
+        app, ["draw", str(module), "--views-dir", str(views), "--format", "svg"]
     )
     top = (views / "top.svg").read_text()
     import re
@@ -426,12 +392,11 @@ def test_draw_svg_cylinder_top_view_is_full_circle(tmp_path: Path):
 def test_draw_svg_top_view_dedupes_silhouette(tmp_path: Path):
     """HLR emits the cylinder rim as both visible and hidden when looking
     down the axis; the draw pass must drop the hidden duplicate."""
-    out = tmp_path / "out"
     views = tmp_path / "views"
-    script = tmp_path / "asm.py"
-    script.write_text(_cylinder_script(out))
+    module = tmp_path / "asm.py"
+    module.write_text(_cylinder_module())
     runner.invoke(
-        app, ["draw", str(script), "--views-dir", str(views), "--format", "svg"]
+        app, ["draw", str(module), "--views-dir", str(views), "--format", "svg"]
     )
     top = (views / "top.svg").read_text()
     import re
@@ -443,13 +408,12 @@ def test_draw_svg_top_view_dedupes_silhouette(tmp_path: Path):
 
 
 def test_draw_svg_cylinder_themeable_classes_on_paths(tmp_path: Path):
-    out = tmp_path / "out"
     views = tmp_path / "views"
-    script = tmp_path / "asm.py"
-    script.write_text(_cylinder_script(out))
+    module = tmp_path / "asm.py"
+    module.write_text(_cylinder_module())
     runner.invoke(
         app,
-        ["draw", str(script), "--views-dir", str(views),
+        ["draw", str(module), "--views-dir", str(views),
          "--format", "svg", "--themeable"],
     )
     svg = (views / "iso_se.svg").read_text()
@@ -461,13 +425,12 @@ def test_draw_svg_cylinder_themeable_classes_on_paths(tmp_path: Path):
 
 
 def test_draw_view_subset_writes_only_requested(tmp_path: Path):
-    out = tmp_path / "out"
     views = tmp_path / "views"
-    script = tmp_path / "asm.py"
-    script.write_text(_cube_script(out))
+    module = tmp_path / "asm.py"
+    module.write_text(_cube_module())
     result = runner.invoke(
         app,
-        ["draw", str(script), "--views-dir", str(views), "--view", "top,iso_ne"],
+        ["draw", str(module), "--views-dir", str(views), "--view", "top,iso_ne"],
     )
     assert result.exit_code == 0, result.output
     names = {p.name for p in views.iterdir()}
@@ -475,33 +438,30 @@ def test_draw_view_subset_writes_only_requested(tmp_path: Path):
 
 
 def test_draw_view_unknown_name_fails(tmp_path: Path):
-    out = tmp_path / "out"
     views = tmp_path / "views"
-    script = tmp_path / "asm.py"
-    script.write_text(_cube_script(out))
+    module = tmp_path / "asm.py"
+    module.write_text(_cube_module())
     result = runner.invoke(
         app,
-        ["draw", str(script), "--views-dir", str(views), "--view", "isometric"],
+        ["draw", str(module), "--views-dir", str(views), "--view", "isometric"],
     )
     assert result.exit_code == 2
     assert "isometric" in result.output
 
 
-def _two_part_script(out: Path) -> str:
+def _two_part_module() -> str:
     return (
         "from build123d import Box, BuildPart, Location\n"
         "from cad_khana.mechanism.assembly import Assembly\n"
-        "from cad_khana.mechanism.check import check\n"
         "\n"
         "with BuildPart() as a:\n"
         "    Box(40, 40, 40)\n"
         "with BuildPart() as b:\n"
         "    Box(2, 2, 2)\n"
-        "check(\n"
+        "assembly = (\n"
         "    Assembly()\n"
-        "        .with_part('big', a.part)\n"
-        "        .with_part('small', b.part, location=Location((100, 0, 0))),\n"
-        f"    out=r'{out}',\n"
+        "    .with_part('big', a.part)\n"
+        "    .with_part('small', b.part, location=Location((100, 0, 0)))\n"
         ")\n"
     )
 
@@ -511,20 +471,19 @@ def test_draw_part_scopes_to_named_part(tmp_path: Path):
     box 100mm away. The post-projection canvas-fit transform makes this
     observable: the lines in `small`'s view should occupy most of the
     canvas instead of a tiny corner."""
-    out = tmp_path / "out"
     views_all = tmp_path / "views_all"
     views_part = tmp_path / "views_part"
-    script = tmp_path / "asm.py"
-    script.write_text(_two_part_script(out))
+    module = tmp_path / "asm.py"
+    module.write_text(_two_part_module())
 
     runner.invoke(
         app,
-        ["draw", str(script), "--views-dir", str(views_all),
+        ["draw", str(module), "--views-dir", str(views_all),
          "--format", "svg", "--view", "front"],
     )
     result = runner.invoke(
         app,
-        ["draw", str(script), "--views-dir", str(views_part),
+        ["draw", str(module), "--views-dir", str(views_part),
          "--format", "svg", "--view", "front", "--part", "small"],
     )
     assert result.exit_code == 0, result.output
@@ -618,7 +577,7 @@ def _pkg_tree(tmp_path: Path, name: str) -> Path:
     return root
 
 
-def test_check_runs_package_member_with_relative_imports(
+def test_run_executes_package_member_with_relative_imports(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """A script inside a package runs with ``python -m`` semantics:
@@ -630,7 +589,7 @@ def test_check_runs_package_member_with_relative_imports(
     monkeypatch.chdir(elsewhere)
 
     script = root / "pkgok" / "unit" / "asm.py"
-    result = runner.invoke(app, ["check", str(script)])
+    result = runner.invoke(app, ["run", str(script)])
     assert result.exit_code == 0, result.output
     data = json.loads((script.parent / "outputs" / "mechanism.json").read_text())
     assert data["status"] == "ok"
@@ -666,7 +625,7 @@ def test_plain_script_beside_init_free_dir_keeps_run_path(tmp_path: Path):
     out = tmp_path / "out"
     script = tmp_path / "plain.py"
     script.write_text(_cube_script(out))
-    result = runner.invoke(app, ["check", str(script)])
+    result = runner.invoke(app, ["run", str(script)])
     assert result.exit_code == 0, result.output
     assert json.loads((out / "mechanism.json").read_text())["status"] == "ok"
 
@@ -676,16 +635,242 @@ def test_draw_part_unknown_name_fails(tmp_path: Path):
     CLI as a nonzero exit. The mechanism diagnostics themselves still
     landed correctly before the draw step ran, so we assert on the
     CLI failure and the diagnostic message rather than overwritten JSON."""
-    out = tmp_path / "out"
     views = tmp_path / "views"
-    script = tmp_path / "asm.py"
-    script.write_text(_cube_script(out))
+    module = tmp_path / "asm.py"
+    module.write_text(_cube_module())
     result = runner.invoke(
         app,
-        ["draw", str(script), "--views-dir", str(views), "--part", "nope"],
+        ["draw", str(module), "--views-dir", str(views), "--part", "nope"],
     )
     assert result.exit_code == 1
     assert "nope" in result.output
+
+
+# --- import-model targets -------------------------------------------------
+
+
+def _factory_module() -> str:
+    return (
+        "from build123d import Box\n"
+        "from cad_khana.mechanism.assembly import Assembly\n"
+        "\n"
+        "\n"
+        "def build_rotor(size: float = 10.0) -> Assembly:\n"
+        "    return Assembly().with_part('rotor', Box(size, size, size))\n"
+        "\n"
+        "\n"
+        "def build_stator() -> Assembly:\n"
+        "    return Assembly().with_part('stator', Box(4, 4, 4))\n"
+    )
+
+
+def _write(path: Path, text: str) -> Path:
+    path.write_text(text)
+    return path
+
+
+def test_check_resolves_the_degenerate_assembly_value(tmp_path: Path):
+    """A module-level ``assembly`` value is the tolerated transitional
+    form — every existing consumer module already satisfies it."""
+    module = _write(tmp_path / "assembly.py", _cube_module())
+    result = runner.invoke(app, ["check", str(module)])
+    assert result.exit_code == 0, result.output
+    data = json.loads((tmp_path / "outputs" / "mechanism.json").read_text())
+    assert data["status"] == "ok"
+    assert data["parts"]["cube"]["volume_mm3"] > 0
+    assert data["exports"] == [], "check never exports"
+
+
+def test_check_calls_a_callable_assembly(tmp_path: Path):
+    module = _write(
+        tmp_path / "assembly.py",
+        "from build123d import Box\n"
+        "from cad_khana.mechanism.assembly import Assembly\n"
+        "\n"
+        "\n"
+        "def assembly() -> Assembly:\n"
+        "    return Assembly().with_part('cube', Box(10, 10, 10))\n",
+    )
+    result = runner.invoke(app, ["check", str(module)])
+    assert result.exit_code == 0, result.output
+    data = json.loads((tmp_path / "outputs" / "mechanism.json").read_text())
+    assert "cube" in data["parts"]
+
+
+def test_check_selects_a_named_factory(tmp_path: Path):
+    """``:factory`` names a member; it is called with its defaults, so
+    the defaults are the master design."""
+    module = _write(tmp_path / "assembly.py", _factory_module())
+    result = runner.invoke(app, ["check", f"{module}:build_stator"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(
+        (tmp_path / "outputs" / "assembly-build_stator" / "mechanism.json").read_text()
+    )
+    assert set(data["parts"]) == {"stator"}
+
+
+def test_check_imports_a_package_member_with_relative_imports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Import-model commands get ``python -m`` semantics too: a module
+    inside a package resolves both relative import forms."""
+    root = _pkg_tree(tmp_path, "pkgimp")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    module = root / "pkgimp" / "unit" / "assembly.py"
+    module.write_text(
+        "from build123d import Box\n"
+        "from cad_khana.mechanism.assembly import Assembly\n"
+        "\n"
+        "from ..shared import PREFIX\n"
+        "from .params import SIZE\n"
+        "\n"
+        "assembly = Assembly().with_part(PREFIX, Box(SIZE, SIZE, SIZE))\n"
+    )
+    result = runner.invoke(app, ["check", str(module)])
+    assert result.exit_code == 0, result.output
+    data = json.loads((module.parent / "outputs" / "mechanism.json").read_text())
+    assert data["parts"]["cube"]["volume_mm3"] > 0
+    assert not (elsewhere / "outputs").exists()
+
+
+def test_check_exits_nonzero_on_a_failed_assertion(tmp_path: Path):
+    module = _write(
+        tmp_path / "assembly.py",
+        "from build123d import Box, Location\n"
+        "from cad_khana.mechanism.assembly import Assembly\n"
+        "\n"
+        "assembly = (\n"
+        "    Assembly()\n"
+        "    .with_part('a', Box(10, 10, 10))\n"
+        "    .with_part('b', Box(10, 10, 10), location=Location((2, 0, 0)))\n"
+        "    .assert_no_interference('a', 'b')\n"
+        ")\n",
+    )
+    result = runner.invoke(app, ["check", str(module)])
+    assert result.exit_code == 1
+    data = json.loads((tmp_path / "outputs" / "mechanism.json").read_text())
+    assert data["status"] == "assertion_failed"
+
+
+def test_export_writes_stl_and_step(tmp_path: Path):
+    module = _write(tmp_path / "assembly.py", _cube_module())
+    result = runner.invoke(app, ["export", str(module)])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "outputs" / "assembly.stl").exists()
+    assert (tmp_path / "outputs" / "assembly.step").exists()
+    assert "assembly.stl" in result.output
+    assert not (tmp_path / "outputs" / "mechanism.json").exists()
+
+
+def test_default_out_separates_co_located_targets(tmp_path: Path):
+    """A unit's ``assembly.py`` owns ``outputs/``; every other target in
+    the same directory gets its own subdirectory, so a check module
+    cannot overwrite the product's ``mechanism.json``."""
+    _write(tmp_path / "assembly.py", _cube_module())
+    _write(
+        tmp_path / "check_cones.py",
+        "from build123d import Box\n"
+        "from cad_khana.mechanism.assembly import Assembly\n"
+        "\n"
+        "assembly = Assembly().with_part('cone', Box(1, 1, 1))\n",
+    )
+    assert runner.invoke(app, ["check", str(tmp_path / "assembly.py")]).exit_code == 0
+    assert runner.invoke(app, ["check", str(tmp_path / "check_cones.py")]).exit_code == 0
+    product = json.loads((tmp_path / "outputs" / "mechanism.json").read_text())
+    fixture = json.loads(
+        (tmp_path / "outputs" / "check_cones" / "mechanism.json").read_text()
+    )
+    assert set(product["parts"]) == {"cube"}
+    assert set(fixture["parts"]) == {"cone"}
+
+
+def test_explicit_out_overrides_the_default_and_stays_cwd_relative(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    module = _write(tmp_path / "assembly.py", _cube_module())
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    result = runner.invoke(app, ["check", str(module), "--out", "custom"])
+    assert result.exit_code == 0, result.output
+    assert (elsewhere / "custom" / "mechanism.json").exists()
+
+
+def test_missing_member_lists_the_modules_factories(tmp_path: Path):
+    module = _write(tmp_path / "unit.py", _factory_module())
+    result = runner.invoke(app, ["check", str(module)])
+    assert result.exit_code == 2
+    assert "build_rotor" in result.output and "build_stator" in result.output
+
+
+def test_missing_member_with_no_factories_says_so(tmp_path: Path):
+    module = _write(tmp_path / "unit.py", "SIZE = 10\n")
+    result = runner.invoke(app, ["check", str(module)])
+    assert result.exit_code == 2
+    assert "no public factory returning Assembly" in result.output
+
+
+def test_unknown_factory_name_is_a_boundary_error(tmp_path: Path):
+    module = _write(tmp_path / "assembly.py", _factory_module())
+    result = runner.invoke(app, ["check", f"{module}:build_nothing"])
+    assert result.exit_code == 2
+    assert "build_nothing" in result.output
+    assert "build_rotor" in result.output
+
+
+def test_non_assembly_member_is_a_boundary_error(tmp_path: Path):
+    module = _write(tmp_path / "assembly.py", "assembly = 42\n")
+    result = runner.invoke(app, ["check", str(module)])
+    assert result.exit_code == 2
+    assert "int" in result.output
+
+
+def test_factory_returning_a_non_assembly_is_a_boundary_error(tmp_path: Path):
+    module = _write(
+        tmp_path / "assembly.py",
+        "from cad_khana.mechanism.assembly import Assembly\n"
+        "\n"
+        "\n"
+        "def assembly() -> Assembly:\n"
+        "    return 'not an assembly'\n",
+    )
+    result = runner.invoke(app, ["check", str(module)])
+    assert result.exit_code == 2
+    assert "expected an Assembly" in result.output
+
+
+def test_factory_that_raises_leaves_error_diagnostics(tmp_path: Path):
+    module = _write(
+        tmp_path / "assembly.py",
+        "from cad_khana.mechanism.assembly import Assembly\n"
+        "\n"
+        "\n"
+        "def assembly() -> Assembly:\n"
+        "    raise RuntimeError('kaboom')\n",
+    )
+    result = runner.invoke(app, ["check", str(module)])
+    assert result.exit_code == 1
+    data = json.loads((tmp_path / "outputs" / "mechanism.json").read_text())
+    assert data["status"] == "error"
+    assert "kaboom" in data["error"]
+
+
+def test_import_time_failure_leaves_error_diagnostics(tmp_path: Path):
+    module = _write(tmp_path / "assembly.py", "raise RuntimeError('kaboom')\n")
+    result = runner.invoke(app, ["check", str(module)])
+    assert result.exit_code == 1
+    data = json.loads((tmp_path / "outputs" / "mechanism.json").read_text())
+    assert data["status"] == "error"
+    assert "kaboom" in data["error"]
+
+
+def test_missing_target_file_exits_two(tmp_path: Path):
+    result = runner.invoke(app, ["check", str(tmp_path / "nope.py")])
+    assert result.exit_code == 2
+    assert "no such file" in result.output
 
 
 # --- diff exit codes ------------------------------------------------------
@@ -727,7 +912,7 @@ def test_failing_part_does_not_abort_the_rest_of_the_sweep(tmp_path: Path):
     stale while still reading as this run's output."""
     script = tmp_path / "sweep.py"
     script.write_text(_sweep_script(tmp_path, (0.4, 3.0, 4.0)))
-    result = runner.invoke(app, ["check", str(script), "--out", str(tmp_path)])
+    result = runner.invoke(app, ["run", str(script), "--out", str(tmp_path)])
 
     assert result.exit_code == 1
     written = {
@@ -743,7 +928,7 @@ def test_failing_part_does_not_abort_the_rest_of_the_sweep(tmp_path: Path):
 def test_boundary_rolls_up_every_failure_with_its_json_path(tmp_path: Path):
     script = tmp_path / "sweep.py"
     script.write_text(_sweep_script(tmp_path, (0.4, 0.5, 4.0)))
-    result = runner.invoke(app, ["check", str(script), "--out", str(tmp_path)])
+    result = runner.invoke(app, ["run", str(script), "--out", str(tmp_path)])
 
     assert result.exit_code == 1
     assert "2 of the run's diagnostics failed" in result.output
@@ -754,7 +939,7 @@ def test_boundary_rolls_up_every_failure_with_its_json_path(tmp_path: Path):
 def test_clean_sweep_still_exits_zero(tmp_path: Path):
     script = tmp_path / "sweep.py"
     script.write_text(_sweep_script(tmp_path, (3.0, 4.0)))
-    result = runner.invoke(app, ["check", str(script), "--out", str(tmp_path)])
+    result = runner.invoke(app, ["run", str(script), "--out", str(tmp_path)])
     assert result.exit_code == 0, result.output
 
 
@@ -765,15 +950,15 @@ def test_deferral_does_not_leak_between_runs(tmp_path: Path):
     bad.write_text(_sweep_script(tmp_path, (0.4,)))
     good.write_text(_sweep_script(tmp_path, (3.0,)))
 
-    assert runner.invoke(app, ["check", str(bad), "--out", str(tmp_path)]).exit_code == 1
-    result = runner.invoke(app, ["check", str(good), "--out", str(tmp_path)])
+    assert runner.invoke(app, ["run", str(bad), "--out", str(tmp_path)]).exit_code == 1
+    result = runner.invoke(app, ["run", str(good), "--out", str(tmp_path)])
     assert result.exit_code == 0, result.output
 
 
 def test_script_raising_its_own_nonzero_exit_is_not_masked(tmp_path: Path):
     script = tmp_path / "s.py"
     script.write_text("raise SystemExit(3)\n")
-    result = runner.invoke(app, ["check", str(script), "--out", str(tmp_path)])
+    result = runner.invoke(app, ["run", str(script), "--out", str(tmp_path)])
     assert result.exit_code == 3
 
 

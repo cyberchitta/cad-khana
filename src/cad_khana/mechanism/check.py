@@ -19,7 +19,10 @@ class CheckResult:
     diagnostics: Diagnostics
 
 
-_export_default = True
+# Diagnostics-only by default: exporting is not what an orchestrator
+# does. `khana build` flips this back for the transition window, and
+# nothing else touches it — both go away with the flag in Phase C.
+_export_default = False
 
 
 def _set_export_default(enabled: bool) -> None:

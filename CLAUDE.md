@@ -103,16 +103,17 @@ cad-khana/
         inspect.py            # inspect() orchestrator + PrintabilityDiagnostics
       core/
         tessellation.py       # shared mesh utilities (wall + overhangs)
-      export.py               # STL, STEP (used by mechanism check)
+      export.py               # STL, STEP (used by `khana export`)
       draw.py                 # HLR engineering drawings (PNG + SVG)
       viewer.py               # ocp_vscode push (used by `khana view`)
       diff.py                 # dispatches on file kind (mechanism/printability)
+      target.py               # <module>[:<factory>] → Assembly (import-model verbs)
       cli.py                  # typer CLI — thin dispatcher
       # mcp.py                # future: MCP server over the same primitives
   tests/
     mechanism/                # per-module tests for mechanism.*
     printability/             # per-module tests for printability.*
-    test_cli.py, test_diff.py # cross-cutting tests
+    test_cli.py, test_diff.py, test_target.py  # cross-cutting tests
 ```
 
 **Discipline:** the library modules (`mechanism/*`, `printability/*`) have
@@ -122,65 +123,103 @@ would also need.
 
 ## Public API shape
 
-The package has no `__init__.py` (PEP 420 namespace). User scripts import
+The package has no `__init__.py` (PEP 420 namespace). User modules import
 the public names directly from their submodules — no aliasing, no shim,
 the structure speaks for itself.
+
+A **declaration module** — what `khana check|export|view|draw` import.
+Its public surface is its parameterized factories; it calls nothing
+effectful.
 
 ```python
 from build123d import *
 
 from cad_khana.mechanism.assembly import Assembly
-from cad_khana.mechanism.check import check
-from cad_khana.printability.inspect import inspect
-from cad_khana.printability.methods import FDM
 
 
-def housing():
+def housing() -> Part:
     with BuildPart() as p:
         Box(40, 30, 20)
     return p.part
 
 
-def lever():
+def lever() -> Part:
     with BuildPart() as p:
         Box(25, 5, 3)
     return p.part
 
 
-assembly = (
-    Assembly()
-    .add("housing", housing(), location=Location((0, 0, 0)))
-    .add("lever",   lever(),   location=Location((0, 0, 12)))
-    .assert_no_interference("lever", "housing")
-    .assert_clearance("lever", "housing", min_mm=0.2)
-)
+def build_mechanism(lift_mm: float = 12.0) -> Assembly:
+    return (
+        Assembly()
+        .add("housing", housing(), location=Location((0, 0, 0)))
+        .add("lever",   lever(),   location=Location((0, 0, lift_mm)))
+        .assert_no_interference("lever", "housing")
+        .assert_clearance("lever", "housing", min_mm=0.2)
+    )
 
-check(assembly, out="outputs/")
+
+assembly = build_mechanism()   # degenerate form — a memoized master
+```
+
+A **command script** — what `khana run` executes. Orchestration only:
+loops, batches, and the effectful calls the verbs don't cover.
+
+```python
+from cad_khana.printability.inspect import inspect
+from cad_khana.printability.methods import FDM
+
+from .assembly import housing, lever
+
 inspect(housing(), method=FDM(), out="outputs/", name="housing")
 inspect(lever(),   method=FDM(), out="outputs/", name="lever")
 ```
 
-`check()` runs mechanism diagnostics, executes assertions, writes exports
-and `mechanism.json`, and exits nonzero if any assertion failed.
-`inspect()` does the same for one part and writes
-`<name>-printability.json`.
+`check()` runs mechanism diagnostics, executes assertions, writes
+`mechanism.json`, and exits nonzero if any assertion failed — it does
+**not** export (`export_assembly` / `khana export` does). `inspect()`
+does the same for one part and writes `<name>-printability.json`.
 
 ## CLI surface
 
+Two kinds of command. **Import-model verbs** take a target —
+`<module-path>[:<factory>]` — import the module, resolve one member,
+and do one thing to it. **Execute-model** commands run a script for
+effect.
+
 ```
-khana build <path>              # run script, export, write diagnostics JSON
-khana check <path>              # diagnostics only, no export
-khana view <path>               # build + push to OCP viewer
-khana draw <path> --format png|svg|both     # orthographic/iso engineering drawings (HLR line-art)
+khana check  <target>           # diagnostics + assertions, write mechanism.json
+khana export <target>           # STL + STEP
+khana view   <target>           # push to OCP viewer
+khana draw   <target> --format png|svg|both   # orthographic/iso HLR line-art
+khana run    <script>           # execute an orchestration script
+khana build  <script>           # DEPRECATED (retires in Phase C): run + export
 khana diff <old> <new>          # diff two diagnostics JSON files
 ```
 
-Use `typer` for the CLI. Every command exits nonzero on failure. `diff`
-follows the `diff`/`git diff` contract: exit 0 when the files are
-equivalent, 1 when differences are found, 2 on error. `build` and
-`check` always write `mechanism.json` (and `<name>-printability.json` per
-`inspect()` call) even on failure, so the agent can always read structured
-error info.
+A target's member is the named factory called with its defaults, or —
+with no `:factory` — the module's `assembly` name, called if callable
+and accepted as a bare value otherwise (the degenerate, transitional
+form). Anything else is a boundary error listing the module's public
+`-> Assembly` factories. `--out` defaults to `<module-dir>/outputs` for
+a unit's `assembly.py` and `<module-dir>/outputs/<stem>[-<factory>]`
+for any other target, so co-located targets never overwrite each
+other's `mechanism.json`.
+
+Use `typer` for the CLI; resolution lives in `target.py`, not in the
+CLI module. Every command exits nonzero on failure: **2** for a usage
+error (unresolvable target, unknown `--view`) and **1** for a failed
+run. Any command that imports or executes user code writes
+`mechanism.json` (and `<name>-printability.json` per `inspect()` call)
+even on failure, so the agent can always read structured error info.
+`diff` follows the `diff`/`git diff` contract: exit 0 when the files
+are equivalent, 1 when differences are found, 2 on error.
+
+Declarations are imported by verbs; effects live at the CLI boundary.
+A module the import-model verbs consume never calls `check()`,
+`inspect()`, or an exporter — that is what `khana run` is for. The
+full design, its phases, and what is still owed:
+`_notes/draft-script-decomposition.md`.
 
 ## Diagnostics JSON schemas (v0.8)
 
@@ -426,14 +465,18 @@ for end-user install, `uvx khana ...` for ephemeral use.
 - **Side effect isolation.** `mechanism.diagnostics`, `mechanism.assertions`,
   `printability.wall`, `printability.overhangs`, and `diff.py` are pure —
   take data, return data. File I/O lives in `export.py`, `draw.py`,
-  `mechanism.check`, `printability.inspect`, and the CLI. Viewer and draw
-  pushes are gated on module-level toggles set by the CLI command, so user
-  scripts stay identical across `build`/`view`/`draw`/`check`.
+  `mechanism.check`, `printability.inspect`, and the CLI. Each verb
+  performs its own effect at the boundary — `view` pushes, `draw`
+  draws, `export` exports — so a declaration module is identical under
+  all of them. (The `viewer`/`draw` auto-toggles survive unused until
+  Phase C deletes them; don't build on them.)
 - **Error handling at the boundary.** Uncaught exceptions from user
-  scripts are caught at the CLI and written to `mechanism.json` with
-  `status: "error"` and the traceback in `error`. Never crash without
-  leaving a diagnostic behind. Inside the library, trust inputs — no
-  defensive checks.
+  scripts and from imported modules/factories are caught at the CLI and
+  written to `mechanism.json` with `status: "error"` and the traceback
+  in `error`. Never crash without leaving a diagnostic behind. A target
+  that names no resolvable member is the one exception: it is a usage
+  error (exit 2, no JSON), because nothing ran. Inside the library,
+  trust inputs — no defensive checks.
 - **Assertions collect, don't short-circuit.** Evaluate every assertion
   and record all results; the agent wants every failure at once. This
   holds *across* calls too: under the CLI, a failing `check()`/`inspect()`
