@@ -578,6 +578,36 @@ def test_run_executes_package_member_with_relative_imports(
     assert not (elsewhere / "outputs").exists()
 
 
+def test_run_lets_a_standalone_script_import_its_sibling_module(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A command script imports the declaration module it sits beside —
+    the two-file shape the skill recommends. ``runpy.run_path`` does not
+    put the script's directory on ``sys.path`` on its own, so without
+    the fix this raises ModuleNotFoundError while ``khana check`` on a
+    module in the same directory resolves the same import fine."""
+    unit = tmp_path / "sibling_unit"
+    unit.mkdir()
+    # A distinct module name: ``target.load`` caches standalone modules
+    # in ``sys.modules`` under the file stem, so reusing ``assembly``
+    # would resolve to another test's file in the same process.
+    (unit / "hinge_decl.py").write_text("SIZE = 10\n")
+    script = unit / "printability.py"
+    # The script asserts the imported value itself: resolving the *wrong*
+    # sibling (a stale ``sys.modules`` entry) would exit 0 otherwise.
+    script.write_text(
+        "from hinge_decl import SIZE\n"
+        "\n"
+        "assert SIZE == 10, f'imported the wrong sibling: {SIZE}'\n"
+    )
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    result = runner.invoke(app, ["run", str(script)])
+    assert result.exit_code == 0, result.output
+
+
 def test_package_member_failure_writes_error_diagnostics(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

@@ -1,6 +1,6 @@
 ---
 name: cad-khana
-description: Diagnostics-first CAD wrapper around Build123d: assembly-level interference/clearance assertions plus optional per-part printability checks. Load BEFORE editing an `assembly.py` that uses the wrapper or interpreting its diagnostic JSON — SKILL.md has conventions the scripts rely on but don't restate. TRIGGER: about to run `khana check`/`build`/`view`/`draw`, or editing a file that imports `cad_khana` or calls `Assembly()`/`check()`/`inspect()`.
+description: Diagnostics-first CAD wrapper around Build123d: assembly-level interference/clearance assertions plus optional per-part printability checks. Load BEFORE editing an `assembly.py` that uses the wrapper or interpreting its diagnostic JSON — SKILL.md has conventions the scripts rely on but don't restate, including which of three file kinds you are editing. TRIGGER: about to run `khana check`/`export`/`view`/`draw`/`run`, or editing a file that imports `cad_khana` or calls `Assembly()`/`check()`/`inspect()`.
 ---
 
 # cad-khana
@@ -9,13 +9,20 @@ cad-khana splits geometric reasoning into two workflows:
 
 - **Mechanism** — relational checks on an assembly (no interference,
   clearance between parts). Expressed via `Assembly.assert_*(...)` and
-  evaluated by `check(assembly, out=...)`. Writes `mechanism.json`.
+  evaluated by `khana check`. Writes `mechanism.json`.
 - **Printability** — per-part, per-manufacturing-method checks (min
   wall thickness, overhangs). Expressed via `inspect(part, method=...)`.
   Writes `<name>-printability.json`.
 
-A script typically does both: composes an `Assembly`, calls `check()`,
-then calls `inspect()` once per printed part.
+**Declarations are imported by verbs; effects live at the CLI
+boundary.** A module that declares parts, assemblies and claims calls
+nothing effectful — no `check()`, no `inspect()`, no export. `khana
+check` imports it and evaluates; `khana export` imports the same file
+and writes STL/STEP; `khana draw` draws it. Genuinely imperative work
+(batches, sweeps) goes in a separate script behind `khana run`.
+
+A declaration module therefore has **no `if __name__ == "__main__"`
+block** — nothing executes it. See **The three file kinds**.
 
 ## Setup
 
@@ -44,40 +51,92 @@ proceeding.
 
 ## CLI
 
+Two kinds of command. **Import-model verbs** take a *target*, import
+the module, resolve one member, and do one thing to it. **Execute-model**
+runs a script for effect.
+
 ```
-khana build  <script>          # run script, export STL/STEP, write JSON diagnostics
-khana check  <script>          # run script, write JSON diagnostics only (no export)
-khana view   <script>          # build, then push assembly to the OCP viewer (socket)
-khana draw   <script> [--view <names>] [--part <name>] [--format png|svg|both] [--themeable]  # build, then write engineering drawings under <out>/views/
+khana check  <target>          # diagnostics + assertions → mechanism.json
+khana export <target>          # STL + STEP
+khana view   <target>          # push assembly to the OCP viewer (socket)
+khana draw   <target> [--view <names>] [--part <name>] [--format png|svg|both] [--themeable]
+khana run    <script>          # execute an orchestration script
 khana diff   <before> <after>  # diff two JSON files; exit 0 identical, 1 differences, 2 error
 khana status                   # JSON probe of versions + viewer reachability; exit nonzero if degraded
 khana --version
 ```
 
-Prefer `khana check` during fast iteration — it skips STL/STEP export
-so the loop is tighter. Switch to `khana build` when you want the
-exports on disk.
+`khana check` is the primary loop. It never exports — STL/STEP come
+from `khana export`, and the two read the *same* file, so there is no
+toggle to get wrong and no way for check-only geometry to reach an
+export.
 
-A script that is a **package member** (its directory and every
-ancestor up to the package root carry an `__init__.py`) runs with
-`python -m` semantics: the package root's parent goes on `sys.path`
-and the script's relative imports (`from .params import …`,
-`from ..shared import …`) resolve. Plain standalone scripts run
-exactly as before. This lets sub-assembly files in a package tree be
-both imported by their composing parent and `khana check`-ed
-standalone with no `sys.path` bootstrapping in the script itself.
+### Targets: `<module-path>[:<factory>]`
 
-JSON diagnostics are always written to `--out` (default `outputs/`),
-even on failure — read them to diagnose errors. Exit code is nonzero
-on any assertion failure or script exception.
+```
+khana check unit/assembly.py                 # the `assembly` member
+khana check unit/assembly.py:build_rotor     # a named factory, called with defaults
+```
 
-**Output location.** A relative `out=` passed to `check()` / `inspect()`
-inside a script is anchored to the script file's directory, so
-`out="outputs"` lands next to the script regardless of the cwd you
-invoked `khana` from. Same for `khana`'s default `--out` (used for
-error diagnostics if the script crashes before reaching `check()`).
-Pass an absolute path, or an explicit `--out <dir>` (cwd-relative,
-because you typed it), to override.
+Member resolution, in order:
+
+1. `:factory` given → that name, which must be callable, called with
+   **no arguments** — so a factory's defaults are the master design.
+2. No `:factory` → the name `assembly`: a callable is called; a bare
+   `Assembly` value is accepted as the **degenerate** form.
+3. Neither → a usage error (exit 2) that **lists the module's public
+   `-> Assembly` factories**. Read that message rather than grepping —
+   it is the discovery mechanism, which is why the `-> Assembly` return
+   annotation is load-bearing.
+
+Binding arguments from the CLI is not supported: a factory is called
+with its defaults or not at all. A family with several members (three
+floor roles, twelve animation frames) is a command script today — see
+**Parametrized families**.
+
+### Where output lands
+
+**The target owns its default out**, so co-located targets never
+overwrite each other's `mechanism.json`:
+
+| target | writes to |
+|---|---|
+| `unit/assembly.py` | `unit/outputs/` |
+| `unit/check_cones.py` | `unit/outputs/check_cones/` |
+| `unit/assembly.py:build_lid` | `unit/outputs/assembly-build_lid/` |
+
+**`assembly` is a privileged *stem*, not "the unit's main file".** A
+plain unit check whose file happens to be called `single_floor.py`
+lands in `outputs/single_floor/`, not `outputs/`. If you are comparing
+against a baseline by path, look in the subdirectory before reading a
+missing file as a regression.
+
+An explicit `--out <dir>` overrides and is taken **cwd-relative**
+(you typed it). Inside a script under `khana run`, a relative `out=`
+passed to `check()` / `inspect()` anchors to the *script's* directory,
+so `out="outputs"` lands next to the script regardless of cwd.
+
+JSON diagnostics are always written, even on failure — read them to
+diagnose errors. Exit codes: **2** for a usage error (unresolvable
+target, unknown `--view`), **1** for a failed run.
+
+### Imports resolve as if you had run the file directly
+
+A **package member** (its directory and every ancestor up to the
+package root carry an `__init__.py`) loads with `python -m` semantics:
+the package root's parent goes on `sys.path` and relative imports
+(`from .params import …`, `from ..shared import …`) resolve. A
+**standalone** file gets its own directory on `sys.path`, so
+`from assembly import clevis` finds the sibling. Both hold for import
+verbs and for `khana run` alike, so a sub-assembly file can be both
+imported by its composing parent and addressed standalone with no
+`sys.path` bootstrapping of its own.
+
+One caveat for standalone files: they are cached in `sys.modules`
+under the **file stem**, so two different `assembly.py` files in one
+process resolve to whichever loaded first. Inside a package tree this
+cannot happen — another reason to use packages for anything with more
+than one unit.
 
 ### Viewer: no editor required
 
@@ -112,22 +171,111 @@ server, one to push the current file to it:
 ]
 ```
 
-## Script structure
+## The three file kinds
 
-Keep four sections, in order:
+Name a file by what it *is*. The name is the whole tell — a reader
+should know from it whether the file declares, verifies, or
+orchestrates.
+
+| kind | name | addressed by | imported by others? |
+|---|---|---|---|
+| **declaration module** | `assembly.py`, `animated_assembly.py` | `khana check` / `export` / `view` / `draw` | yes — this is the product |
+| **check module** | `check_*.py` | `khana check` | **never** |
+| **command script** | a descriptive noun — `printability.py`, `role_sweep.py` | `khana run` | never |
+
+### Declaration module
+
+Parameters, pure part functions, and **parameterized factories**
+returning `Assembly` with their claims attached. Calls nothing
+effectful. Four sections, in order:
 
 1. **Parameters + derived** — named constants at the top, so one change
    propagates through everything.
 2. **Pure part functions** — each returns a `Part`. Take parameters with
    defaults; no hidden globals, no mutation.
-3. **Assembly composition** — build an `Assembly` by chaining
+3. **Factories** — `build_<name>(...) -> Assembly`, chaining
    `.with_part()` / `.with_subassembly()` and `.assert_*()` calls.
-   Call `check(assembly, out="outputs")`.
-4. **Per-part printability** — one `inspect(part, method=FDM(), name=...)`
-   call per printed part.
+   Defaults are the master design.
+4. Optionally `assembly = build_<name>()` — the degenerate memoized
+   master, so `khana check <file>` resolves without a `:factory`.
 
-See `references/examples/pin_hinge/assembly.py` for the canonical
-example.
+### Check module
+
+An ordinary assembly module whose *purpose* is verification. It imports
+product factories, composes a fixture, declares claims about the
+interaction, and exposes the result as a factory. Prefix `check_`.
+
+**The never-imported rule: product modules never import check
+modules** — the same rule that keeps test files out of shipped code.
+That is what makes assertion-only geometry free (below).
+
+### Command script
+
+Orchestration only: loops, batches, and the effectful calls the verbs
+don't cover. Never a claim that a verb could have evaluated.
+
+- **`printability.py`** is the name for a unit's `inspect()` batch. It
+  names its output, it is a noun, and it can't be mistaken for a
+  `check_*.py`.
+- **`<family>_sweep.py`** for a parametrized family the CLI cannot
+  address (`role_sweep.py`, `frame_sweep.py`).
+- **No `run_` prefix** — `khana run .../run_printability.py` stutters,
+  and the directory position already says what the file is.
+- **Open the docstring with its own invocation line**, then a sentence
+  saying which member `khana check` on the sibling `assembly.py`
+  covers and which it does not. That sentence is load-bearing: without
+  it, "I ran `khana check`, it was green" silently means one role, one
+  frame, or no printability at all.
+
+See `references/examples/pin_hinge/` for a worked declaration module
+plus command script.
+
+### Vacuous green
+
+`khana check` on a module that declares **no assertions** exits 0 and
+writes `"assertions": []`. That is not a passing design; it is an
+unasked question, and an agent will read it as success. Modules that
+strip assertions by design (an exhibit or render-only variant) should
+say so in the first line of the docstring and carry a name that marks
+them — a reader who sees `animated_exhibit_assembly.py` go green
+should already know that means nothing. Check `assertions` is
+non-empty before believing a green run on an unfamiliar file.
+
+### Parametrized families
+
+The CLI addresses **one member per invocation**, and a factory is
+called with its defaults. So a family — three floor roles, twelve
+animation frames — is a command script:
+
+```python
+"""Check all three floor roles.
+
+    khana run m05_diverter/ramp_mechanism/role_sweep.py
+
+`khana check` on the sibling `assembly.py` covers the `middle` role
+only (the factory default). `base` and `top` are checked here.
+"""
+from cad_khana.mechanism.check import check
+
+from assembly import FLOOR_ROLES, make_assembly
+
+for role in FLOOR_ROLES:
+    check(make_assembly(role), out=f"outputs/{role}")
+```
+
+Two things make this safe rather than a workaround:
+
+- **`khana run` defers failures.** Every iteration runs, every JSON on
+  disk is current, and the run exits nonzero once at the end. Don't
+  hand-roll failure accumulation or `raise SystemExit` — that
+  duplicates the boundary and aborts the loop early.
+- **Give each member its own `out=`.** A relative path anchors to the
+  script's directory, and a per-member subdirectory is what keeps the
+  twelfth frame from overwriting the first.
+
+Name these `<family>_sweep.py`. The docstring's coverage sentence
+matters most here: `khana check` on the sibling covers exactly one
+member, and nothing signals that but the sentence.
 
 ## Designing a new mechanism
 
@@ -170,20 +318,20 @@ cheap, but discovering a missing one downstream is expensive.
 
 ## Minimal skeleton
 
+`assembly.py` — the declaration module. Note what is *absent*: no
+`check()`, no `inspect()`, no `__main__`.
+
 ```python
 from build123d import Box, Cylinder, Location, Part, Pos, Rot
 
 from cad_khana.mechanism.assembly import Assembly
-from cad_khana.mechanism.check import check
-from cad_khana.printability.inspect import inspect
-from cad_khana.printability.methods import FDM
 
 # 1. parameters + derived
 WIDTH = 40.0
 HEIGHT = 20.0
 PIN_D = 3.0
-PIN_CLEARANCE = 0.25
-PIN_HOLE_D = PIN_D + 2 * PIN_CLEARANCE
+PIN_GAP = 0.4                      # rest gap between pin and bracket top
+PIN_Z = HEIGHT + PIN_D / 2 + PIN_GAP
 
 # 2. pure part functions
 def bracket(w: float = WIDTH, h: float = HEIGHT) -> Part:
@@ -192,18 +340,37 @@ def bracket(w: float = WIDTH, h: float = HEIGHT) -> Part:
 def pin(length: float = WIDTH, d: float = PIN_D) -> Part:
     return Cylinder(d / 2, length)
 
-# 3. assembly + mechanism assertions
-assembly = (
-    Assembly()
-    .with_part("bracket", bracket())
-    .with_part("pin", pin(), location=Location((0, 0, HEIGHT / 2)) * Rot(90, 0, 0))
-    .assert_no_interference("pin", "bracket")
-)
+# 3. factory — defaults are the master design
+def build_mount(pin_gap: float = PIN_GAP) -> Assembly:
+    pin_z = HEIGHT + PIN_D / 2 + pin_gap
+    return (
+        Assembly()
+        .with_part("bracket", bracket())
+        .with_part("pin", pin(), location=Location((0, 0, pin_z)) * Rot(90, 0, 0))
+        .assert_no_interference("pin", "bracket")
+        .assert_clearance("pin", "bracket", min_mm=pin_gap * 0.9)
+    )
 
-if __name__ == "__main__":
-    check(assembly, out="outputs")
-    # 4. printability checks for each printed part
-    inspect(bracket(), method=FDM(), out="outputs", name="bracket")
+# 4. degenerate memoized master, so `khana check <file>` resolves
+assembly = build_mount()
+```
+
+`printability.py` — the command script beside it:
+
+```python
+"""Per-part printability.
+
+    khana run unit/printability.py
+
+`khana check` on the sibling `assembly.py` covers the mechanism claims.
+It does not cover anything in this file.
+"""
+from cad_khana.printability.inspect import inspect
+from cad_khana.printability.methods import FDM
+
+from assembly import bracket
+
+inspect(bracket(), method=FDM(), out="outputs", name="bracket")
 ```
 
 A two-part mechanism with no relocatable unit and no joint is the
@@ -497,14 +664,33 @@ and assertions against detail-only parts skip (`passed: null`) in runs
 that lack them. Don't mirror an assertion at both levels; that just
 evaluates it twice under two names.
 
+**Claims about the *interaction* of units belong in a check module.**
+A claim owned by no single model — probe cones against sightlines, a
+merged fixture, two units' beliefs about a shared datum — has the
+fixture as its owning level, so give the fixture a file. It imports
+the product factories, composes them, declares the claims, and exposes
+the result as a factory:
+
+```
+m03_scanner/
+  assembly.py        # product factories (+ degenerate `assembly`)
+  check_cones.py     # composes both, asserts, exposes a factory
+```
+
+`khana check` evaluates both kinds — the distinction is in how a claim
+is *expressed*, not how it is run. (pytest is the proof: fixture-heavy
+and three-line tests share one runner.)
+
 **Geometry that exists only to be asserted against** — a sightline
-cone, a tool-access envelope — is an ordinary `with_part`, so nothing
-in the library marks it as un-manufacturable: `check()` exports
-whatever assembly it is handed. Keep it out of the exported one. Build
-two: the real assembly, and a copy that adds the probe parts and their
-assertions, handed to `check()`. Relying on `khana check` not
-exporting is not the separation — the same script under `khana build`
-writes the probes into the STL and STEP beside the real parts.
+cone, a tool-access envelope — is an ordinary `with_part`; nothing in
+the library marks it un-manufacturable. It needs no special handling,
+because **no exporter ever imports a check module**: `khana export
+assembly.py` cannot see `check_cones.py`'s probes, and `khana check
+check_cones.py` never exports. The probe lands in that file's `parts[]`,
+which is honest — that file is a fixture run's output.
+
+Verify a cone-free export by **solid count**, not by grepping part
+names: the STEP exporter writes no names.
 
 ### Group assertions
 
@@ -756,6 +942,15 @@ clear→contact interval and bisects inside it — bisection alone would
 assume contact only ever starts once, and `Onset.brackets` tells you
 how many transitions the samples actually showed.
 
+**A sweep is never a substitute for a multi-pose `check()` loop.** The
+two look alike from outside — both are "the factory at N values" — and
+are opposite in kind: `sweep` measures raw pairwise overlap volumes and
+`classify` labels phases, but **neither evaluates a single assertion**,
+and neither writes a `mechanism.json` you can diff. If you want the
+declared claims re-checked at each of twelve poses, that is a command
+script looping `check(factory(t), out=...)`. Swapping it for `sweep`
+deletes the regression net.
+
 **All of this is sampled, and sampling a motion is an inner
 approximation.** `never` means "at none of the sampled parameters",
 which is not the same as never — a real m03 sweep at 9 frames saw one
@@ -876,6 +1071,13 @@ failure — under `khana` at the end of the script, standalone
 immediately (see "Available mechanism assertions"). Each call is
 independent — pass a different `name=` per printed part.
 
+**`inspect()` calls live in a command script**, conventionally
+`printability.py` beside the unit's `assembly.py`, run with `khana
+run`. They are per-part and per-method, so they are a batch rather
+than a claim on the assembly, and no verb evaluates them. A green
+`khana check` says nothing about printability — which is exactly why
+that script's docstring must say so.
+
 **Waiving a known-benign failure.** When a check fails for a reason
 you've verified is an artifact or an accepted trade-off (a sharp-edge
 sampling artifact, a 90° ceiling you'll print with supports), waive it
@@ -932,7 +1134,7 @@ the model to fix, not to waive. Only a low alignment supports a
   assertion was skipped because a part it references is absent from
   this run (`detail` names the missing parts) — normal for assertions
   against override-added detail parts in a standalone run. Skips never
-  fail the build; watch for an assertion that is *always* skipped,
+  fail the run; watch for an assertion that is *always* skipped,
   which usually means a typo'd part name. `value` is the measured/
   claimed scalar for `assert_distance` / `assert_scalar` (recorded
   even on pass; `khana diff` reports its drift) and `null` otherwise.
@@ -988,8 +1190,9 @@ the model to fix, not to waive. Only a low alignment supports a
 
 ## Workflow
 
-1. Write the script. Use the canonical example as a template.
-2. `khana check path/to/script.py`
+1. Write the declaration module. Use the canonical example as a template.
+2. `khana check path/to/assembly.py` — and `khana run
+   path/to/printability.py` once printed parts exist.
 3. Read `outputs/mechanism.json` and each `outputs/<name>-printability.json`.
    - `status: "error"` → check `hint` first; if non-null it resolves the
      most common cases without reading the full traceback in `error`.
@@ -1005,7 +1208,7 @@ the model to fix, not to waive. Only a low alignment supports a
 4. Edit parameters or geometry. Re-run. Repeat.
 5. When a question is shape-level rather than scalar ("is the tang
    pointing the right way", "did that cut land where I expected"), run
-   `khana draw path/to/script.py` and read the views under
+   `khana draw path/to/assembly.py` and read the views under
    `outputs/views/`. See **Reading drawings** below for which view
    answers which kind of question. Default format is PNG; pass
    `--format svg` for lossless vector output (diffable, inspectable
@@ -1016,7 +1219,7 @@ the model to fix, not to waive. Only a low alignment supports a
    drawing while a CSS consumer (e.g. a website embedding the SVG
    inline) can restyle the two classes for dark-mode or brand colors.
 6. When diagnostics are clean, ask the human to view it via
-   `khana view path/to/script.py` (which pushes to the OCP VS Code
+   `khana view path/to/assembly.py` (which pushes to the OCP VS Code
    viewer).
 
 ## When to stop iterating

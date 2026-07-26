@@ -1,5 +1,5 @@
 """
-Pin hinge — canonical cad-khana example.
+Pin hinge — canonical cad-khana example. A **declaration module**.
 
 A three-part mechanism: a U-shaped clevis, a flat tang that swings in its
 slot, and a pin passing through both. The design shows the workflow
@@ -9,21 +9,25 @@ slot, and a pin passing through both. The design shows the workflow
   propagates through the whole assembly;
 * pure part functions that return Build123d ``Part`` values;
 * declarative assembly composition via method chaining;
-* mechanism assertions (no interference, clearance) and per-part
-  printability checks (``inspect(..., method=FDM())``).
+* mechanism assertions (no interference, clearance) declared on the
+  assembly, so a verb evaluates them.
 
-Run ``khana build skills/cad-khana/references/examples/pin_hinge/assembly.py`` to regenerate
-``outputs/assembly.stl``, ``outputs/assembly.step``,
-``outputs/mechanism.json``, and one ``*-printability.json`` per printed
-part (``clevis``, ``tang``; the pin is assumed stock hardware).
+This file **calls nothing effectful** — no ``check()``, no ``inspect()``,
+no export. Its public surface is the factory ``build_hinge()``; the verbs
+import it and each does its own one thing::
+
+    khana check  .../pin_hinge/assembly.py       # outputs/mechanism.json
+    khana export .../pin_hinge/assembly.py       # outputs/assembly.{stl,step}
+    khana draw   .../pin_hinge/assembly.py       # outputs/views/*.png
+    khana view   .../pin_hinge/assembly.py       # push to the OCP viewer
+
+Per-part printability lives in the sibling command script:
+``khana run .../pin_hinge/printability.py``.
 """
 
 from build123d import Box, Cylinder, Location, Part, Pos, Rot
 
 from cad_khana.mechanism.assembly import Assembly
-from cad_khana.mechanism.check import check
-from cad_khana.printability.inspect import inspect
-from cad_khana.printability.methods import FDM
 
 
 # --- Parameters ---------------------------------------------------------
@@ -107,30 +111,43 @@ def clevis(
 
 # --- Assembly -----------------------------------------------------------
 
-assembly = (
-    Assembly()
-    .with_part("clevis", clevis())
-    .with_part(
-        "tang",
-        tang(),
-        location=Location((-TANG_PIVOT_OFFSET, 0, PIVOT_Z)),
+
+def build_hinge(
+    slot_clearance: float = SLOT_CLEARANCE,
+    pin_clearance: float = PIN_CLEARANCE,
+) -> Assembly:
+    """The hinge, with its claims. Defaults are the master design.
+
+    This is the module's public surface. A *member* is this factory plus
+    an argument binding; calling it with defaults is what the CLI does,
+    and what a composing parent would do to place the master. Overriding
+    a clearance is how you ask "does it still pass at 0.15?" — the same
+    call a parent makes, not a special tool-facing entry point.
+    """
+    slot_gap = TANG_T + 2 * slot_clearance
+    hole_d = PIN_D + 2 * pin_clearance
+    return (
+        Assembly()
+        .with_part("clevis", clevis(slot_gap=slot_gap, hole_d=hole_d))
+        .with_part(
+            "tang",
+            tang(hole_d=hole_d),
+            location=Location((-TANG_PIVOT_OFFSET, 0, PIVOT_Z)),
+        )
+        .with_part(
+            "pin",
+            pin(),
+            location=Location((0, 0, PIVOT_Z)) * Rot(90, 0, 0),
+        )
+        .assert_no_interference("tang", "clevis")
+        .assert_no_interference("pin", "clevis")
+        .assert_no_interference("pin", "tang")
+        .assert_clearance("tang", "clevis", min_mm=0.3)
+        .assert_clearance("pin", "clevis", min_mm=0.2)
     )
-    .with_part(
-        "pin",
-        pin(),
-        location=Location((0, 0, PIVOT_Z)) * Rot(90, 0, 0),
-    )
-    .assert_no_interference("tang", "clevis")
-    .assert_no_interference("pin", "clevis")
-    .assert_no_interference("pin", "tang")
-    .assert_clearance("tang", "clevis", min_mm=0.3)
-    .assert_clearance("pin", "clevis", min_mm=0.2)
-)
 
 
-if __name__ == "__main__":
-    check(assembly, out="outputs")
-    # The pin is stock (a cylindrical rod); only the printed parts get
-    # printability checks.
-    inspect(clevis(), method=FDM(), out="outputs", name="clevis")
-    inspect(tang(), method=FDM(), out="outputs", name="tang")
+# The degenerate form: a memoized master, so `khana check <file>` with no
+# `:factory` resolves. Tolerated and documented, not the contract — the
+# factory above is. Parents call `build_hinge()`, never this.
+assembly = build_hinge()

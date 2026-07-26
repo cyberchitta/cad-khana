@@ -92,18 +92,18 @@ def load(path: Path) -> ModuleType:
     if spec is None:
         return _load_standalone(path)
     module, root = spec
-    _ensure_importable(root)
+    ensure_importable(root)
     return importlib.import_module(module)
 
 
-def _ensure_importable(root: Path) -> None:
+def ensure_importable(root: Path) -> None:
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
 
 
 def _load_standalone(path: Path) -> ModuleType:
     path = path.resolve()
-    _ensure_importable(path.parent)
+    ensure_importable(path.parent)
     spec = importlib.util.spec_from_file_location(path.stem, path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module

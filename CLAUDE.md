@@ -196,11 +196,6 @@ khana run    <script>           # execute an orchestration script
 khana diff <old> <new>          # diff two diagnostics JSON files
 ```
 
-`khana build` is **retired**. It survives only as a boundary error
-(exit 2) naming the two commands its halves became — an agent that
-types the old form gets pointed somewhere rather than typer's bare
-"no such command".
-
 A target's member is the named factory called with its defaults, or —
 with no `:factory` — the module's `assembly` name, called if callable
 and accepted as a bare value otherwise (the degenerate, transitional

@@ -18,7 +18,13 @@ from cad_khana.export import export_assembly
 from cad_khana.mechanism.assembly import Assembly
 from cad_khana.mechanism.check import check as check_assembly
 from cad_khana.mechanism.diagnostics import Diagnostics
-from cad_khana.target import Target, TargetError, package_module_spec, resolve
+from cad_khana.target import (
+    Target,
+    TargetError,
+    ensure_importable,
+    package_module_spec,
+    resolve,
+)
 
 app = typer.Typer(
     name="khana",
@@ -113,14 +119,20 @@ TargetOutOpt = Annotated[
 def _exec_script(script: Path) -> None:
     spec = package_module_spec(script)
     if spec is None:
+        # ``python script.py`` semantics: the script's own directory is
+        # importable, so a command script can import the declaration
+        # module it sits beside. ``runpy.run_path`` does not do this on
+        # its own, and the import-model verbs already do it via
+        # ``target.load`` — without this the two runners disagree about
+        # what a sibling import means.
+        ensure_importable(script.resolve().parent)
         runpy.run_path(str(script), run_name="__main__")
     else:
         # Package members run with ``python -m`` semantics so their
         # relative imports resolve; alter_sys makes the module the
         # real ``__main__`` (out= anchoring reads its __file__).
         module, root = spec
-        if str(root) not in sys.path:
-            sys.path.insert(0, str(root))
+        ensure_importable(root)
         runpy.run_module(module, run_name="__main__", alter_sys=True)
 
 

@@ -17,12 +17,13 @@ every part drawn by an LLM via cad-khana.
 ## What it does
 
 `cad-khana` wraps Build123d with a diagnostics-first workflow. You
-(or an LLM agent) write Python scripts that declare parts and
-assemblies; the `khana` CLI runs them, exports STL/STEP, and writes
-a structured `diagnostics.json` reporting interferences, clearances,
-wall thickness, and overhangs. Assertions in the script become build
-failures when violated, so geometric constraints are enforced, not
-hoped for.
+(or an LLM agent) write Python modules that *declare* parts,
+assemblies, and the claims they must satisfy; the `khana` CLI imports
+a module and does one thing to it — check it, export STL/STEP, draw
+it, or push it to a viewer. `khana check` writes a structured
+`mechanism.json` reporting interferences, clearances, and every
+assertion's result. A violated assertion fails the run, so geometric
+constraints are enforced, not hoped for.
 
 The tool is designed to close a specific gap: LLMs can reason about
 CAD geometry from code but need explicit feedback on the things a
@@ -37,25 +38,34 @@ Existing code-CAD tools (OpenSCAD, CadQuery, Build123d) assume a
 human with a render window. For agent-driven design, a different
 feedback loop works better:
 
-1. Agent writes a Build123d script.
-2. `khana build` runs it, exports geometry, writes diagnostics.
-3. Agent reads diagnostics, edits the script, repeats.
+1. Agent writes a Build123d module declaring parts, an assembly, and
+   its assertions.
+2. `khana check` imports it and writes diagnostics.
+3. Agent reads diagnostics, edits the module, repeats.
 4. When a shape-level question arises that diagnostics can't answer,
    the agent runs `khana draw` and reads the PNGs directly.
-5. When the design is clean, a human reviews it in the OCP viewer.
+5. When the design is clean, a human reviews it in the OCP viewer, and
+   `khana export` produces the printable geometry.
 
 Humans stay in the loop for taste and physical-world validation;
 correctness iteration happens in code.
 
 ## CLI
 
+A **target** is `<module-path>[:<factory>]` — the module's `assembly`
+member, or a named factory called with its defaults.
+
 ```
-khana build <path>      # run script, export, write diagnostics.json
-khana check <path>      # diagnostics only, no export
-khana view <path>       # build + push to OCP viewer
-khana draw <path>       # orthographic/iso engineering drawings (HLR line-art)
-khana diff <old> <new>  # diff two diagnostics.json files
+khana check  <target>       # diagnostics + assertions → mechanism.json
+khana export <target>       # STL + STEP
+khana view   <target>       # push to the OCP viewer
+khana draw   <target>       # orthographic/iso engineering drawings (HLR line-art)
+khana run    <script>       # execute an orchestration script (batches, sweeps)
+khana diff   <old> <new>    # diff two diagnostics JSON files
 ```
+
+Declaration modules call nothing effectful; every effect happens at
+the CLI boundary, so the same file is safe under every verb.
 
 ## Install
 
@@ -85,7 +95,7 @@ From a local checkout (for development):
 
 ```bash
 uv sync
-uv run khana build assembly.py
+uv run khana check assembly.py
 ```
 
 As a global tool from GitHub:
@@ -130,41 +140,55 @@ run `python -m ocp_vscode` (from the cad-khana environment) to start
 the viewer, then bind `khana view` to a task (e.g. a Zed
 `tasks.json`).
 
-The viewer is only needed for `khana view`; `khana build`, `khana
-check`, and `khana draw` work without it.
+The viewer is only needed for `khana view`; `khana check`, `khana
+export`, and `khana draw` work without it.
 
 ## Example
 
+A declaration module — parameters, pure part functions, and a factory
+returning an `Assembly` with its claims. It calls nothing effectful:
+
 ```python
-from build123d import *
+from build123d import Box, BuildPart, Location, Part
 
-from cad_khana.core.assembly import Assembly
-from cad_khana.core.build import build
+from cad_khana.mechanism.assembly import Assembly
 
 
-def housing(width: float = 40, depth: float = 30, height: float = 20):
+def housing(width: float = 40, depth: float = 30, height: float = 20) -> Part:
     with BuildPart() as p:
         Box(width, depth, height)
     return p.part
 
 
-def lever(length: float = 25):
+def lever(length: float = 25) -> Part:
     with BuildPart() as p:
         Box(length, 5, 3)
     return p.part
 
 
-assembly = (
-    Assembly()
-    .with_part("housing", housing(), location=Location((0, 0, 0)))
-    .with_part("lever",   lever(),   location=Location((0, 0, 12)))
-    .assert_no_interference("lever", "housing")
-    .assert_clearance("lever", "housing", min_mm=0.2)
-    .assert_min_wall("housing", min_mm=1.5)
-)
+def build_mechanism(lift_mm: float = 12.0) -> Assembly:
+    return (
+        Assembly()
+        .with_part("housing", housing(), location=Location((0, 0, 0)))
+        .with_part("lever",   lever(),   location=Location((0, 0, lift_mm)))
+        .assert_no_interference("lever", "housing")
+        .assert_clearance("lever", "housing", min_mm=0.2)
+    )
 
-build(assembly, out="outputs/")
+
+assembly = build_mechanism()
 ```
+
+```bash
+khana check  assembly.py                  # → outputs/mechanism.json
+khana check  assembly.py:build_mechanism  # the factory, called with defaults
+khana export assembly.py                  # → outputs/assembly.{stl,step}
+```
+
+`skills/cad-khana/references/examples/pin_hinge/` is a complete worked
+example. The conventions an agent needs — file kinds, claim taxonomy,
+assertion reference, printability — are in
+`skills/cad-khana/SKILL.md`; this README stays deliberately thin.
 
 ## Related work
 
