@@ -5,9 +5,8 @@ import sys
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
-from cad_khana import _failures, draw, viewer
+from cad_khana import _failures
 from cad_khana._paths import resolve_out
-from cad_khana.export import export_assembly
 from cad_khana.mechanism.assembly import Assembly
 from cad_khana.mechanism.assertions import evaluate as evaluate_assertions
 from cad_khana.mechanism.diagnostics import Diagnostics, compute
@@ -15,53 +14,28 @@ from cad_khana.mechanism.diagnostics import Diagnostics, compute
 
 @dataclass(frozen=True)
 class CheckResult:
-    exports: tuple[Path, ...]
     diagnostics: Diagnostics
 
 
-# Diagnostics-only by default: exporting is not what an orchestrator
-# does. `khana build` flips this back for the transition window, and
-# nothing else touches it — both go away with the flag in Phase C.
-_export_default = False
+def check(assembly: Assembly, out: str | Path = "outputs") -> CheckResult:
+    """Compute diagnostics, evaluate every assertion, write ``mechanism.json``.
 
-
-def _set_export_default(enabled: bool) -> None:
-    global _export_default
-    _export_default = enabled
-
-
-def check(
-    assembly: Assembly,
-    out: str | Path = "outputs",
-    *,
-    export: bool | None = None,
-) -> CheckResult:
+    Diagnostics only. Each other verb performs its own effect at the CLI
+    boundary — ``khana export`` (``export_assembly``), ``khana view``
+    (``viewer.push``), ``khana draw`` (``draw.draw``) — so a declaration
+    module is identical under all of them.
+    """
     out_path = resolve_out(out)
     out_path.mkdir(parents=True, exist_ok=True)
-    do_export = _export_default if export is None else export
-    exports = export_assembly(assembly, out_path) if do_export else ()
     assertion_results = evaluate_assertions(assembly)
     failed = any(a.passed is False for a in assertion_results)
     diagnostics = replace(
         compute(assembly),
-        exports=tuple(str(p) for p in exports),
         assertions=assertion_results,
         status="assertion_failed" if failed else "ok",
     )
     json_path = out_path / "mechanism.json"
     json_path.write_text(json.dumps(asdict(diagnostics), indent=2) + "\n")
-    if viewer.auto_enabled():
-        viewer.push(assembly)
-    if draw.auto_enabled():
-        draw.draw(
-            assembly,
-            draw.auto_out() or out_path / "views",
-            views=draw.auto_views(),
-            part=draw.auto_part(),
-            format=draw.auto_fmt(),
-            themeable=draw.auto_themeable(),
-        )
-    result = CheckResult(exports=exports, diagnostics=diagnostics)
     if failed:
         for a in assertion_results:
             if a.passed is False:
@@ -71,4 +45,4 @@ def check(
                 )
         print(f"see {json_path}", file=sys.stderr)
         _failures.fail(_failures.Failure("mechanism", json_path))
-    return result
+    return CheckResult(diagnostics=diagnostics)

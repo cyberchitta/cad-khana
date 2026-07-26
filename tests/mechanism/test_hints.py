@@ -56,7 +56,7 @@ def test_hint_in_error_diagnostics_on_script_failure(tmp_path: Path):
         "_ = x.part  # AttributeError: 'NoneType' object has no attribute 'part'\n"
     )
     out = tmp_path / "out"
-    result = runner.invoke(app, ["build", str(script), "--out", str(out)])
+    result = runner.invoke(app, ["run", str(script), "--out", str(out)])
     assert result.exit_code == 1
     data = json.loads((out / "mechanism.json").read_text())
     assert data["status"] == "error"
@@ -68,7 +68,7 @@ def test_no_hint_on_unrecognized_error(tmp_path: Path):
     script = tmp_path / "bad.py"
     script.write_text("raise RuntimeError('totally unexpected kaboom')\n")
     out = tmp_path / "out"
-    result = runner.invoke(app, ["build", str(script), "--out", str(out)])
+    result = runner.invoke(app, ["run", str(script), "--out", str(out)])
     assert result.exit_code == 1
     data = json.loads((out / "mechanism.json").read_text())
     assert data["status"] == "error"

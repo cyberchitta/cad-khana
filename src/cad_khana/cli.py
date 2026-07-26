@@ -16,7 +16,7 @@ from cad_khana import viewer
 from cad_khana.diff import NO_CHANGES, diff as compute_diff
 from cad_khana.export import export_assembly
 from cad_khana.mechanism.assembly import Assembly
-from cad_khana.mechanism.check import _set_export_default, check as check_assembly
+from cad_khana.mechanism.check import check as check_assembly
 from cad_khana.mechanism.diagnostics import Diagnostics
 from cad_khana.target import Target, TargetError, package_module_spec, resolve
 
@@ -237,20 +237,25 @@ def run(script: ScriptArg, out: OutOpt = None) -> None:
     _run_script(script, out, "run")
 
 
-@app.command()
-def build(script: ScriptArg, out: OutOpt = None) -> None:
-    """Deprecated: execute a script and export geometry. Retires next release."""
+@app.command(
+    context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
+)
+def build(
+    args: Annotated[list[str] | None, typer.Argument(hidden=True)] = None,
+) -> None:
+    """Retired: use `khana export <target>` and `khana run <script>`.
+
+    Kept only so the old invocation lands on a boundary error naming its
+    two replacements rather than typer's bare "no such command".
+    """
     typer.echo(
-        "khana build is deprecated and retires in the next release: use "
-        "`khana export <target>` for STL/STEP and `khana run <script>` for "
+        "error: khana build is retired — it ran a script and exported in one "
+        "step. Use `khana export <target>` for STL/STEP, `khana check "
+        "<target>` for diagnostics, and `khana run <script>` for "
         "orchestration.",
         err=True,
     )
-    _set_export_default(True)
-    try:
-        _run_script(script, out, "build")
-    finally:
-        _set_export_default(False)
+    raise typer.Exit(code=2)
 
 
 @app.command()

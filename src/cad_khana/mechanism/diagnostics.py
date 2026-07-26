@@ -9,7 +9,7 @@ from build123d import Part
 if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
 
-SCHEMA_VERSION = "0.8"
+SCHEMA_VERSION = "0.9"
 INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
 
 # Absolute tolerance on assertion bound comparisons, in the bound's own
@@ -51,7 +51,7 @@ class AssertionResult:
     """``passed`` is tri-state: ``True``/``False`` for an evaluated
     assertion, ``None`` when it was skipped because a referenced part
     is absent from the run (``detail`` names the missing parts).
-    Skipped assertions never fail a build. ``value`` carries the
+    Skipped assertions never fail a run. ``value`` carries the
     measured/claimed scalar for value-carrying assertions
     (``assert_distance``, ``assert_scalar``, ``assert_tangent_contact``
     gap in mm, ``assert_allowed_contact`` overlap in mm³) even on pass
@@ -77,7 +77,6 @@ class Diagnostics:
     parts: dict[str, PartDiagnostics] = field(default_factory=dict)
     interferences: tuple[Interference, ...] = ()
     assertions: tuple[AssertionResult, ...] = ()
-    exports: tuple[str, ...] = ()
 
 
 def intersection_volume(a: Part, b: Part) -> float:

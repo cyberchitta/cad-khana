@@ -16,27 +16,18 @@ def _cube(size: float = 10):
     return p.part
 
 
-def test_check_is_diagnostics_only_by_default(tmp_path: Path):
+def test_check_never_exports(tmp_path: Path):
     """Exporting is not what an orchestrator does — STL/STEP come from
-    ``export_assembly`` / ``khana export``."""
-    result = check(Assembly().with_part("cube", _cube()), out=tmp_path)
-    assert result.exports == ()
+    ``export_assembly`` / ``khana export``, and there is no toggle."""
+    check(Assembly().with_part("cube", _cube()), out=tmp_path)
     assert not (tmp_path / "assembly.stl").exists()
     assert not (tmp_path / "assembly.step").exists()
 
 
-def test_check_writes_stl_and_step_when_asked(tmp_path: Path):
-    assembly = (
-        Assembly()
-        .with_part("housing", _cube(20))
-        .with_part("lid", _cube(20), location=Location((0, 0, 25)))
-    )
-    result = check(assembly, out=tmp_path, export=True)
-    names = sorted(path.name for path in result.exports)
-    assert names == ["assembly.step", "assembly.stl"]
-    for path in result.exports:
-        assert path.exists()
-        assert path.stat().st_size > 0
+def test_check_takes_no_export_parameter():
+    """The Phase C strip removed it outright — no back-compat shim."""
+    with pytest.raises(TypeError):
+        check(Assembly(), out="unused", export=True)
 
 
 def test_check_creates_missing_out_directory(tmp_path: Path):
@@ -67,10 +58,12 @@ def test_mechanism_json_has_no_kind_field(tmp_path: Path):
     assert "kind" not in data
 
 
-def test_check_records_exports_in_diagnostics(tmp_path: Path):
-    result = check(Assembly().with_part("cube", _cube()), out=tmp_path, export=True)
+def test_mechanism_json_has_no_exports_field(tmp_path: Path):
+    """The field went with the limb: a permanently-empty array is a
+    vestige an agent would read as "this run exported nothing"."""
+    check(Assembly().with_part("cube", _cube()), out=tmp_path)
     data = json.loads((tmp_path / "mechanism.json").read_text())
-    assert sorted(data["exports"]) == sorted(str(p) for p in result.exports)
+    assert "exports" not in data
 
 
 def test_check_result_carries_diagnostics(tmp_path: Path):
@@ -118,19 +111,6 @@ def test_check_writes_diagnostics_before_exit_on_failure(tmp_path: Path):
     assert len(data["assertions"]) == 1
     assert not data["assertions"][0]["passed"]
     assert data["assertions"][0]["detail"] is not None
-
-
-def test_check_still_exports_on_assertion_failure(tmp_path: Path):
-    assembly = (
-        Assembly()
-        .with_part("a", _cube())
-        .with_part("b", _cube(), location=Location((5, 0, 0)))
-        .assert_no_interference("a", "b")
-    )
-    with pytest.raises(SystemExit):
-        check(assembly, out=tmp_path, export=True)
-    assert (tmp_path / "assembly.stl").exists()
-    assert (tmp_path / "assembly.step").exists()
 
 
 def test_check_collects_all_assertion_failures(tmp_path: Path):
@@ -212,15 +192,3 @@ def test_check_records_interferences(tmp_path: Path):
     assert hit["centroid"][1] == approx(0.0, abs=1e-9)
 
 
-def test_check_export_parameter_false_skips_stl_step(tmp_path: Path):
-    check(Assembly().with_part("cube", _cube()), out=tmp_path, export=False)
-    assert not (tmp_path / "assembly.stl").exists()
-    assert not (tmp_path / "assembly.step").exists()
-    data = json.loads((tmp_path / "mechanism.json").read_text())
-    assert data["exports"] == []
-
-
-def test_check_export_parameter_true_forces_export(tmp_path: Path):
-    check(Assembly().with_part("cube", _cube()), out=tmp_path, export=True)
-    assert (tmp_path / "assembly.stl").exists()
-    assert (tmp_path / "assembly.step").exists()

@@ -17,19 +17,11 @@ def test_version_prints_and_exits_zero():
     assert "khana" in result.stdout
 
 
-def test_build_runs_successful_script(tmp_path: Path):
+def test_run_runs_successful_script(tmp_path: Path):
     out = tmp_path / "out"
     script = tmp_path / "good.py"
-    script.write_text(
-        "from build123d import Box, BuildPart\n"
-        "from cad_khana.mechanism.assembly import Assembly\n"
-        "from cad_khana.mechanism.check import check\n"
-        "\n"
-        "with BuildPart() as p:\n"
-        "    Box(10, 10, 10)\n"
-        f"check(Assembly().with_part('cube', p.part), out=r'{out}')\n"
-    )
-    result = runner.invoke(app, ["build", str(script)])
+    script.write_text(_cube_script(out))
+    result = runner.invoke(app, ["run", str(script)])
     assert result.exit_code == 0, result.output
     data = json.loads((out / "mechanism.json").read_text())
     assert data["status"] == "ok"
@@ -53,31 +45,23 @@ def test_view_pushes_named_parts_to_viewer(
     assert calls == [{"count": 2, "names": ["big", "small"]}]
 
 
-def test_build_does_not_push_to_viewer(
+def test_check_does_not_push_to_viewer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
+    """Each verb performs its own effect: pushing is `khana view`."""
     calls: list[None] = []
     monkeypatch.setattr(viewer, "show", lambda *a, **kw: calls.append(None))
 
-    out = tmp_path / "out"
-    script = tmp_path / "good.py"
-    script.write_text(
-        "from build123d import Box, BuildPart\n"
-        "from cad_khana.mechanism.assembly import Assembly\n"
-        "from cad_khana.mechanism.check import check\n"
-        "\n"
-        "with BuildPart() as p:\n"
-        "    Box(10, 10, 10)\n"
-        f"check(Assembly().with_part('cube', p.part), out=r'{out}')\n"
-    )
-    result = runner.invoke(app, ["build", str(script)])
+    module = tmp_path / "asm.py"
+    module.write_text(_cube_module())
+    result = runner.invoke(app, ["check", str(module)])
     assert result.exit_code == 0, result.output
     assert calls == []
 
 
 def test_run_writes_diagnostics_without_exports(tmp_path: Path):
     """`check()` under `khana run` is diagnostics-only: a command script
-    gets no exports without asking, and needs no `export=False`."""
+    gets no exports, and there is no field claiming otherwise."""
     out = tmp_path / "out"
     script = tmp_path / "good.py"
     script.write_text(_cube_script(out))
@@ -85,24 +69,21 @@ def test_run_writes_diagnostics_without_exports(tmp_path: Path):
     assert result.exit_code == 0, result.output
     data = json.loads((out / "mechanism.json").read_text())
     assert data["status"] == "ok"
-    assert data["exports"] == []
+    assert "exports" not in data
     assert not (out / "assembly.stl").exists()
     assert not (out / "assembly.step").exists()
 
 
-def test_build_exports_and_restores_the_default(tmp_path: Path):
-    """The deprecated `build` flips the export toggle for its own run
-    only — the next `run` in the same process is diagnostics-only."""
-    out = tmp_path / "out"
+def test_build_is_retired_with_a_pointer_to_its_replacements(tmp_path: Path):
+    """It survives only as a boundary error: an agent that types the old
+    command gets told where its two halves went, not "no such command"."""
     script = tmp_path / "good.py"
-    script.write_text(_cube_script(out))
-    assert runner.invoke(app, ["build", str(script)]).exit_code == 0
-    assert (out / "assembly.stl").exists()
-    (out / "assembly.stl").unlink()
-    (out / "assembly.step").unlink()
-    result = runner.invoke(app, ["run", str(script)])
-    assert result.exit_code == 0, result.output
-    assert not (out / "assembly.stl").exists()
+    script.write_text(_cube_script(tmp_path / "out"))
+    result = runner.invoke(app, ["build", str(script), "--out", "custom"])
+    assert result.exit_code == 2
+    assert "khana export" in result.output
+    assert "khana run" in result.output
+    assert not (tmp_path / "out").exists()
 
 
 def test_draw_writes_png_views(tmp_path: Path):
@@ -121,11 +102,11 @@ def test_draw_writes_png_views(tmp_path: Path):
     assert expected == {p.name for p in views.iterdir()}
 
 
-def test_build_writes_error_diagnostics_on_script_failure(tmp_path: Path):
+def test_run_writes_error_diagnostics_on_script_failure(tmp_path: Path):
     script = tmp_path / "bad.py"
     script.write_text("raise RuntimeError('kaboom')\n")
     out = tmp_path / "out"
-    result = runner.invoke(app, ["build", str(script), "--out", str(out)])
+    result = runner.invoke(app, ["run", str(script), "--out", str(out)])
     assert result.exit_code == 1
     data = json.loads((out / "mechanism.json").read_text())
     assert data["status"] == "error"
@@ -188,7 +169,7 @@ def test_relative_out_anchors_to_script_directory(
 def test_cli_default_error_diagnostics_anchored_to_script(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """``khana build`` without ``--out`` writes error diagnostics next to the script."""
+    """``khana run`` without ``--out`` writes error diagnostics next to the script."""
     script_dir = tmp_path / "module"
     script_dir.mkdir()
     elsewhere = tmp_path / "elsewhere"
@@ -197,7 +178,7 @@ def test_cli_default_error_diagnostics_anchored_to_script(
 
     script = script_dir / "bad.py"
     script.write_text("raise RuntimeError('kaboom')\n")
-    result = runner.invoke(app, ["build", str(script)])
+    result = runner.invoke(app, ["run", str(script)])
     assert result.exit_code == 1
     data = json.loads((script_dir / "outputs" / "mechanism.json").read_text())
     assert data["status"] == "error"
@@ -217,13 +198,13 @@ def test_cli_explicit_out_stays_cwd_relative(
 
     script = script_dir / "bad.py"
     script.write_text("raise RuntimeError('kaboom')\n")
-    result = runner.invoke(app, ["build", str(script), "--out", "custom"])
+    result = runner.invoke(app, ["run", str(script), "--out", "custom"])
     assert result.exit_code == 1
     assert (elsewhere / "custom" / "mechanism.json").exists()
 
 
 def _cube_script(out: Path) -> str:
-    """An orchestration script: executed for effect by `run`/`build`."""
+    """An orchestration script: executed for effect by `khana run`."""
     return (
         "from build123d import Box, BuildPart\n"
         "from cad_khana.mechanism.assembly import Assembly\n"
@@ -610,7 +591,7 @@ def test_package_member_failure_writes_error_diagnostics(
         "from .params import SIZE\n"
         "raise RuntimeError(f'kaboom {SIZE}')\n"
     )
-    result = runner.invoke(app, ["build", str(bad)])
+    result = runner.invoke(app, ["run", str(bad)])
     assert result.exit_code == 1
     data = json.loads((bad.parent / "outputs" / "mechanism.json").read_text())
     assert data["status"] == "error"
@@ -678,7 +659,7 @@ def test_check_resolves_the_degenerate_assembly_value(tmp_path: Path):
     data = json.loads((tmp_path / "outputs" / "mechanism.json").read_text())
     assert data["status"] == "ok"
     assert data["parts"]["cube"]["volume_mm3"] > 0
-    assert data["exports"] == [], "check never exports"
+    assert "exports" not in data, "check never exports"
 
 
 def test_check_calls_a_callable_assembly(tmp_path: Path):

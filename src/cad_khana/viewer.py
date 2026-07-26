@@ -4,18 +4,6 @@ from ocp_vscode import show
 
 from cad_khana.mechanism.assembly import Assembly
 
-_auto_enabled = False
-
-
-def set_auto(enabled: bool) -> None:
-    global _auto_enabled
-    _auto_enabled = enabled
-
-
-def auto_enabled() -> bool:
-    return _auto_enabled
-
-
 def push(assembly: Assembly) -> None:
     placed = assembly.placed_parts
     parts = [p.part.moved(p.location) for p in placed]

@@ -193,9 +193,13 @@ khana export <target>           # STL + STEP
 khana view   <target>           # push to OCP viewer
 khana draw   <target> --format png|svg|both   # orthographic/iso HLR line-art
 khana run    <script>           # execute an orchestration script
-khana build  <script>           # DEPRECATED (retires in Phase C): run + export
 khana diff <old> <new>          # diff two diagnostics JSON files
 ```
+
+`khana build` is **retired**. It survives only as a boundary error
+(exit 2) naming the two commands its halves became — an agent that
+types the old form gets pointed somewhere rather than typer's bare
+"no such command".
 
 A target's member is the named factory called with its defaults, or —
 with no `:factory` — the module's `assembly` name, called if callable
@@ -221,7 +225,7 @@ A module the import-model verbs consume never calls `check()`,
 full design, its phases, and what is still owed:
 `_notes/draft-script-decomposition.md`.
 
-## Diagnostics JSON schemas (v0.8)
+## Diagnostics JSON schemas (v0.9)
 
 Version these from day one. Agents depend on field stability.
 
@@ -229,7 +233,7 @@ Version these from day one. Agents depend on field stability.
 
 ```json
 {
-  "schema_version": "0.8",
+  "schema_version": "0.9",
   "status": "ok | error | assertion_failed",
   "error": null,
   "hint": "Missing .part accessor — use `with BuildPart() as p: ...; return p.part`.",
@@ -250,8 +254,7 @@ Version these from day one. Agents depend on field stability.
   ],
   "assertions": [
     {"name": "lever_clears_housing", "passed": true, "detail": null, "value": null, "waived": null}
-  ],
-  "exports": ["outputs/assembly.stl", "outputs/assembly.step"]
+  ]
 }
 ```
 
@@ -304,7 +307,7 @@ comparison flips on solver noise.
 
 ```json
 {
-  "schema_version": "0.8",
+  "schema_version": "0.9",
   "kind": "printability",
   "status": "ok | assertion_failed",
   "name": "housing",
@@ -468,8 +471,8 @@ for end-user install, `uvx khana ...` for ephemeral use.
   `mechanism.check`, `printability.inspect`, and the CLI. Each verb
   performs its own effect at the boundary — `view` pushes, `draw`
   draws, `export` exports — so a declaration module is identical under
-  all of them. (The `viewer`/`draw` auto-toggles survive unused until
-  Phase C deletes them; don't build on them.)
+  all of them. `check()` writes `mechanism.json` and nothing else: no
+  export, no viewer push, no draw, and no toggle to re-couple them.
 - **Error handling at the boundary.** Uncaught exceptions from user
   scripts and from imported modules/factories are caught at the CLI and
   written to `mechanism.json` with `status: "error"` and the traceback

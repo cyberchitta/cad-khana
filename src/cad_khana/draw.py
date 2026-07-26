@@ -10,56 +10,6 @@ from PIL import Image, ImageDraw
 
 from cad_khana.mechanism.assembly import Assembly
 
-_auto_enabled = False
-_auto_out: Path | None = None
-_auto_fmt: str = "png"
-_auto_themeable: bool = False
-_auto_views: tuple[str, ...] | None = None
-_auto_part: str | None = None
-
-
-def set_auto(
-    enabled: bool,
-    out: Path | None = None,
-    fmt: str = "png",
-    themeable: bool = False,
-    views: tuple[str, ...] | None = None,
-    part: str | None = None,
-) -> None:
-    global _auto_enabled, _auto_out, _auto_fmt, _auto_themeable
-    global _auto_views, _auto_part
-    _auto_enabled = enabled
-    _auto_out = out
-    _auto_fmt = fmt
-    _auto_themeable = themeable
-    _auto_views = views
-    _auto_part = part
-
-
-def auto_enabled() -> bool:
-    return _auto_enabled
-
-
-def auto_out() -> Path | None:
-    return _auto_out
-
-
-def auto_fmt() -> str:
-    return _auto_fmt
-
-
-def auto_themeable() -> bool:
-    return _auto_themeable
-
-
-def auto_views() -> tuple[str, ...] | None:
-    return _auto_views
-
-
-def auto_part() -> str | None:
-    return _auto_part
-
-
 @dataclass(frozen=True)
 class View:
     name: str

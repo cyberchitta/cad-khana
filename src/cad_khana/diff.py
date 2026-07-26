@@ -41,7 +41,7 @@ def _require_current_schema(old: Diag, new: Diag) -> None:
         raise ValueError(
             f"schema mismatch: expected {SCHEMA_VERSION}, "
             f"got old={ov} new={nv}; "
-            "regenerate by re-running build/check/inspect"
+            "regenerate by re-running check/inspect"
         )
 
 
