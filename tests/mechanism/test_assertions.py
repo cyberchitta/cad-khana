@@ -658,6 +658,17 @@ def test_distance_auto_name_carries_pair_axis_and_bounds():
     assert name == "distance:a/b@-Z>=1<=2"
 
 
+def test_distance_auto_name_carries_a_vector_axis():
+    a = (
+        Assembly()
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((0, 0, 20)))
+        .assert_distance("a", "b", along=(0, 0, 1), min_mm=1)
+    )
+    name = evaluate(a)[0].name
+    assert name == "distance:a/b@(0.0, 0.0, 1.0)>=1"
+
+
 # --- assert_scalar ------------------------------------------------------
 
 

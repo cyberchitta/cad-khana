@@ -100,7 +100,7 @@ def _distance_name(
     axis = (
         ""
         if along is None
-        else f"@{along if isinstance(along, str) else Vector(along).to_tuple()}"
+        else f"@{along if isinstance(along, str) else tuple(Vector(along))}"
     )
     bounds = "".join(
         s
