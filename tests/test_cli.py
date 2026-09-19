@@ -533,6 +533,21 @@ def test_status_real_probe_runs_and_returns_json():
     assert isinstance(data["ocp_vscode"]["reachable"], bool)
 
 
+def test_status_stdout_is_json_when_port_discovery_prints(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """ocp_vscode print()s "Using port N" when it finds a live viewer —
+    only where one is listening, so CI never sees it."""
+
+    def chatty_get_port() -> int:
+        print("Using port 3939")
+        return 3939
+
+    monkeypatch.setattr("ocp_vscode.get_port", chatty_get_port)
+    result = runner.invoke(app, ["status"])
+    assert json.loads(result.stdout)["schema_version"] == SCHEMA_VERSION
+
+
 def _pkg_tree(tmp_path: Path, name: str) -> Path:
     """A two-level package tree whose leaf script needs BOTH relative
     import forms: ``.params`` (sibling) and ``..shared`` (package root).

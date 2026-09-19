@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import platform
 import socket
+import sys
+from contextlib import redirect_stdout
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
@@ -50,7 +52,9 @@ def _probe_viewer() -> ViewerStatus:
     except ImportError as exc:
         return ViewerStatus(importable=False, reachable=False, error=str(exc))
     try:
-        port = get_port() or _VIEWER_DEFAULT_PORT
+        # Port discovery print()s its progress; stdout is the JSON report's.
+        with redirect_stdout(sys.stderr):
+            port = get_port() or _VIEWER_DEFAULT_PORT
     except Exception as exc:
         port = _VIEWER_DEFAULT_PORT
         port_err: str | None = str(exc)
