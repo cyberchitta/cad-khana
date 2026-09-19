@@ -143,12 +143,17 @@ than one unit.
 `khana view` calls `ocp_vscode.show(...)`, which pushes geometry over
 a local socket (default port 3939). The listener can be either the
 **OCP CAD Viewer** VS Code extension *or* the **standalone viewer
-server** that ships with `ocp_vscode`:
+server**, the separate `ocp-viewer` package:
 
 ```
-uv run python -m ocp_vscode          # opens a browser tab, listens on 3939
-uv run khana view assembly.py        # pushes geometry to whichever listener is up
+uv run --with ocp-viewer python -m ocp_viewer   # listens on 3939; open http://localhost:3939/viewer
+uv run khana view assembly.py                   # pushes geometry to whichever listener is up
 ```
+
+(`ocp-vscode` 4.1 moved the standalone viewer out into `ocp-viewer`;
+on 4.1+, `python -m ocp_vscode` only prints a "moved" notice. In an
+environment locked to `ocp-vscode` < 4.1, `uv run python -m
+ocp_vscode` is still the command.)
 
 So you can drive the full `view` loop from any editor (or none at
 all). For **Zed**, the pattern that matches the VS Code UX is a pair
@@ -160,7 +165,7 @@ server, one to push the current file to it:
   {
     "label": "OCP viewer: start",
     "command": "uv",
-    "args": ["run", "python", "-m", "ocp_vscode"],
+    "args": ["run", "--with", "ocp-viewer", "python", "-m", "ocp_viewer"],
     "cwd": "$ZED_WORKTREE_ROOT",
     "allow_concurrent_runs": false
   },

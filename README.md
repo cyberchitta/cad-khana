@@ -136,9 +136,12 @@ server. The easiest host is the
 which embeds the viewer in an editor pane.
 
 Any editor that can launch a task and open a browser tab also works:
-run `python -m ocp_vscode` (from the cad-khana environment) to start
-the viewer, then bind `khana view` to a task (e.g. a Zed
-`tasks.json`).
+run `uv run --with ocp-viewer python -m ocp_viewer` (from the
+cad-khana environment) to start the standalone viewer, open
+<http://localhost:3939/viewer>, then bind `khana view` to a task (e.g.
+a Zed `tasks.json`). The standalone viewer is its own package since
+`ocp-vscode` 4.1; on an environment locked to an older `ocp-vscode`,
+`python -m ocp_vscode` starts it instead.
 
 The viewer is only needed for `khana view`; `khana check`, `khana
 export`, and `khana draw` work without it.
