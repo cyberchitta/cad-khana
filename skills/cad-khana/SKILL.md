@@ -886,7 +886,12 @@ per jointed sub-assembly. Each jointed `with_subassembly(...)`
 becomes one `animgroup_N` node in the GLB scene graph whose
 children are the group's parts — the parent carries a slerp'd
 rotation that traces the true arc between keyframes (per-channel
-TRS lerp would chord through curved paths).
+TRS lerp would chord through curved paths). The node sits on its
+joint's axis and nests under its parent joint's node, so the arc is
+true wherever the axis is and however many joints move at once. Any
+motion the joint *doesn't* account for (a jointed sub whose
+`location=` also changes with `t`) is exact at keyframes and lerped
+between them.
 
 ### Conventions that matter
 

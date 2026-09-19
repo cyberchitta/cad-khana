@@ -3,10 +3,11 @@ from __future__ import annotations
 import shutil
 import struct
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
 
-from build123d import Rot, export_step, export_stl
+from build123d import Location, Rot, export_step, export_stl
 from OCP.BRepMesh import BRepMesh_IncrementalMesh
 from OCP.Message import Message_ProgressRange
 from OCP.Quantity import Quantity_Color, Quantity_ColorRGBA, Quantity_TypeOfColor
@@ -18,7 +19,7 @@ from OCP.TDocStd import TDocStd_Document
 from OCP.XCAFApp import XCAFApp_Application
 from OCP.XCAFDoc import XCAFDoc_ColorType, XCAFDoc_DocumentTool
 
-from cad_khana.mechanism.assembly import Assembly
+from cad_khana.mechanism.assembly import Assembly, SubAssembly
 
 _DEFAULT_LINEAR_TOLERANCE_MM = 0.1
 _DEFAULT_ANGULAR_TOLERANCE_RAD = 0.5
@@ -41,51 +42,89 @@ def export_assembly(
     return (stl_path, step_path)
 
 
-def _structural_groups(assembly: Assembly) -> list[list[str]]:
-    """Walk the subassembly tree; each jointed sub-assembly contributes
-    a group of part names that it *directly* owns (its own ``parts``
-    plus the parts of any non-jointed descendants), recursing past any
-    nested jointed sub-assembly so that nested joints surface as their
-    own separate, non-overlapping groups. Returns ``[]`` for a flat
-    assembly — the caller then falls back to trajectory inference.
+_Trs = tuple[tuple[float, float, float], tuple[float, float, float, float]]
 
-    Non-overlapping groups are load-bearing for
-    ``_inject_animation_into_glb``: each group's animation channel is
-    applied at scene-root level to a freshly inserted animgroup node
-    whose children are the group's parts. If two groups shared parts
-    (e.g. an outer rotor group + an inner platform group that both
-    claim the platform's parts), the inner re-parent would clash with
-    the outer's, producing malformed glTF. Each part belongs to its
-    *innermost* jointed ancestor, and that group's relative trajectory
-    naturally captures the composed motion of every ancestor joint —
-    because the relative trajectory is sampled from any one member's
-    absolute pose, which already includes every ancestor's
-    contribution by construction."""
 
-    def _walk_into(asm: Assembly, prefix: str) -> list[str]:
-        """Qualified paths of parts inside ``asm`` that DON'T belong to
-        any nested jointed sub. Walks past jointed children (they
-        become their own group elsewhere) and aggregates the rest.
-        Paths must match ``placed_parts`` names — that's how
-        ``_inject_animation_into_glb`` finds the GLB nodes."""
-        names = [f"{prefix}{p.name}" for p in asm.parts]
-        for sub in asm.subassemblies:
-            if sub.joint is None:
-                names.extend(_walk_into(sub.assembly, f"{prefix}{sub.name}."))
-        return names
+@dataclass(frozen=True)
+class _JointGroup:
+    """One jointed sub-assembly as an animation node. ``parent`` is the
+    path of its nearest jointed ancestor (``None`` at the top), and
+    ``members`` are the parts it *directly* owns — its own ``parts``
+    plus those of non-jointed descendants, never a nested joint's.
+    Member names match ``placed_parts`` names — that's how
+    ``_inject_animation_into_glb`` finds the GLB nodes."""
 
-    def _collect(asm: Assembly, prefix: str, out: list[list[str]]) -> None:
-        for sub in asm.subassemblies:
-            sub_prefix = f"{prefix}{sub.name}."
-            if sub.joint is not None:
-                owned = _walk_into(sub.assembly, sub_prefix)
-                if owned:
-                    out.append(owned)
-            _collect(sub.assembly, sub_prefix, out)
+    path: str
+    parent: str | None
+    members: tuple[str, ...]
 
-    groups: list[list[str]] = []
-    _collect(assembly, "", groups)
-    return groups
+
+@dataclass(frozen=True)
+class _JointPose:
+    """World frame of a jointed sub-assembly (joint included) and a
+    world point on its joint axis."""
+
+    frame: Location
+    pivot: Location
+
+
+def _joint_groups(assembly: Assembly) -> list[_JointGroup]:
+    """Walk the subassembly tree, parents before children; ``[]`` for a
+    flat assembly. Each part belongs to its *innermost* jointed
+    ancestor, so groups never overlap — a part with two animated
+    parents is malformed glTF. The nesting is carried by the group
+    nodes instead (part → inner group → outer group), which is what
+    lets each node animate its own joint's rotation alone."""
+
+    def _owned(asm: Assembly, prefix: str) -> tuple[str, ...]:
+        return tuple(f"{prefix}{p.name}" for p in asm.parts) + tuple(
+            name
+            for sub in asm.subassemblies
+            if sub.joint is None
+            for name in _owned(sub.assembly, f"{prefix}{sub.name}.")
+        )
+
+    def _under(sub: SubAssembly, prefix: str, parent: str | None) -> list[_JointGroup]:
+        path = f"{prefix}{sub.name}"
+        own = (
+            [_JointGroup(path, parent, _owned(sub.assembly, f"{path}."))]
+            if sub.joint is not None
+            else []
+        )
+        return own + _collect(sub.assembly, f"{path}.", path if own else parent)
+
+    def _collect(asm: Assembly, prefix: str, parent: str | None) -> list[_JointGroup]:
+        return [g for sub in asm.subassemblies for g in _under(sub, prefix, parent)]
+
+    return _collect(assembly, "", None)
+
+
+def _joint_poses(
+    assembly: Assembly, frame: Location = Location(), prefix: str = ""
+) -> dict[str, _JointPose]:
+    """Dotted path → pose for every jointed sub-assembly — the
+    frame-side mirror of ``Assembly.joint_angles``."""
+
+    def _pose(sub: SubAssembly) -> _JointPose:
+        axis_frame = frame * sub.location if sub.joint.frame == "local" else frame
+        return _JointPose(
+            frame=frame * sub.effective_location,
+            pivot=axis_frame * Location(sub.joint.axis.position),
+        )
+
+    own = {
+        f"{prefix}{s.name}": _pose(s)
+        for s in assembly.subassemblies
+        if s.joint is not None
+    }
+    nested = {
+        path: pose
+        for s in assembly.subassemblies
+        for path, pose in _joint_poses(
+            s.assembly, frame * s.effective_location, f"{prefix}{s.name}."
+        ).items()
+    }
+    return own | nested
 
 
 def export_glb(
@@ -243,9 +282,10 @@ def export_animated_glb(
 
     Animation grouping is driven by the assembly's sub-assembly tree:
     each jointed ``with_subassembly(...)`` contributes one ``animgroup_N``
-    node that carries the shared relative-trajectory animation, with the
-    group's parts re-parented as children. Static parts get no animation
-    channel — the frame-0 TRS from ``export_glb`` carries them.
+    node seated on its joint axis and nested under its parent joint's
+    node, carrying that joint's own rotation, with the group's parts
+    re-parented as children. Static parts get no animation channel —
+    the frame-0 TRS from ``export_glb`` carries them.
 
     Flat assemblies (no jointed sub-assemblies) produce no animgroups;
     any motion in such an assembly falls through to per-part TRS
@@ -331,27 +371,18 @@ def export_animated_glb(
         draco=False,
     )
 
-    to_yup = Rot(-90, 0, 0) if y_up else None
+    to_world = Rot(-90, 0, 0) if y_up else Location()
     ref_names = {p.name for p in ref_placed}
-    samples: dict[str, list[tuple[tuple[float, float, float], tuple[float, float, float, float]]]] = {
-        name: [] for name in ref_names
-    }
+    samples: dict[str, list[_Trs]] = {name: [] for name in ref_names}
+    poses: list[dict[str, _JointPose]] = []
     for t in ts_list:
         a = factory(t)
+        poses.append(_joint_poses(a))
         seen: set[str] = set()
         for placed in a.placed_parts:
             if placed.name not in ref_names:
                 continue
-            loc = placed.location if to_yup is None else to_yup * placed.location
-            trsf = loc.wrapped.Transformation()
-            t_vec = trsf.TranslationPart()
-            q = trsf.GetRotation()
-            samples[placed.name].append(
-                (
-                    (t_vec.X(), t_vec.Y(), t_vec.Z()),
-                    (q.X(), q.Y(), q.Z(), q.W()),
-                )
-            )
+            samples[placed.name].append(_trs(to_world * placed.location))
             seen.add(placed.name)
         missing = ref_names - seen
         if missing:
@@ -365,29 +396,16 @@ def export_animated_glb(
         _align_quaternion_hemispheres(ss)
 
     # Rigid-body groups are *given* by the sub-assembly tree: each
-    # jointed `with_subassembly(...)` becomes one group. The relative
-    # trajectory is derived from one representative member's sampled
-    # absolute pose (any member works — they share the joint's motion
-    # by construction). Flat assemblies produce no groups; any motion
+    # jointed `with_subassembly(...)` becomes one group node, nested
+    # like the joints. Flat assemblies produce no groups; any motion
     # there falls through to the per-part TRS samplers in
     # `_inject_animation_into_glb` (correct for static / pure-translation /
     # in-place-rotation; chord-drifts on orbital motion).
-    structural = _structural_groups(ref_assembly)
-    groups = [
-        [n for n in g if n in ref_names and len(samples[n]) == len(ts_list)]
-        for g in structural
-    ]
-    groups = [g for g in groups if g]
-    group_trajectories = [_relative_trajectory(samples[g[0]]) for g in groups]
-    for traj in group_trajectories:
-        _align_quaternion_hemispheres(traj)
-
     times_s = [i * duration_s / (len(ts_list) - 1) for i in range(len(ts_list))]
     _inject_animation_into_glb(
         glb_path,
         samples=samples,
-        groups=groups,
-        group_trajectories=group_trajectories,
+        tracks=_group_tracks(_joint_groups(ref_assembly), poses, to_world),
         times_s=times_s,
         animation_name=animation_name,
     )
@@ -414,19 +432,10 @@ def _align_quaternion_hemispheres(
             trajectory[i] = (trajectory[i][0], tuple(-c for c in cur_q))
 
 
-def _quat_mul(
-    a: tuple[float, float, float, float],
-    b: tuple[float, float, float, float],
-) -> tuple[float, float, float, float]:
-    """Hamilton product of two quaternions in (x, y, z, w) order."""
-    ax, ay, az, aw = a
-    bx, by, bz, bw = b
-    return (
-        aw * bx + ax * bw + ay * bz - az * by,
-        aw * by - ax * bz + ay * bw + az * bx,
-        aw * bz + ax * by - ay * bx + az * bw,
-        aw * bw - ax * bx - ay * by - az * bz,
-    )
+def _trs(location: Location) -> _Trs:
+    trsf = location.wrapped.Transformation()
+    t, q = trsf.TranslationPart(), trsf.GetRotation()
+    return ((t.X(), t.Y(), t.Z()), (q.X(), q.Y(), q.Z(), q.W()))
 
 
 def _quat_rotate(
@@ -448,44 +457,83 @@ def _quat_rotate(
     return (vx + 2 * rx, vy + 2 * ry, vz + 2 * rz)
 
 
-def _relative_trajectory(
-    samples_for_part: list[tuple[tuple[float, float, float], tuple[float, float, float, float]]],
-) -> list[tuple[tuple[float, float, float], tuple[float, float, float, float]]]:
-    """Compute T[i]·T[0]⁻¹ frame-by-frame in (translation, quaternion) form.
+@dataclass(frozen=True)
+class _GroupTrack:
+    """A joint group's animation node: where it sits (``pivot``, a
+    world point on the joint axis at frame 0) and its per-frame TRS in
+    its parent node's frame."""
 
-    The first entry is the identity transform by construction. When applied
-    on top of the frame-0 absolute pose, this trajectory reproduces the
-    original per-frame absolute pose: ``relative[i] · sampled[0] == sampled[i]``.
+    group: _JointGroup
+    pivot: tuple[float, float, float]
+    trs: list[_Trs]
+
+
+def _group_tracks(
+    groups: list[_JointGroup],
+    poses: list[dict[str, _JointPose]],
+    to_world: Location,
+) -> list[_GroupTrack]:
+    """Each group node's own motion, with its ancestors' divided out.
+
+    A group's world motion since frame 0 is ``D[i] = W[i]·W[0]⁻¹``; under
+    a parent node already carrying ``D_parent``, the node owes only
+    ``D_parent[i]⁻¹·D[i]`` — for a revolute joint, a rotation about the
+    joint's frame-0 axis line. Expressed about the scene origin that
+    rotation drags along a translation ``c − R·c`` which is itself an
+    arc, and LINEAR lerps it down the chord while the rotation slerps.
+    So the node sits *on the axis* instead: translation ``p + R·c`` is
+    constant (= ``c``) for as long as the joint is all that moves, and
+    members are offset by ``−c`` to compensate. Motion the joint doesn't
+    account for survives as a varying translation, exact at keyframes.
     """
-    p0, q0 = samples_for_part[0]
-    q0_inv = (-q0[0], -q0[1], -q0[2], q0[3])
-    out: list[tuple[tuple[float, float, float], tuple[float, float, float, float]]] = []
-    for p, q in samples_for_part:
-        q_rel = _quat_mul(q, q0_inv)
-        rotated_p0 = _quat_rotate(q_rel, p0)
-        p_rel = (p[0] - rotated_p0[0], p[1] - rotated_p0[1], p[2] - rotated_p0[2])
-        out.append((p_rel, q_rel))
-    return out
+    first = poses[0]
+    origin = (0.0, 0.0, 0.0)
+
+    def _drift(path: str | None) -> list[Location]:
+        return [
+            Location()
+            if path is None
+            else to_world * f[path].frame * first[path].frame.inverse() * to_world.inverse()
+            for f in poses
+        ]
+
+    def _pivot(path: str | None) -> tuple[float, float, float]:
+        return origin if path is None else _trs(to_world * first[path].pivot)[0]
+
+    def _track(group: _JointGroup) -> _GroupTrack:
+        pivot, seat = _pivot(group.path), _pivot(group.parent)
+        local = [
+            _trs(up.inverse() * own)
+            for up, own in zip(_drift(group.parent), _drift(group.path))
+        ]
+        trs = [
+            (tuple(p + rc - s for p, rc, s in zip(pos, _quat_rotate(q, pivot), seat)), q)
+            for pos, q in local
+        ]
+        _align_quaternion_hemispheres(trs)
+        return _GroupTrack(group, pivot, trs)
+
+    return [_track(g) for g in groups]
 
 
 def _inject_animation_into_glb(
     glb_path: Path,
-    samples: dict[str, list[tuple[tuple[float, ...], tuple[float, ...]]]],
-    groups: list[list[str]],
-    group_trajectories: list[list[tuple[tuple[float, ...], tuple[float, ...]]]],
+    samples: dict[str, list[_Trs]],
+    tracks: list[_GroupTrack],
     times_s: list[float],
     animation_name: str,
 ) -> None:
     """Append an ``animation`` block to an existing GLB written by
     ``export_glb``. Locates target nodes by ``PlacedPart.name``.
 
-    Parts in ``groups`` are re-parented under a freshly inserted scene
-    node that carries the shared relative-trajectory animation —
-    children inherit the parent's slerp'd rotation and so trace the
-    correct arc between keyframes. Parts not in any group fall through
-    to per-part TRS samplers (correct for static, pure-translation, and
-    in-place-rotation parts; only orbital motion would chord-drift
-    there, and that's exactly what grouping pulls out).
+    Each track becomes an ``animgroup_N`` node seated on its joint axis
+    and nested under its parent joint's node, with the group's parts
+    re-parented beneath it — children inherit the slerp'd rotation and
+    so trace the correct arc between keyframes. Parts not in any group
+    fall through to per-part TRS samplers (correct for static,
+    pure-translation, and in-place-rotation parts; only orbital motion
+    would chord-drift there, and that's exactly what grouping pulls
+    out).
     """
     import pygltflib
 
@@ -570,38 +618,52 @@ def _inject_animation_into_glb(
             )
         )
 
-    # Re-parent grouped parts under a fresh animated node per group.
-    # The child's existing static TRS (= frame-0 absolute pose) is left
-    # alone — combined with parent's R[i] animation, the child reaches
-    # sampled[i] at every keyframe and slerps along the true arc in
-    # between.
+    # Re-parent grouped parts under a fresh animated node per group,
+    # and nested groups under their parent's. A member keeps its static
+    # frame-0 pose, shifted by the group's pivot so the node can sit on
+    # the joint axis — combined with the group's R[i] animation, it
+    # reaches sampled[i] at every keyframe and slerps along the true
+    # arc in between.
+    group_node = {
+        track.group.path: len(gltf.nodes) + i for i, track in enumerate(tracks)
+    }
     grouped_parts: set[str] = set()
     scene_root_ids = list(gltf.scenes[0].nodes)
-    for group_idx, (members, traj) in enumerate(zip(groups, group_trajectories)):
-        child_ids = [name_to_node[m] for m in members if m in name_to_node]
-        if not child_ids or len(traj) != n_frames:
-            continue
-        parent_idx = len(gltf.nodes)
+    for group_idx, track in enumerate(tracks):
+        member_ids = [name_to_node[m] for m in track.group.members if m in name_to_node]
+        for member_id in member_ids:
+            member = gltf.nodes[member_id]
+            member.translation = [
+                t - c for t, c in zip(member.translation or [0.0, 0.0, 0.0], track.pivot)
+            ]
+        nested_ids = [
+            group_node[t.group.path] for t in tracks if t.group.parent == track.group.path
+        ]
         gltf.nodes.append(
-            pygltflib.Node(name=f"animgroup_{group_idx}", children=child_ids)
+            pygltflib.Node(
+                name=f"animgroup_{group_idx}",
+                children=member_ids + nested_ids,
+                translation=list(track.trs[0][0]),
+            )
         )
-        child_id_set = set(child_ids)
-        scene_root_ids = [i for i in scene_root_ids if i not in child_id_set]
-        scene_root_ids.append(parent_idx)
-        grouped_parts.update(members)
+        node_idx = group_node[track.group.path]
+        scene_root_ids = [i for i in scene_root_ids if i not in set(member_ids)]
+        if track.group.parent is None:
+            scene_root_ids.append(node_idx)
+        grouped_parts.update(track.group.members)
 
         _add_sampler_channel(
-            [c for _, q in traj for c in q],
-            parent_idx, "rotation", pygltflib.VEC4, 4,
+            [c for _, q in track.trs for c in q],
+            node_idx, "rotation", pygltflib.VEC4, 4,
         )
-        p0_rel = traj[0][0]
-        rel_moves_trans = any(
-            abs(p[k] - p0_rel[k]) > _EPS_POS_MM for p, _ in traj[1:] for k in range(3)
+        p0 = track.trs[0][0]
+        moves_trans = any(
+            abs(p[k] - p0[k]) > _EPS_POS_MM for p, _ in track.trs[1:] for k in range(3)
         )
-        if rel_moves_trans:
+        if moves_trans:
             _add_sampler_channel(
-                [c for p, _ in traj for c in p],
-                parent_idx, "translation", pygltflib.VEC3, 3,
+                [c for p, _ in track.trs for c in p],
+                node_idx, "translation", pygltflib.VEC3, 3,
             )
 
     gltf.scenes[0].nodes = scene_root_ids
