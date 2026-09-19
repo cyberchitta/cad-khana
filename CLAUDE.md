@@ -337,7 +337,13 @@ perpendicular by construction. Later spans along the same ray are
 chords through *unrelated* features at oblique angles, so a grazed
 corner reads arbitrarily thin; those features are measured properly by
 rays cast from their own facets, so dropping the chords costs no
-coverage. Rays are rejected only on geometric grounds — **never** by
+coverage. One place has no facet of its own: a sharp concave edge or
+point (a V-groove root, a conical pocket's apex), where no facet faces
+the thin direction and the flat face opposite has no centroid beneath
+it. Those creases are found in the mesh and cast a fan of rays between
+their two facets' inward normals, at the angular tolerance — what a
+fillet there would have cast, in the limit of zero radius. It is a
+sampling change, not a filter: it can only add readings. Rays are rejected only on geometric grounds — **never** by
 magnitude, and there is no quantile or robustness statistic, because
 hiding a genuine thin region is a worse failure than reporting a wedge
 tip.

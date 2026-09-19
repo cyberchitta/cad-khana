@@ -23,9 +23,28 @@ face's outward normal projected on the ray: negative is an **entry**
 into material, positive an **exit**. The ray's *first* crossing is its
 entry through the facet it was cast for; paired with the next exit,
 that span is the local thickness of the wall the facet sits on. Each
-ray contributes exactly that one sample. `min_wall_mm` is the minimum
-over all rays, `min_wall_at` the entry point that minimum was measured
-from, and `min_wall_alignment` the exit face's projection there.
+ray contributes exactly that one sample.
+
+Facet rays only measure a thin direction some facet *faces*. At a
+sharp concave edge or point — a V-groove root, a conical pocket's apex
+— none does, and the flat face opposite is a few large facets with no
+centroid under the feature, so the thinnest material in the part would
+go unsampled from both sides. Such **creases** are found in the mesh
+(two facets sharing an edge or a corner, meeting concavely at more than
+the angular tolerance) and get rays of their own: from points along the
+crease, at most `CREASE_STEP_MM` apart, in a fan of directions between
+the two facets' inward normals, no more than the angular tolerance
+apart. Those are the rays a fillet's facets would have cast there, in
+the limit of zero radius. Convex creases get none — thickness peaks at
+a ridge, it does not dip. A fan direction is cast only if it also heads
+inward of every *other* facet at the same mesh edge or corner: where a
+groove runs out through a side face, or two blocks touch along a line,
+the pair's concavity alone does not put material in front of the ray.
+
+`min_wall_mm` is the minimum over all rays, `min_wall_at` the point
+that minimum was measured from (the entry point of a facet ray, the
+point on the crease for a crease ray), and `min_wall_alignment` the
+exit face's projection there.
 
 Three properties follow, and all three are deliberate:
 
@@ -46,7 +65,8 @@ Three properties follow, and all three are deliberate:
   the chance of hiding a genuine thin region — the worse failure for
   a printability check. A thin reading is therefore always real
   material; `min_wall_alignment` tells you *what kind*.
-- **A reading is always perpendicular to the face it starts from.** A
+- **A reading is always normal to the surface it starts from** —
+  perpendicular to its facet, or within a crease's fan of normals. A
   ray carries on for the whole depth of the part, and each later entry
   is into some *other* feature downstream, crossed at whatever oblique
   angle the originating facet happens to make with it. Those chords are
@@ -66,7 +86,7 @@ Three properties follow, and all three are deliberate:
 ### What it misses or over-reports
 
 - **Wedge tips read as thin walls.** Where two faces meet at a sharp
-  edge — a knife-edge runout, a V-groove root, a cone rim — the
+  convex edge — a knife-edge runout, a cone rim — the
   material path across the wedge near its tip really is short, so the
   minimum lands there and is *not* a measurement error. It is also not
   a wall thickness. `min_wall_alignment` is the discriminator: below
@@ -78,9 +98,17 @@ Three properties follow, and all three are deliberate:
 - **A floor at `MIN_SPAN_MM` (1e-4 mm).** Spans below it are dropped as
   tangency noise. Far below any printable feature, but it is a floor.
 - **Non-perpendicular thinness.** If a wall's thinnest cross-section is
-  not aligned with any face's outward normal (e.g., diagonal pinch
-  points), ray-casting inward from face centroids will overestimate
-  thickness. A medial-axis approach would catch these; v0 does not.
+  not aligned with any surface normal at either end (e.g., a diagonal
+  pinch between two convex edges), ray-casting overestimates thickness.
+  A medial-axis approach would catch these; v0 does not. Sharp concave
+  edges and points *are* covered, by the crease rays above — before
+  them a 90° V-groove leaving 0.5 mm of a 4 mm plate read 2.36 mm.
+- **Crease rays are sampled along the crease.** Where the material
+  under a straight crease thins along its length — a groove running
+  downhill toward the opposite face, two grooves crossing back to back
+  — the reading is high by up to half of `CREASE_STEP_MM` times the
+  slope. A crease parallel to the face opposite, the usual score-line
+  or living-hinge case, reads exactly.
 - **Coarse mesh in curved regions.** At the default tolerance, tight
   curvature (small holes, fillet roots) is represented by few
   triangles. Sample coverage is correspondingly sparse; thinness in

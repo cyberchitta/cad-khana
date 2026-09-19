@@ -10,6 +10,7 @@ TESSELLATION_ANGULAR_TOLERANCE = 0.3
 
 @dataclass(frozen=True)
 class Triangle:
+    corners: tuple[Vector, Vector, Vector]
     centroid: Vector
     normal: Vector
     area: float
@@ -19,6 +20,7 @@ def _triangle(a: Vector, b: Vector, c: Vector) -> Triangle:
     cross = (b - a).cross(c - a)
     length = cross.length
     return Triangle(
+        corners=(a, b, c),
         centroid=(a + b + c) / 3,
         normal=cross / length if length > 0 else cross,
         area=length / 2,

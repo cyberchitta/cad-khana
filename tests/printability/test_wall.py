@@ -1,11 +1,18 @@
+from math import radians, tan
+
 from build123d import (
+    Align,
     Box,
     BuildPart,
+    BuildSketch,
     Cone,
     Cylinder,
     Location,
     Locations,
     Mode,
+    Plane,
+    Polygon,
+    extrude,
 )
 from pytest import approx
 
@@ -159,3 +166,96 @@ def test_wedge_tip_is_reported_with_low_alignment():
     sample = min_wall(p.part)
     assert sample.thickness_mm < 0.5
     assert sample.alignment < 0.7
+
+
+def _grooved_plate(angle_deg: float, depth: float, length: float = 30):
+    # 20 x 20 x 4 plate, V-groove along Y cut into the top face; the root
+    # line sits `4 - depth` above the bottom face.
+    half = depth * tan(radians(angle_deg / 2))
+    with BuildPart() as p:
+        Box(20, 20, 4)
+        with BuildSketch(Plane.XZ):
+            with Locations((0, 2)):
+                Polygon((-half, 0), (half, 0), (0, -depth), align=None)
+        extrude(amount=length / 2, both=True, mode=Mode.SUBTRACT)
+    return p.part
+
+
+def test_v_groove_root_reads_the_wall_it_leaves():
+    # No facet faces the thin direction at a sharp concave edge, and the flat
+    # face opposite has no centroid under it: read 2.36 mm with 0.5 mm left.
+    sample = min_wall(_grooved_plate(90, 3.5))
+    assert sample.thickness_mm == approx(0.5, abs=0.02)
+    assert sample.alignment == approx(1.0, abs=0.05)
+
+
+def test_narrow_groove_root_reads_the_wall_it_leaves():
+    # Read 3.20 mm at alignment 0.50 with 0.4 mm left.
+    assert min_wall(_grooved_plate(60, 3.6)).thickness_mm == approx(0.4, abs=0.02)
+
+
+def test_groove_stopping_short_of_the_plate_edges():
+    sample = min_wall(_grooved_plate(90, 3.5, length=12))
+    assert sample.thickness_mm == approx(0.5, abs=0.02)
+
+
+def test_sharp_cone_pocket_apex_reads_the_floor_under_it():
+    # O5 x 2 cone pocket in a 4 mm plate: read 3.14 mm at alignment 0.78.
+    with BuildPart() as p:
+        Box(20, 20, 4)
+        with Locations((0, 0, 1)):
+            Cone(0, 2.5, 2, mode=Mode.SUBTRACT)
+    assert min_wall(p.part).thickness_mm == approx(2.0, abs=0.02)
+
+
+def test_groove_root_over_a_tilted_face_reads_the_perpendicular():
+    # The floor under the root is tilted 20 deg about the groove's axis and
+    # passes 0.5 mm from it. The thin direction is the floor's normal, not the
+    # groove's bisector, which would read 0.5 / cos 20 = 0.532.
+    with BuildPart() as p:
+        Box(12, 20, 8)
+        with BuildSketch(Plane.XZ):
+            with Locations((0, 4)):
+                Polygon((-3, 0), (3, 0), (0, -3), align=None)
+        extrude(amount=10, both=True, mode=Mode.SUBTRACT)
+        with Locations(Location((0, 0, 1), (0, 20, 0))):
+            with Locations((0, 0, -10.5)):
+                Box(80, 40, 20, mode=Mode.SUBTRACT)
+    assert min_wall(p.part).thickness_mm == approx(0.5, abs=0.01)
+
+
+def test_pocket_corners_add_no_false_minimum():
+    # Every floor-wall junction is a sharp concave edge; rays cast from them
+    # cross the 1.5 mm floor and walls obliquely and must not read thinner.
+    with BuildPart() as p:
+        Box(20, 20, 10)
+        with Locations((0, 0, 0.75)):
+            Box(17, 17, 8.5, mode=Mode.SUBTRACT)
+    assert min_wall(p.part).thickness_mm == approx(1.5, abs=0.02)
+
+
+def test_crease_running_out_at_a_mixed_corner_adds_no_false_minimum():
+    # A wall standing flush with one side of a square through-hole. Its face
+    # and the hole's adjacent wall are concave to each other, but they meet at
+    # the plate's top corner beside the wall's own convex end face: a ray
+    # fanned from that corner left through the end face microns away.
+    with BuildPart() as p:
+        Box(40, 40, 6, align=(Align.CENTER, Align.CENTER, Align.MAX))
+        Box(20, 20, 6, align=(Align.CENTER, Align.CENTER, Align.MAX), mode=Mode.SUBTRACT)
+        with Locations((0, -13, 0)):
+            Box(20, 6, 30, align=(Align.CENTER, Align.CENTER, Align.MIN))
+    assert min_wall(p.part).thickness_mm == approx(6.0, abs=0.02)
+
+
+def test_blocks_touching_along_a_line_are_not_a_crease():
+    # Two blocks kitty-corner across one edge, bridged into a single solid
+    # elsewhere: four facets share that edge, pairwise concave, with void
+    # where a crease would have material.
+    with BuildPart() as p:
+        Box(10, 10, 4, align=(Align.MAX, Align.CENTER, Align.MIN))
+        Box(10, 10, 4, align=(Align.MIN, Align.CENTER, Align.MAX))
+        with Locations((0, 8, 0)):
+            Box(20, 6, 8)
+    part = p.part
+    assert len(part.solids()) == 1
+    assert min_wall(part).thickness_mm == approx(4.0, abs=0.02)
