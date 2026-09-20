@@ -99,7 +99,22 @@ how the loop silently stops being demand-driven.
   standing status, that belongs in the shared `repo-research` policy, not
   here.)
 - **Parked ≠ waiting for a decision.** A parked note unparks on another
-  occurrence, not on someone choosing. When two notes turn out to be the
+  occurrence, not on someone choosing. **So write the unpark condition as
+  an observation only** — "a second occurrence in a separate context",
+  "the same problem for a different assertion kind" — and never as
+  "…*or* a decision on which of the N forms we want". A decision about
+  *shape* answers a different question from whether the need is real, and
+  one is always available on request, so that phrasing converts the gate
+  into a formality the promoter can discharge at will. It happened: the
+  `inspect()`-SystemExit note carried exactly that clause (2026-07-25),
+  the consumer supplied a well-argued shape, it shipped at f×1, and the
+  owner accepted it "this one time" while flagging it as no precedent
+  (ruling recorded on `implementation-log.md` "Diagnostics evolution 5").
+  When a design decision arrives while a row is still f×1, record it
+  against the row and keep waiting — it will be free when the second
+  occurrence lands. If shipping early still looks right, say plainly that
+  the gate is being waived and whose call it is, rather than routing
+  around it through the parking note's own wording. When two notes turn out to be the
   same question from different directions, that is the second occurrence —
   unpark them as one row and state the question at the level both share,
   rather than building the first shape either note suggested.

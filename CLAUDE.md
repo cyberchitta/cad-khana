@@ -459,7 +459,10 @@ Diagnostic JSONs are **ephemeral**: rewritten in full on every
 `check()` / `inspect()` run. `khana diff` requires both inputs at the
 current `schema_version` and raises on mismatch — regenerate the
 files by re-running the script. No back-compat coercion lives in the
-codebase.
+codebase. Schema bumps are therefore free, and the rule's scope
+is exactly these two files: it does **not** extend to exported
+`.stl` / `.step` / `.glb`, which a user may keep, nor to anything
+serialized for cross-session resumption (there is none today).
 
 `kind` is absent on mechanism files and `"printability"` on printability
 files — that's how `diff` disambiguates.
