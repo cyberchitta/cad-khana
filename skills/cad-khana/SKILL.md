@@ -1401,8 +1401,9 @@ the model to fix, not to waive. Only a low alignment supports a
   under a motion means **the motion never moves this claim**, so it
   tests nothing about it), `in_phase`, `failed`. Two kinds read
   `distinct: 1` under every motion and are right to: `assert_scalar`
-  and `assert_solid_count` claim nothing a pose can change. Leave
-  them out of any audit over this field.
+  and `assert_solid_count` claim nothing a pose can change. You no
+  longer have to audit this field by hand — `motions[].moved` /
+  `.movable` roll it up per motion and exclude those two kinds.
 - `assertions[].worst_at` — `{motion, t, joints_deg}` of the worst
   pose; `null` when that is the as-built pose. Re-create it with
   `assembly.posed(joints_deg)` to draw or inspect it.
@@ -1411,7 +1412,11 @@ the model to fix, not to waive. Only a low alignment supports a
   is a rest-pose green), `never_in_phase` (a phased claim whose window
   no pose entered: widen the motion or fix the window),
   `interferences_rest_pose_only` (a motion is declared, and
-  `interferences[]` did not follow it), and `multi_solid` (`part`,
+  `interferences[]` did not follow it), `motion_moved_nothing`
+  (`motion`, `moved`, `movable` — a declared motion that moved **no**
+  claim: the sweep is vacuous and the green means nothing, so check the
+  joint path drives something a claim references; with `movable: 0` no
+  claim in the tree could have moved), and `multi_solid` (`part`,
   `solid_count` — a part in several pieces that no
   `assert_solid_count` speaks for: bound it or declare it).
 

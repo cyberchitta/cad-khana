@@ -222,7 +222,7 @@ A module the import-model verbs consume never calls `check()`,
 full design, its phases, and what is still owed:
 `_notes/draft-script-decomposition.md`.
 
-## Diagnostics JSON schemas (v0.12)
+## Diagnostics JSON schemas (v0.13)
 
 Version these from day one. Agents depend on field stability.
 
@@ -230,14 +230,15 @@ Version these from day one. Agents depend on field stability.
 
 ```json
 {
-  "schema_version": "0.12",
+  "schema_version": "0.13",
   "status": "ok | error | assertion_failed",
   "error": null,
   "hint": "Missing .part accessor — use `with BuildPart() as p: ...; return p.part`.",
   "skipped_counts": {"absent_part": 0, "absent_joint": 0, "out_of_phase": 0},
   "motions": [
     {"name": "stack_turn", "samples": 180,
-     "joints_deg": {"rotating": {"min": 0.0, "max": 358.0, "max_step": 2.0}}}
+     "joints_deg": {"rotating": {"min": 0.0, "max": 358.0, "max_step": 2.0}},
+     "moved": 28, "movable": 2095}
   ],
   "parts": {
     "<name>": {
@@ -263,6 +264,7 @@ Version these from day one. Agents depend on field stability.
   "warnings": [
     {"kind": "joint_never_driven", "joint": "rotor"},
     {"kind": "never_in_phase", "assertion": "pad_engages"},
+    {"kind": "motion_moved_nothing", "motion": "lift", "moved": 0, "movable": 2095},
     {"kind": "interferences_rest_pose_only"},
     {"kind": "multi_solid", "part": "glow_band", "solid_count": 5}
   ]
@@ -307,10 +309,37 @@ moves neither part is still re-resolved.
 
 `warnings[]` on `mechanism.json` never changes `status` or the exit
 code: `joint_never_driven` (a joint no motion moves — a rest-pose
-green), `never_in_phase` (a phased claim in phase at no pose), and
+green), `never_in_phase` (a phased claim in phase at no pose),
+`motion_moved_nothing` (below), and
 `interferences_rest_pose_only` when a motion is declared —
 `interferences[]` and `parts` always describe the as-built pose; there
 is no per-pose all-pairs scan.
+
+**A motion that tests nothing is a green, so it has to say so.**
+`motions[].moved` / `.movable` and the `motion_moved_nothing` warning
+answer "was this claim held over the motion, or looked at once?" —
+which `poses.distinct` had always answered per claim while no surface
+reported it. `movable` counts the claims a motion *could* move: it
+excludes the kinds that are pose-invariant by construction
+(`assert_scalar`, `assert_solid_count`, whose `distinct: 1` is correct
+and whose inclusion would make the warning born noisy) and the claims
+skipped for an absent part or joint, which the run never held. `moved`
+counts those that reached more than one distinct evaluation under *that*
+motion — the same key `poses.distinct` uses, narrowed to one motion, so
+a claim that only crosses a `during=` boundary counts as moved and there
+is no second meaning of the word. The warning fires on `moved: 0` and
+**only** on zero: a motion that moved 28 of 2095 claims tested
+something, and any threshold between "some" and "not enough" would be
+the magnitude filter the false-green rule forbids — that is what the
+count is for. `moved: 0, movable: 0` is a third reading, and a distinct
+diagnosis in the same kind: nothing in this tree could have been moved
+by any motion. `check()` prints one line per declared motion on stderr
+(`stack_turn: 180 poses, moved 28 of 2095 claims`), which is the green
+side of the `failed at 8 of 181 poses` the failure path already carried;
+an assembly declaring no motion prints nothing new. `khana diff`
+reports a changed `moved` — a motion that keeps its samples and its
+joint range and stops testing anything is a regression no other line
+shows.
 
 **Connectivity is a claim nothing else makes.** Volume, bbox,
 clearance, interference and every drawn view are blind to whether a
@@ -392,7 +421,7 @@ comparison flips on solver noise.
 
 ```json
 {
-  "schema_version": "0.12",
+  "schema_version": "0.13",
   "kind": "printability",
   "status": "ok | assertion_failed",
   "name": "housing",

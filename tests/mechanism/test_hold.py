@@ -336,3 +336,131 @@ def test_a_solid_count_is_the_same_at_every_pose():
     result = _only(a)
     assert result.passed
     assert result.poses == PoseCounts(evaluated=8, distinct=1, in_phase=8, failed=0)
+
+
+# --- a motion that tests nothing (V1-V6) ---
+
+VACUOUS = "motion_moved_nothing"
+
+
+def _motion_named(assembly: Assembly, name: str):
+    (summary,) = [m for m in hold(assembly).motions if m.name == name]
+    return summary
+
+
+def test_a_motion_that_moves_a_claim_counts_it():
+    a = (
+        _swung()
+        .assert_no_interference("post", "swing.arm")
+        .with_motion(_swing(90))
+    )
+    summary = _motion_named(a, "swing_in")
+    assert (summary.moved, summary.movable) == (1, 1)
+    assert not [w for w in hold(a).warnings if w["kind"] == VACUOUS]
+
+
+def test_a_motion_no_claim_rides_is_warned_with_both_counts():
+    """The tower case: a declared motion whose joint moves nothing any
+    claim references. Every number is right and the run reads green."""
+    a = (
+        _swung()
+        .assert_no_interference("post", "base")
+        .with_motion(_swing(90))
+    )
+    summary = _motion_named(a, "swing_in")
+    assert (summary.moved, summary.movable) == (0, 1)
+    assert {
+        "kind": VACUOUS,
+        "motion": "swing_in",
+        "moved": 0,
+        "movable": 1,
+    } in hold(a).warnings
+
+
+def test_pose_invariant_kinds_are_not_movable():
+    """`assert_scalar` / `assert_solid_count` key to () and can never
+    move, so counting them would make the warning born noisy.
+    `movable: 0` is the distinct diagnosis: nothing here could move."""
+    a = (
+        _swung()
+        .assert_scalar("budget", 3.0, le=5.0)
+        .assert_solid_count("swing.arm", eq=1)
+        .with_motion(_swing(90))
+    )
+    summary = _motion_named(a, "swing_in")
+    assert (summary.moved, summary.movable) == (0, 0)
+    assert {
+        "kind": VACUOUS,
+        "motion": "swing_in",
+        "moved": 0,
+        "movable": 0,
+    } in hold(a).warnings
+
+
+def test_movable_counts_only_the_pose_variant_claims():
+    a = (
+        _swung()
+        .assert_solid_count("swing.arm", eq=1)
+        .assert_no_interference("post", "swing.arm")
+        .with_motion(_swing(90))
+    )
+    summary = _motion_named(a, "swing_in")
+    assert (summary.moved, summary.movable) == (1, 1)
+
+
+def test_an_absent_claim_is_not_movable():
+    """It was never held, so it is not a claim this run could move."""
+    a = (
+        _swung()
+        .assert_no_interference("post", "swing.bolt")
+        .with_motion(_swing(90))
+    )
+    summary = _motion_named(a, "swing_in")
+    assert (summary.moved, summary.movable) == (0, 0)
+
+
+def test_a_motion_that_moves_some_claims_does_not_warn():
+    """28 of 2095 tested something. No threshold between some and not
+    enough -- that is what the count is for, not the warning."""
+    a = (
+        _swung()
+        .assert_no_interference("post", "swing.arm")
+        .assert_no_interference("post", "base")
+        .with_motion(_swing(90))
+    )
+    summary = _motion_named(a, "swing_in")
+    assert (summary.moved, summary.movable) == (1, 2)
+    assert not [w for w in hold(a).warnings if w["kind"] == VACUOUS]
+
+
+def test_each_motion_is_counted_on_its_own():
+    """Per-motion attribution: one real motion does not excuse a
+    vacuous sibling."""
+    a = (
+        _swung()
+        .assert_no_interference("post", "swing.arm")
+        .with_motion(_swing(90))
+        .with_motion(Motion.over_joint("nudge", "swing", 0.0, 0.0, 15.0))
+    )
+    held = hold(a)
+    by_name = {m.name: m for m in held.motions}
+    assert (by_name["swing_in"].moved, by_name["swing_in"].movable) == (1, 1)
+    assert (by_name["nudge"].moved, by_name["nudge"].movable) == (0, 1)
+    assert [w["motion"] for w in held.warnings if w["kind"] == VACUOUS] == [
+        "nudge"
+    ]
+
+
+def test_a_phase_change_counts_as_moved():
+    """V3 -- moved reuses the shipped key, which carries phase state.
+    Geometry constant, phase crossing: the motion exercised this claim
+    hardest, and a geometry-only definition would have missed it."""
+    a = (
+        _swung()
+        .assert_no_interference(
+            "post", "base", during=JointWindow("swing", 0.0, 40.0)
+        )
+        .with_motion(_swing(90))
+    )
+    summary = _motion_named(a, "swing_in")
+    assert (summary.moved, summary.movable) == (1, 1)

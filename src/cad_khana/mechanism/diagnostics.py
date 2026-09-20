@@ -9,7 +9,7 @@ from build123d import Part
 if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
 
-SCHEMA_VERSION = "0.12"
+SCHEMA_VERSION = "0.13"
 INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
 
 # Absolute tolerance on assertion bound comparisons, in the bound's own
@@ -96,9 +96,22 @@ class JointRange:
 
 @dataclass(frozen=True)
 class MotionSummary:
+    """``moved`` — how many of this motion's ``movable`` claims it
+    actually moved, i.e. reached more than one ``poses.distinct``
+    evaluation under. ``movable`` excludes the kinds that are
+    pose-invariant by construction (``assert_scalar``,
+    ``assert_solid_count``), which no motion can move, and the claims
+    skipped for an absent part or joint, which this run never held.
+    ``moved: 0`` is a motion that tested nothing and draws a
+    ``motion_moved_nothing`` warning; with ``movable: 0`` it says
+    something different again — nothing in this tree could have been
+    moved by any motion."""
+
     name: str
     samples: int
     joints_deg: dict[str, JointRange]
+    moved: int
+    movable: int
 
 
 @dataclass(frozen=True)

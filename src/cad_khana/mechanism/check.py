@@ -56,6 +56,15 @@ def check(assembly: Assembly, out: str | Path = "outputs") -> CheckResult:
     )
     json_path = out_path / "mechanism.json"
     json_path.write_text(json.dumps(asdict(diagnostics), indent=2) + "\n")
+    # The failure path already says "failed at 8 of 181 poses"; a green
+    # under a motion said nothing at all, so a motion that tested
+    # nothing read exactly like one that tested everything.
+    for m in held.motions:
+        print(
+            f"{m.name}: {m.samples} poses, "
+            f"moved {m.moved} of {m.movable} claims",
+            file=sys.stderr,
+        )
     if warnings:
         kinds = Counter(w["kind"] for w in warnings)
         summary = ", ".join(f"{n} {kind}" for kind, n in kinds.items())

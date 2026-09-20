@@ -182,13 +182,20 @@ def test_warning_added_and_removed():
 # --- mechanism diff: motions and warnings ---------------------------------
 
 
-def _motion(samples: int = 180, max_step: float = 2.0) -> dict:
+def _motion(
+    samples: int = 180,
+    max_step: float = 2.0,
+    moved: int = 28,
+    movable: int = 2095,
+) -> dict:
     return {
         "name": "stack_turn",
         "samples": samples,
         "joints_deg": {
             "rotating": {"min": 0.0, "max": 358.0, "max_step": max_step}
         },
+        "moved": moved,
+        "movable": movable,
     }
 
 
@@ -502,3 +509,43 @@ def test_printability_solid_count_change_is_reported():
     out = diff(old, new)
     assert "solid_count" in out and "1 → 2" in out
     assert "added: multi_solid: pair" in out
+
+
+# --- a motion's moved count (V4, V5) ---
+
+
+def _counted_motion(name: str, moved: int, movable: int) -> dict:
+    return {
+        "name": name,
+        "samples": 10,
+        "joints_deg": {"j": {"min": 0.0, "max": 90.0, "max_step": 10.0}},
+        "moved": moved,
+        "movable": movable,
+    }
+
+
+def test_a_motion_that_stops_moving_claims_is_reported():
+    """The regression nobody would otherwise see: same samples, same
+    joint range, and the sweep quietly stopped testing anything."""
+    old = _empty_mech() | {"motions": [_counted_motion("turn", 28, 2095)]}
+    new = _empty_mech() | {"motions": [_counted_motion("turn", 0, 2095)]}
+    out = diff(old, new)
+    assert "moved 28 of 2095 claims → 0 of 2095" in out
+
+
+def test_a_motion_whose_counts_hold_reports_nothing():
+    old = _empty_mech() | {"motions": [_counted_motion("turn", 28, 2095)]}
+    assert diff(old, old) == "no changes\n"
+
+
+def test_two_vacuous_motions_are_labelled_apart():
+    """`motion_moved_nothing` carries `motion`, not `assertion` or
+    `part`, so the warning label has to know that field or both
+    motions collapse into one line."""
+    vacuous = [
+        {"kind": "motion_moved_nothing", "motion": n, "moved": 0, "movable": 4}
+        for n in ("turn", "nudge")
+    ]
+    out = diff(_empty_mech(), _empty_mech() | {"warnings": vacuous})
+    assert "added: motion_moved_nothing: turn" in out
+    assert "added: motion_moved_nothing: nudge" in out

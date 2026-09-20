@@ -148,10 +148,17 @@ def _direction_signature(claim: Distance) -> tuple[float, ...]:
     )
 
 
+def _pose_invariant(assertion: Assertion) -> bool:
+    """A claim whose measurement cannot depend on any pose. No motion
+    can move one, so none is counted against a motion that moved
+    nothing — the reason ``MotionSummary.movable`` exists."""
+    return isinstance(core(assertion), ScalarClaim | SolidCount)
+
+
 def _geometry(assertion: Assertion, frame: _Frame) -> Key:
     """What the claim's measurement depends on at this pose."""
     claim = core(assertion)
-    if isinstance(claim, ScalarClaim | SolidCount):
+    if _pose_invariant(assertion):
         return ()
     if isinstance(claim, AnchorsCoincident):
         a, b = frame.assembly.anchor(claim.a), frame.assembly.anchor(claim.b)
@@ -300,7 +307,32 @@ def _rolled(rest: _Visit, later: tuple[_Visit, ...], total: int) -> AssertionRes
     )
 
 
-def _summary(motion: Motion, poses: tuple[Pose, ...], rest: Pose) -> MotionSummary:
+def _moved(
+    motion: str,
+    at_rest: tuple[_Visit, ...],
+    later: dict[int, list[_Visit]],
+    movable: tuple[bool, ...],
+) -> int:
+    """How many movable claims this motion moved. "Moved" is the
+    shipped ``distinct`` key narrowed to one motion's samples -- not a
+    second definition, and it carries phase state, so a claim that only
+    crosses a ``during=`` boundary counts."""
+    return sum(
+        1
+        for i, ok in enumerate(movable)
+        if ok
+        and {v.key for v in later.get(i, ()) if v.sample.motion == motion}
+        - {at_rest[i].key}
+    )
+
+
+def _summary(
+    motion: Motion,
+    poses: tuple[Pose, ...],
+    rest: Pose,
+    moved: int,
+    movable: int,
+) -> MotionSummary:
     """A joint the schedule leaves out at some sample sits at its
     as-built value there."""
     series = {
@@ -320,6 +352,8 @@ def _summary(motion: Motion, poses: tuple[Pose, ...], rest: Pose) -> MotionSumma
             )
             for path, vs in series.items()
         },
+        moved=moved,
+        movable=movable,
     )
 
 
@@ -342,6 +376,16 @@ def _warnings(
             if isinstance(a, Phased)
             and r.skipped not in ABSENCES
             and r.poses.in_phase == 0
+        )
+        + tuple(
+            {
+                "kind": "motion_moved_nothing",
+                "motion": s.name,
+                "moved": s.moved,
+                "movable": s.movable,
+            }
+            for s in summaries
+            if s.moved == 0
         )
         + (({"kind": "interferences_rest_pose_only"},) if summaries else ())
     )
@@ -396,7 +440,20 @@ def hold(assembly: Assembly) -> Held:
         _rolled(v, tuple(later.get(i, ())), len(samples))
         for i, v in enumerate(at_rest)
     )
-    summaries = tuple(_summary(m, poses, rest.values) for m, poses in schedules)
+    movable = tuple(
+        not _pose_invariant(a) and v.result.skipped not in ABSENCES
+        for a, v in zip(assertions, at_rest)
+    )
+    summaries = tuple(
+        _summary(
+            m,
+            poses,
+            rest.values,
+            _moved(m.name, at_rest, later, movable),
+            sum(movable),
+        )
+        for m, poses in schedules
+    )
     return Held(
         assertions=results,
         motions=summaries,

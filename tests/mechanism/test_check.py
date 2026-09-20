@@ -169,7 +169,7 @@ def test_check_skipped_assertion_does_not_fail_the_run(tmp_path: Path):
 def test_check_with_nothing_skipped_still_lists_every_skip_class(tmp_path: Path):
     check(Assembly().with_part("a", _cube()), out=tmp_path)
     data = json.loads((tmp_path / "mechanism.json").read_text())
-    assert data["schema_version"] == "0.12"
+    assert data["schema_version"] == "0.13"
     assert data["skipped_counts"] == {
         "absent_part": 0,
         "absent_joint": 0,
@@ -253,6 +253,8 @@ def test_check_holds_assertions_over_a_declared_motion(tmp_path: Path, capsys):
             "joints_deg": {
                 "swing": {"min": 0.0, "max": 90.0, "max_step": approx(30.0)}
             },
+            "moved": 1,
+            "movable": 1,
         }
     ]
     (held,) = data["assertions"]
@@ -330,3 +332,30 @@ def test_a_units_solid_count_claim_covers_the_part_in_a_parent(tmp_path: Path):
 def test_multi_solid_is_named_in_the_stderr_roll_up(tmp_path: Path, capsys):
     check(Assembly().with_part("pair", _two_bodies()), out=tmp_path)
     assert "1 multi_solid" in capsys.readouterr().err
+
+
+def test_check_prints_what_each_motion_moved(tmp_path: Path, capsys):
+    """The red side already says "failed at 8 of 181 poses"; this is the
+    green side of that line."""
+    assembly = (
+        Assembly()
+        .with_part("post", _cube(), location=Location((0, 20, 0)))
+        .with_subassembly(
+            "swing",
+            Assembly().with_part("arm", _cube(), location=Location((20, 0, 0))),
+            joint=RevoluteJoint(axis=Axis.Z),
+        )
+        .assert_no_interference("post", "swing.arm")
+        .with_motion(Motion.over_joint("swing_in", "swing", 0.0, 30.0, step=30.0))
+    )
+    check(assembly, out=tmp_path)
+    err = capsys.readouterr().err
+    assert "swing_in: 2 poses, moved 1 of 1 claims" in err
+
+
+def test_check_says_nothing_about_motions_when_none_are_declared(
+    tmp_path: Path, capsys
+):
+    """No new output for the many consumers that declare no motion."""
+    check(Assembly().with_part("a", _cube()), out=tmp_path)
+    assert "poses, moved" not in capsys.readouterr().err

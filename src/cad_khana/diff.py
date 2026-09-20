@@ -245,7 +245,17 @@ def _motion_changes(name: str, old: Diag, new: Diag) -> list[str]:
         f"  changed: {name} now drives {joint}"
         for joint in sorted(new_joints.keys() - old_joints.keys())
     ]
-    return samples + joints + driven
+    # A motion can keep its samples and its joint range and stop testing
+    # anything -- the one regression no other line here would show.
+    counts = (
+        [
+            f"  changed: {name} moved {old['moved']} of {old['movable']} "
+            f"claims → {new['moved']} of {new['movable']}"
+        ]
+        if (old["moved"], old["movable"]) != (new["moved"], new["movable"])
+        else []
+    )
+    return samples + joints + driven + counts
 
 
 def _motions_section(old: list[Diag], new: list[Diag]) -> list[str]:
@@ -270,7 +280,9 @@ def _motions_section(old: list[Diag], new: list[Diag]) -> list[str]:
 
 
 def _mech_warning_label(w: Diag) -> str:
-    subject = w.get("joint") or w.get("assertion") or w.get("part")
+    subject = (
+        w.get("joint") or w.get("assertion") or w.get("part") or w.get("motion")
+    )
     return f"{w['kind']}: {subject}" if subject else w["kind"]
 
 
