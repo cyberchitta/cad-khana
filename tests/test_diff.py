@@ -475,3 +475,30 @@ def test_regressed_assertion_not_double_reported_as_value_change():
     out = diff(old, new)
     assert "regressed: d" in out
     assert "value" not in out
+
+
+# --- solid_count --------------------------------------------------------
+
+
+def test_mechanism_part_solid_count_change_is_reported():
+    old = _empty_mech() | {"parts": {"a": {"volume_mm3": 100, "solid_count": 1, "bbox": {}}}}
+    new = _empty_mech() | {"parts": {"a": {"volume_mm3": 100, "solid_count": 2, "bbox": {}}}}
+    assert "solid_count: 1 → 2" in diff(old, new)
+
+
+def test_mechanism_multi_solid_warning_is_labelled_by_part():
+    new = _empty_mech() | {
+        "warnings": [{"kind": "multi_solid", "part": "pair", "solid_count": 2}]
+    }
+    assert "added: multi_solid: pair" in diff(_empty_mech(), new)
+
+
+def test_printability_solid_count_change_is_reported():
+    old = _empty_printability() | {"solid_count": 1}
+    new = _empty_printability() | {
+        "solid_count": 2,
+        "warnings": [{"kind": "multi_solid", "part": "pair", "solid_count": 2}],
+    }
+    out = diff(old, new)
+    assert "solid_count" in out and "1 → 2" in out
+    assert "added: multi_solid: pair" in out

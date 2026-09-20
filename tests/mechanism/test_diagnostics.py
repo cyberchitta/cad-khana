@@ -1,4 +1,4 @@
-from build123d import Box, BuildPart, Location
+from build123d import Box, BuildPart, Location, Locations
 from pytest import approx
 
 from cad_khana.mechanism.assembly import Assembly
@@ -146,3 +146,30 @@ def test_fused_box_topology_differs_from_single_box():
         d_single.parts["single"].edge_count,
         d_single.parts["single"].vertex_count,
     )
+
+
+# --- solid_count --------------------------------------------------------
+
+
+def _two_bodies(offset: tuple[float, float, float]):
+    with BuildPart() as p:
+        with Locations((0, 0, 0), offset):
+            Box(10, 10, 10)
+    return p.part
+
+
+def test_a_single_solid_reports_solid_count_one():
+    parts = compute(Assembly().with_part("cube", _cube())).parts
+    assert parts["cube"].solid_count == 1
+
+
+def test_a_detached_body_is_counted():
+    parts = compute(Assembly().with_part("pair", _two_bodies((30, 0, 0)))).parts
+    assert parts["pair"].solid_count == 2
+
+
+def test_bodies_touching_only_along_an_edge_are_two_solids():
+    """Volume, bbox and interference all read this as one part; only
+    the count sees that nothing joins the two."""
+    parts = compute(Assembly().with_part("pair", _two_bodies((10, 10, 0)))).parts
+    assert parts["pair"].solid_count == 2

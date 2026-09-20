@@ -327,3 +327,12 @@ def test_scalar_claims_ride_along_unchanged():
     result = _only(a)
     assert result.passed and result.value == 3.0
     assert result.poses.distinct == 1
+
+
+def test_a_solid_count_is_the_same_at_every_pose():
+    """Connectivity does not depend on where a part is — a moving part's
+    count is looked at once, however long the motion."""
+    a = _swung().assert_solid_count("swing.arm", eq=1).with_motion(_swing(90))
+    result = _only(a)
+    assert result.passed
+    assert result.poses == PoseCounts(evaluated=8, distinct=1, in_phase=8, failed=0)

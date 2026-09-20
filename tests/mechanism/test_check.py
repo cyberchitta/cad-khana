@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
-from build123d import Axis, Box, BuildPart, Location
+from build123d import Axis, Box, BuildPart, Location, Locations
 from pytest import approx
 
 from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
@@ -169,7 +169,7 @@ def test_check_skipped_assertion_does_not_fail_the_run(tmp_path: Path):
 def test_check_with_nothing_skipped_still_lists_every_skip_class(tmp_path: Path):
     check(Assembly().with_part("a", _cube()), out=tmp_path)
     data = json.loads((tmp_path / "mechanism.json").read_text())
-    assert data["schema_version"] == "0.11"
+    assert data["schema_version"] == "0.12"
     assert data["skipped_counts"] == {
         "absent_part": 0,
         "absent_joint": 0,
@@ -271,3 +271,62 @@ def test_check_holds_assertions_over_a_declared_motion(tmp_path: Path, capsys):
     assert data["warnings"] == [{"kind": "interferences_rest_pose_only"}]
     assert data["interferences"] == []
     assert "2 of 5 poses" in capsys.readouterr().err
+
+
+# --- multi_solid --------------------------------------------------------
+
+
+def _two_bodies():
+    with BuildPart() as p:
+        with Locations((0, 0, 0), (30, 0, 0)):
+            Box(10, 10, 10)
+    return p.part
+
+
+def _mechanism(tmp_path: Path) -> dict:
+    return json.loads((tmp_path / "mechanism.json").read_text())
+
+
+def test_a_multi_solid_part_nobody_claimed_is_warned_about(tmp_path: Path):
+    check(
+        Assembly().with_part("cube", _cube()).with_part("pair", _two_bodies()),
+        out=tmp_path,
+    )
+    data = _mechanism(tmp_path)
+    assert data["status"] == "ok"
+    assert data["parts"]["pair"]["solid_count"] == 2
+    assert data["warnings"] == [
+        {"kind": "multi_solid", "part": "pair", "solid_count": 2}
+    ]
+
+
+def test_a_solid_count_claim_speaks_for_its_part(tmp_path: Path):
+    check(
+        Assembly().with_part("band", _two_bodies()).assert_solid_count("band", eq=2),
+        out=tmp_path,
+    )
+    assert _mechanism(tmp_path)["warnings"] == []
+
+
+def test_a_failing_solid_count_is_a_failure_not_a_warning(tmp_path: Path):
+    with pytest.raises(SystemExit):
+        check(
+            Assembly()
+            .with_part("body", _two_bodies())
+            .assert_solid_count("body", eq=1),
+            out=tmp_path,
+        )
+    data = _mechanism(tmp_path)
+    assert data["status"] == "assertion_failed"
+    assert data["warnings"] == []
+
+
+def test_a_units_solid_count_claim_covers_the_part_in_a_parent(tmp_path: Path):
+    unit = Assembly().with_part("band", _two_bodies()).assert_solid_count("band", eq=2)
+    check(Assembly().with_subassembly("unit", unit), out=tmp_path)
+    assert _mechanism(tmp_path)["warnings"] == []
+
+
+def test_multi_solid_is_named_in_the_stderr_roll_up(tmp_path: Path, capsys):
+    check(Assembly().with_part("pair", _two_bodies()), out=tmp_path)
+    assert "1 multi_solid" in capsys.readouterr().err

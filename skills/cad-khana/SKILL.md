@@ -551,10 +551,32 @@ JSON stale from a previous run while it still reads as current.
 | `.assert_scalar(name, value, ge=…, le=…)` | A named claim about a non-geometric scalar (friction budget, torque margin). No bounds = pure recorder. |
 | `.assert_tangent_contact(a, b, tol_mm=…)` | Parts `a` and `b` **touch**: surface gap ≤ `tol_mm` (default 1e-3, noise allowance — not a design gap) and no real overlap. A gap fails, an overlap fails. See below. |
 | `.assert_allowed_contact(a, b, max_overlap_mm3=…, min_overlap_mm3=…)` | Design-intended overlap stays within bounds (a press-fit modeled at its true interference). A gap passes unless `min_overlap_mm3` makes engagement itself the claim. See below. |
+| `.assert_solid_count(part, eq=1)` | `part` is exactly `eq` solids. The only claim about **connectivity** — a cut that severs a part leaves its volume, bbox, clearances and every drawn view plausible. `eq=N` declares a part that is several solids on purpose. See below. |
 | `.assert_interference(a, b, reason=…)` | Parts `a` and `b` **do** overlap (intersection volume > 0.001 mm³). Regression alarm for a documented, accepted overlap — fails if the overlap disappears, forcing the assertion to be removed when the design gap gets fixed. |
 
 Give assertions a `name=` when you'd benefit from a specific label in
 the diagnostics; otherwise they get an auto-generated one.
+
+### One piece, or several on purpose
+
+Every part reports `solid_count`, and `khana check` **warns**
+(`multi_solid`, never a failure) about any part that is more than one
+solid and that no claim speaks for. Nothing else sees this: a pocket
+cut one millimetre too deep can detach a lip into a free ring with every
+scalar green and every `khana draw` view unchanged. Answer the warning
+one of two ways:
+
+```python
+a = a.assert_solid_count("body")            # must be one piece — red if severed
+a = a.assert_solid_count("glow_band", eq=5)  # five segments by design; warning goes
+```
+
+Bodies that touch only along an edge or at a point count as separate
+solids — they share no material, and will not print as one part.
+**Red-test the claim by removing the bridge, not by shrinking it:** a
+0.001 mm bridge is still a bridge, so an epsilon injection leaves it
+green. (A bridge that thin is `min_wall`'s to catch, not this claim's.)
+It takes no `during=` — the count is the same at every pose.
 
 `assert_interference` is the exception, not the rule. Use it only when
 a real design constraint leaves an overlap that hasn't been resolved
@@ -1251,6 +1273,9 @@ the model to fix, not to waive. Only a low alignment supports a
 - `parts[name].face_count` / `edge_count` / `vertex_count` — cheapest
   way to verify a boolean operation changed geometry: counts shift on
   success, stay the same on a silent no-op or OCCT failure.
+- `parts[name].solid_count` — `1` for a part in one piece. Above `1`
+  something is detached (or touches only along an edge); see
+  `multi_solid` under `warnings`.
 - `interferences` — list of overlapping part pairs with volume +
   centroid, **at the as-built pose only**, motion or no motion.
 - `motions` — one entry per declared motion: `samples`, and per driven
@@ -1286,15 +1311,21 @@ the model to fix, not to waive. Only a low alignment supports a
 - `warnings` — never fail the run, always worth reading:
   `joint_never_driven` (a joint no motion moves — everything about it
   is a rest-pose green), `never_in_phase` (a phased claim whose window
-  no pose entered: widen the motion or fix the window), and
+  no pose entered: widen the motion or fix the window),
   `interferences_rest_pose_only` (a motion is declared, and
-  `interferences[]` did not follow it).
+  `interferences[]` did not follow it), and `multi_solid` (`part`,
+  `solid_count` — a part in several pieces that no
+  `assert_solid_count` speaks for: bound it or declare it).
 
 `<name>-printability.json` after every `inspect()`:
 
 - `kind: "printability"` — identifies the file.
 - `name`, `method` — for disambiguation when scripts inspect many parts.
 - `volume_mm3`, `bbox` — basic part metrics.
+- `solid_count` — `1` for a part in one piece; above `1` the file also
+  carries a `multi_solid` warning. `inspect()` takes no claim about it,
+  so a part that is several solids on purpose keeps the warning here —
+  declare the intent on the assembly with `assert_solid_count`.
 - `min_wall_mm` — thinnest wall found by ray sampling; `null` if
   unmeasurable.
 - `min_wall_at` — `[x, y, z]` surface point where the thinnest wall was
@@ -1317,8 +1348,10 @@ the model to fix, not to waive. Only a low alignment supports a
 - `assertions` — `wall_min:…` and `overhang_max:…` entries; `passed` +
   `detail`, plus `waived` (the rationale) when a failure was waived.
 - `warnings` — non-fatal notices: `waived_failure` (a failed check that
-  was waived; carries the reason and the failure detail) and
-  `stale_waiver` (a waiver whose check now passes — remove it).
+  was waived; carries the reason and the failure detail),
+  `stale_waiver` (a waiver whose check now passes — remove it), and
+  `multi_solid` (`part`, `solid_count` — the part is in several
+  pieces).
 
 ## Known limitations
 

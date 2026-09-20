@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
-from build123d import Box, BuildPart, Pos
+from build123d import Box, BuildPart, Locations, Pos
 from pytest import approx
 
 from cad_khana.printability.inspect import inspect
@@ -218,3 +218,32 @@ def test_waived_failure_prints_warning_to_stderr(tmp_path: Path, capsys):
     )
     err = capsys.readouterr().err
     assert "plate: warning: waived_failure: wall_min:5.0 — artifact" in err
+
+
+# --- solid_count --------------------------------------------------------
+
+
+def _two_bodies():
+    with BuildPart() as p:
+        with Locations((0, 0, 0), (30, 0, 0)):
+            Box(10, 10, 10)
+    return p.part
+
+
+def test_solid_count_is_reported(tmp_path: Path):
+    diag = inspect(_cube(), method=FDM(), out=tmp_path, name="cube")
+    assert diag.solid_count == 1
+    assert diag.warnings == ()
+    data = json.loads((tmp_path / "cube-printability.json").read_text())
+    assert data["solid_count"] == 1
+
+
+def test_a_multi_solid_part_is_warned_about_and_does_not_fail(tmp_path: Path, capsys):
+    diag = inspect(_two_bodies(), method=FDM(), out=tmp_path, name="pair")
+    assert diag.status == "ok"
+    data = json.loads((tmp_path / "pair-printability.json").read_text())
+    assert data["solid_count"] == 2
+    assert data["warnings"] == [
+        {"kind": "multi_solid", "part": "pair", "solid_count": 2}
+    ]
+    assert "pair: warning: multi_solid: 2 solids" in capsys.readouterr().err

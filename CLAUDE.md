@@ -222,7 +222,7 @@ A module the import-model verbs consume never calls `check()`,
 full design, its phases, and what is still owed:
 `_notes/draft-script-decomposition.md`.
 
-## Diagnostics JSON schemas (v0.11)
+## Diagnostics JSON schemas (v0.12)
 
 Version these from day one. Agents depend on field stability.
 
@@ -230,7 +230,7 @@ Version these from day one. Agents depend on field stability.
 
 ```json
 {
-  "schema_version": "0.11",
+  "schema_version": "0.12",
   "status": "ok | error | assertion_failed",
   "error": null,
   "hint": "Missing .part accessor — use `with BuildPart() as p: ...; return p.part`.",
@@ -248,7 +248,8 @@ Version these from day one. Agents depend on field stability.
       "is_valid": true,
       "face_count": 6,
       "edge_count": 12,
-      "vertex_count": 8
+      "vertex_count": 8,
+      "solid_count": 1
     }
   },
   "interferences": [
@@ -262,7 +263,8 @@ Version these from day one. Agents depend on field stability.
   "warnings": [
     {"kind": "joint_never_driven", "joint": "rotor"},
     {"kind": "never_in_phase", "assertion": "pad_engages"},
-    {"kind": "interferences_rest_pose_only"}
+    {"kind": "interferences_rest_pose_only"},
+    {"kind": "multi_solid", "part": "glow_band", "solid_count": 5}
   ]
 }
 ```
@@ -310,6 +312,23 @@ green), `never_in_phase` (a phased claim in phase at no pose), and
 `interferences[]` and `parts` always describe the as-built pose; there
 is no per-pose all-pairs scan.
 
+**Connectivity is a claim nothing else makes.** Volume, bbox,
+clearance, interference and every drawn view are blind to whether a
+part is in one piece — a consumer shipped-in-CAD a body whose lip a
+cut had detached into a free ring, every scalar green. So
+`parts.<name>.solid_count` (and `solid_count` on the printability
+file) is always reported, and a part above `1` that no claim speaks
+for draws a `multi_solid` warning. It is a warning, not a failure,
+because a part can be several solids on purpose (a band parted into
+segments): `assert_solid_count(part, eq=N)` is both the bound (`eq=1`)
+and the declaration of intent (`eq=5`), and either one silences the
+warning for that part — declare, don't suppress. It carries the count
+in `value`, takes no `during=` (the count is pose-invariant, and held
+evaluation looks once), and a failing claim is a failure, not also a
+warning. Bodies touching only along an edge count as separate.
+`inspect()` has no claim form, so its `multi_solid` warning stands for
+an intentionally multi-solid part.
+
 `during=` takes a `JointWindow` or a tuple that must all hold, on every
 part-referencing `assert_*` (group forms included), through one wrapper
 (`Phased`). Outside its phase a claim says nothing, and what that means
@@ -346,7 +365,7 @@ hold it.
 `assertions[].value` carries the measured/claimed scalar for
 value-carrying assertions (`assert_distance`, `assert_scalar`,
 `assert_tangent_contact` gap in mm, `assert_allowed_contact` overlap
-in mm³) even on pass — `khana diff` reports drift the boolean can't
+in mm³, `assert_solid_count` count) even on pass — `khana diff` reports drift the boolean can't
 see — and is `null` for the boolean-only kinds.
 
 Sub-assembly assertion lists propagate: a composed parent evaluates
@@ -363,7 +382,7 @@ comparison flips on solver noise.
 
 ```json
 {
-  "schema_version": "0.11",
+  "schema_version": "0.12",
   "kind": "printability",
   "status": "ok | assertion_failed",
   "name": "housing",
@@ -373,6 +392,7 @@ comparison flips on solver noise.
   "surface_area_mm2": 3210.5,
   "center_of_mass_mm": [x, y, z],
   "is_valid": true,
+  "solid_count": 1,
   "min_wall_mm": 1.8,
   "min_wall_at": [x, y, z],
   "min_wall_alignment": 1.0,

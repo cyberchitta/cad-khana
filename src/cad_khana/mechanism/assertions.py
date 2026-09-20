@@ -407,6 +407,36 @@ class ScalarClaim:
 
 
 @dataclass(frozen=True)
+class SolidCount:
+    """Assert ``part`` is exactly ``eq`` solids — the one claim about
+    connectivity. Volume, bbox, clearance and interference cannot tell
+    a part in one piece from one a cut has severed, and neither can a
+    drawing. ``eq=1`` bounds it; any other ``eq`` declares a part that
+    is several solids on purpose, which is also what keeps it out of
+    the ``multi_solid`` warnings. A topological claim, so it has no
+    phase: the count is the same at every pose."""
+
+    part: str
+    eq: int
+    name: str
+
+    @property
+    def part_refs(self) -> tuple[str, ...]:
+        return (self.part,)
+
+    def qualified(self, prefix: str, location: Location) -> "SolidCount":
+        return replace(
+            self, part=f"{prefix}.{self.part}", name=f"{prefix}.{self.name}"
+        )
+
+    def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
+        count = len(parts[self.part].solids())
+        passed = count == self.eq
+        detail = None if passed else f"{count} solids, expected {self.eq}"
+        return AssertionResult(self.name, passed, detail, value=float(count))
+
+
+@dataclass(frozen=True)
 class ExpectedInterference:
     """Assert that two parts DO interfere — a regression alarm for a
     known, accepted overlap. Fails if the overlap disappears, so the
@@ -545,7 +575,7 @@ class Phased:
 
 
 Assertion = (
-    PartAssertion | Phased | AnchorsCoincident | ScalarClaim
+    PartAssertion | Phased | AnchorsCoincident | ScalarClaim | SolidCount
 )
 
 # Where a claim stands at one pose. ``FORBID`` is a permission outside
@@ -590,6 +620,11 @@ def drop_contact_shadowed(
             and frozenset(a.part_refs) in contacts
         )
     )
+
+
+def solid_count_claimed(assertions: tuple[Assertion, ...]) -> frozenset[str]:
+    """The parts a solid-count claim speaks for."""
+    return frozenset(a.part for a in assertions if isinstance(a, SolidCount))
 
 
 def contact_claims(assertions: tuple[Assertion, ...]) -> Contacts:

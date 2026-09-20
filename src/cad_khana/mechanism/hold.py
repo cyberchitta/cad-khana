@@ -42,6 +42,7 @@ from cad_khana.mechanism.assertions import (
     Distance,
     Phased,
     ScalarClaim,
+    SolidCount,
     TangentContact,
     contact_claims,
     core,
@@ -54,6 +55,7 @@ from cad_khana.mechanism.diagnostics import (
     JointRange,
     MotionSummary,
     PoseCounts,
+    Warning,
     WorstAt,
 )
 from cad_khana.mechanism.motion import Motion, Pose
@@ -67,7 +69,7 @@ PLACEMENT_DECIMALS = 9
 class Held:
     assertions: tuple[AssertionResult, ...]
     motions: tuple[MotionSummary, ...]
-    warnings: tuple[dict[str, str], ...]
+    warnings: tuple[Warning, ...]
 
 
 @dataclass(frozen=True)
@@ -149,7 +151,7 @@ def _direction_signature(claim: Distance) -> tuple[float, ...]:
 def _geometry(assertion: Assertion, frame: _Frame) -> Key:
     """What the claim's measurement depends on at this pose."""
     claim = core(assertion)
-    if isinstance(claim, ScalarClaim):
+    if isinstance(claim, ScalarClaim | SolidCount):
         return ()
     if isinstance(claim, AnchorsCoincident):
         a, b = frame.assembly.anchor(claim.a), frame.assembly.anchor(claim.b)
@@ -326,7 +328,7 @@ def _warnings(
     results: tuple[AssertionResult, ...],
     summaries: tuple[MotionSummary, ...],
     rest: Pose,
-) -> tuple[dict[str, str], ...]:
+) -> tuple[Warning, ...]:
     driven = {path for s in summaries for path in s.joints_deg}
     return (
         tuple(

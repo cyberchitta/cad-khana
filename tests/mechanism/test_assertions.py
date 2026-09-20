@@ -1,5 +1,5 @@
 import pytest
-from build123d import Axis, Box, BuildPart, Location, Plane
+from build123d import Axis, Box, BuildPart, Location, Locations, Plane
 
 from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
 from cad_khana.mechanism.assertions import JointWindow, evaluate
@@ -1082,3 +1082,49 @@ def test_phased_group_pair_still_yields_to_a_declared_contact():
     assert [r.name for r in evaluate(a)] == [
         "allowed_contact:post/swing.arm<=2000"
     ]
+
+
+# --- assert_solid_count -------------------------------------------------
+
+
+def _two_bodies():
+    with BuildPart() as p:
+        with Locations((0, 0, 0), (30, 0, 0)):
+            Box(10, 10, 10)
+    return p.part
+
+
+def test_solid_count_passes_and_carries_the_count():
+    a = Assembly().with_part("body", _cube()).assert_solid_count("body", eq=1)
+    (result,) = evaluate(a)
+    assert result.name == "solid_count:body"
+    assert result.passed
+    assert result.value == 1.0
+    assert result.detail is None
+
+
+def test_solid_count_fails_on_a_severed_part():
+    a = Assembly().with_part("body", _two_bodies()).assert_solid_count("body", eq=1)
+    (result,) = evaluate(a)
+    assert result.passed is False
+    assert result.value == 2.0
+    assert "2 solids" in result.detail and "expected 1" in result.detail
+
+
+def test_solid_count_declares_an_intended_multi_solid_part():
+    a = Assembly().with_part("band", _two_bodies()).assert_solid_count("band", eq=2)
+    assert evaluate(a)[0].passed
+
+
+def test_solid_count_is_skipped_for_an_absent_part():
+    (result,) = evaluate(Assembly().assert_solid_count("body", eq=1))
+    assert result.passed is None
+    assert result.skipped == "absent_part"
+
+
+def test_solid_count_is_qualified_into_a_parent():
+    unit = Assembly().with_part("body", _two_bodies()).assert_solid_count("body", eq=1)
+    top = Assembly().with_subassembly("unit", unit, location=Location((0, 0, 50)))
+    (result,) = evaluate(top)
+    assert result.name == "unit.solid_count:body"
+    assert result.passed is False

@@ -9,7 +9,7 @@ from build123d import Part
 if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
 
-SCHEMA_VERSION = "0.11"
+SCHEMA_VERSION = "0.12"
 INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
 
 # Absolute tolerance on assertion bound comparisons, in the bound's own
@@ -18,6 +18,8 @@ INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
 # value lands exactly at the bound ± solver noise (1e-14 boolean noise,
 # ~1e-7 bbox slop observed); exact comparison flips on that noise.
 BOUND_EPSILON = 1e-6
+
+Warning = dict[str, str | int]
 
 # Why an assertion can come back ``passed=None``. Free-text ``detail``
 # can't tell "expected here" from "typo"; the class can be counted.
@@ -41,6 +43,7 @@ class PartDiagnostics:
     face_count: int
     edge_count: int
     vertex_count: int
+    solid_count: int
 
 
 @dataclass(frozen=True)
@@ -108,7 +111,8 @@ class AssertionResult:
     Skipped assertions never fail a run. ``value`` carries the
     measured/claimed scalar for value-carrying assertions
     (``assert_distance``, ``assert_scalar``, ``assert_tangent_contact``
-    gap in mm, ``assert_allowed_contact`` overlap in mm³) even on pass
+    gap in mm, ``assert_allowed_contact`` overlap in mm³,
+    ``assert_solid_count`` count) even on pass
     — so runs are diffable — and stays ``None`` for the boolean-only
     kinds.
     ``waived`` is the waiver rationale when a failure was waived
@@ -153,7 +157,7 @@ class Diagnostics:
     parts: dict[str, PartDiagnostics] = field(default_factory=dict)
     interferences: tuple[Interference, ...] = ()
     assertions: tuple[AssertionResult, ...] = ()
-    warnings: tuple[dict[str, str], ...] = ()
+    warnings: tuple[Warning, ...] = ()
 
 
 def intersection_volume(a: Part, b: Part) -> float:
@@ -197,6 +201,23 @@ def _part_diagnostics(shape: Part) -> PartDiagnostics:
         face_count=len(shape.faces()),
         edge_count=len(shape.edges()),
         vertex_count=len(shape.vertices()),
+        solid_count=len(shape.solids()),
+    )
+
+
+def multi_solid_warnings(
+    parts: dict[str, PartDiagnostics], claimed: frozenset[str]
+) -> tuple[Warning, ...]:
+    """One warning per part that is more than one solid and that no
+    solid-count claim speaks for. Volume, bbox, clearance and
+    interference are all blind to whether a part is in one piece, so a
+    severed part is otherwise a green run; a part that is several
+    solids on purpose says so with ``assert_solid_count`` and is left
+    alone."""
+    return tuple(
+        {"kind": "multi_solid", "part": name, "solid_count": p.solid_count}
+        for name, p in parts.items()
+        if p.solid_count > 1 and name not in claimed
     )
 
 

@@ -28,6 +28,7 @@ from cad_khana.mechanism.assertions import (
     NoInterference,
     Phased,
     ScalarClaim,
+    SolidCount,
     TangentContact,
     drop_contact_shadowed,
 )
@@ -753,6 +754,25 @@ class Assembly:
         ``detail`` is context carried into the result."""
         assertion = ScalarClaim(
             name=name, value=value, ge=ge, le=le, detail=detail
+        )
+        return replace(self, assertions=self.assertions + (assertion,))
+
+    def assert_solid_count(
+        self, part: str, *, eq: int = 1, name: str | None = None
+    ) -> "Assembly":
+        """Assert ``part`` is exactly ``eq`` solids. Connectivity is a
+        claim no other assertion makes: a cut that severs a part leaves
+        its volume, bbox and every clearance plausible, and every
+        drawn view unchanged. ``eq=1`` bounds a part that must be one
+        piece; another ``eq`` declares one that is several on purpose
+        (a band parted into segments), which also keeps it out of the
+        ``multi_solid`` warnings. The count lands in ``value``. No
+        ``during=`` — the count is the same at every pose.
+
+        Red-test it by removing the bridge, not by shrinking it: a
+        0.001 mm bridge is still a bridge."""
+        assertion = SolidCount(
+            part=part, eq=eq, name=name or f"solid_count:{part}"
         )
         return replace(self, assertions=self.assertions + (assertion,))
 

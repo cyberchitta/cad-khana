@@ -9,9 +9,11 @@ from pathlib import Path
 from cad_khana import _failures
 from cad_khana._paths import resolve_out
 from cad_khana.mechanism.assembly import Assembly
+from cad_khana.mechanism.assertions import solid_count_claimed
 from cad_khana.mechanism.diagnostics import (
     Diagnostics,
     compute,
+    multi_solid_warnings,
     skipped_counts,
 )
 from cad_khana.mechanism.hold import hold
@@ -40,18 +42,22 @@ def check(assembly: Assembly, out: str | Path = "outputs") -> CheckResult:
     held = hold(assembly)
     assertion_results = held.assertions
     failed = any(a.passed is False for a in assertion_results)
+    computed = compute(assembly)
+    warnings = held.warnings + multi_solid_warnings(
+        computed.parts, solid_count_claimed(assembly.all_assertions)
+    )
     diagnostics = replace(
-        compute(assembly),
+        computed,
         assertions=assertion_results,
         skipped_counts=skipped_counts(assertion_results),
         motions=held.motions,
-        warnings=held.warnings,
+        warnings=warnings,
         status="assertion_failed" if failed else "ok",
     )
     json_path = out_path / "mechanism.json"
     json_path.write_text(json.dumps(asdict(diagnostics), indent=2) + "\n")
-    if held.warnings:
-        kinds = Counter(w["kind"] for w in held.warnings)
+    if warnings:
+        kinds = Counter(w["kind"] for w in warnings)
         summary = ", ".join(f"{n} {kind}" for kind, n in kinds.items())
         print(f"warnings: {summary} — see {json_path}", file=sys.stderr)
     if failed:

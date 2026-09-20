@@ -32,6 +32,25 @@ class WarningEntry:
     reason: str
     detail: str | None = None
 
+    @property
+    def line(self) -> str:
+        return f"{self.kind}: {self.assertion} — {self.reason}"
+
+
+@dataclass(frozen=True, kw_only=True)
+class MultiSolid:
+    """The part is more than one solid — a severed lip, a detached
+    ring — which no wall, overhang or volume reading can see. Never
+    fails a run: a part may be several solids on purpose."""
+
+    kind: str = "multi_solid"
+    part: str
+    solid_count: int
+
+    @property
+    def line(self) -> str:
+        return f"{self.kind}: {self.solid_count} solids"
+
 
 @dataclass(frozen=True)
 class PrintabilityDiagnostics:
@@ -45,12 +64,13 @@ class PrintabilityDiagnostics:
     surface_area_mm2: float = 0.0
     center_of_mass_mm: tuple[float, float, float] = (0.0, 0.0, 0.0)
     is_valid: bool = True
+    solid_count: int = 1
     min_wall_mm: float | None = None
     min_wall_at: tuple[float, float, float] | None = None
     min_wall_alignment: float | None = None
     overhang: Overhang | None = None
     assertions: tuple[AssertionResult, ...] = field(default_factory=tuple)
-    warnings: tuple[WarningEntry, ...] = field(default_factory=tuple)
+    warnings: tuple[WarningEntry | MultiSolid, ...] = field(default_factory=tuple)
 
 
 def _wall_assertion(wall: WallSample | None, method: FDM) -> AssertionResult:
@@ -166,7 +186,10 @@ def inspect(
         ),
         waivers,
     )
-    warnings = _warnings(assertions, waivers)
+    solid_count = len(part.solids())
+    warnings = _warnings(assertions, waivers) + (
+        (MultiSolid(part=name, solid_count=solid_count),) if solid_count > 1 else ()
+    )
     failed = any(a.passed is False and a.waived is None for a in assertions)
     com = part.center()
     diagnostics = PrintabilityDiagnostics(
@@ -177,6 +200,7 @@ def inspect(
         surface_area_mm2=part.area,
         center_of_mass_mm=(com.X, com.Y, com.Z),
         is_valid=part.is_valid,
+        solid_count=solid_count,
         min_wall_mm=wall.thickness_mm if wall else None,
         min_wall_at=wall.at if wall else None,
         min_wall_alignment=wall.alignment if wall else None,
@@ -188,10 +212,7 @@ def inspect(
     json_path = out_path / f"{name}-printability.json"
     json_path.write_text(json.dumps(asdict(diagnostics), indent=2) + "\n")
     for w in warnings:
-        print(
-            f"{name}: warning: {w.kind}: {w.assertion} — {w.reason}",
-            file=sys.stderr,
-        )
+        print(f"{name}: warning: {w.line}", file=sys.stderr)
     if failed:
         for a in assertions:
             if a.passed is False and a.waived is None:

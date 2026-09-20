@@ -174,7 +174,12 @@ def _mech_part_changes(name: str, old: Diag, new: Diag) -> list[str]:
         if old.get("is_valid") != new.get("is_valid")
         else []
     )
-    changes = scalar_lines + bbox_line + com_line + valid_line
+    solids_line = (
+        [f"    solid_count: {old.get('solid_count')} → {new.get('solid_count')}"]
+        if old.get("solid_count") != new.get("solid_count")
+        else []
+    )
+    changes = scalar_lines + bbox_line + com_line + valid_line + solids_line
     return [f"  changed: {name}", *changes] if changes else []
 
 
@@ -265,7 +270,7 @@ def _motions_section(old: list[Diag], new: list[Diag]) -> list[str]:
 
 
 def _mech_warning_label(w: Diag) -> str:
-    subject = w.get("joint") or w.get("assertion")
+    subject = w.get("joint") or w.get("assertion") or w.get("part")
     return f"{w['kind']}: {subject}" if subject else w["kind"]
 
 
@@ -341,19 +346,27 @@ def _bbox_section(old: Any, new: Any) -> list[str]:
 
 
 def _warning_key(w: Diag) -> tuple[str, str]:
-    return (w["kind"], w["assertion"])
+    return (w["kind"], w.get("assertion") or w["part"])
+
+
+def _warning_label(w: Diag) -> str:
+    """``kind: subject``, with the rationale when the warning has one
+    (a waiver does; ``multi_solid`` does not)."""
+    kind, subject = _warning_key(w)
+    reason = w.get("reason")
+    return f"{kind}: {subject} — {reason}" if reason else f"{kind}: {subject}"
 
 
 def _warnings_section(old: list[Diag], new: list[Diag]) -> list[str]:
     old_map = {_warning_key(w): w for w in old}
     new_map = {_warning_key(w): w for w in new}
     added = [
-        f"  added: {kind}: {assertion} — {new_map[(kind, assertion)]['reason']}"
-        for kind, assertion in sorted(new_map.keys() - old_map.keys())
+        f"  added: {_warning_label(new_map[key])}"
+        for key in sorted(new_map.keys() - old_map.keys())
     ]
     removed = [
-        f"  removed: {kind}: {assertion}"
-        for kind, assertion in sorted(old_map.keys() - new_map.keys())
+        f"  removed: {kind}: {subject}"
+        for kind, subject in sorted(old_map.keys() - new_map.keys())
     ]
     return added + removed
 
@@ -381,6 +394,11 @@ def _diff_printability(old: Diag, new: Diag) -> str:
         if old.get("is_valid") != new.get("is_valid")
         else []
     )
+    solids_section = (
+        [f"  {old.get('solid_count')} → {new.get('solid_count')}"]
+        if old.get("solid_count") != new.get("solid_count")
+        else []
+    )
     sections: tuple[tuple[str, list[str]], ...] = (
         ("status", _status_section(old, new)),
         ("name", name_section),
@@ -400,6 +418,7 @@ def _diff_printability(old: Diag, new: Diag) -> str:
         ),
         ("center_of_mass_mm", com_section),
         ("is_valid", valid_section),
+        ("solid_count", solids_section),
         (
             "min_wall_mm",
             _scalar_line("min_wall_mm", old.get("min_wall_mm"), new.get("min_wall_mm")),
