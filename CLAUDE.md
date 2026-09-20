@@ -264,7 +264,7 @@ Version these from day one. Agents depend on field stability.
   "warnings": [
     {"kind": "joint_never_driven", "joint": "rotor"},
     {"kind": "never_in_phase", "assertion": "pad_engages"},
-    {"kind": "motion_moved_nothing", "motion": "lift", "moved": 0, "movable": 2095},
+    {"kind": "motion_moved_nothing", "motion": "lift", "moved": 0, "movable": 2082},
     {"kind": "interferences_rest_pose_only"},
     {"kind": "multi_solid", "part": "glow_band", "solid_count": 5}
   ]
@@ -326,9 +326,20 @@ and whose inclusion would make the warning born noisy) and the claims
 skipped for an absent part or joint, which the run never held. `moved`
 counts those that reached more than one distinct evaluation under *that*
 motion — the same key `poses.distinct` uses, narrowed to one motion, so
-a claim that only crosses a `during=` boundary counts as moved and there
-is no second meaning of the word. The warning fires on `moved: 0` and
-**only** on zero: a motion that moved 28 of 2095 claims tested
+a claim that only crosses a `during=` boundary counts as moved. The two
+are not interchangeable in one respect, and it is the respect a reader
+checking the roll-up by hand will hit: `distinct` counts only *evaluated*
+poses, and a claim out of phase is skipped, so a phased claim in phase at
+a single pose reports `distinct: 1` while `moved` counts it — the motion
+did take it in and out of phase. **`moved` can therefore exceed the
+number of claims reading `distinct > 1`**, which is why a hand-audited
+count from before 0.13 must not be reconciled against it. Measured: a
+consumer's `role_sweep` read 24/28/28 by hand and 25/29/29 from the tool,
+the difference being one half-open `during=` window entered at exactly
+one of 14 poses (`evaluated: 14, distinct: 1, in_phase: 1`).
+
+The warning fires on `moved: 0` and
+**only** on zero: a motion that moved 28 of 2082 claims tested
 something, and any threshold between "some" and "not enough" would be
 the magnitude filter the false-green rule forbids — that is what the
 count is for. `moved: 0, movable: 0` is a third reading, and a distinct

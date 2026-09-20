@@ -420,7 +420,7 @@ def test_an_absent_claim_is_not_movable():
 
 
 def test_a_motion_that_moves_some_claims_does_not_warn():
-    """28 of 2095 tested something. No threshold between some and not
+    """28 of 2082 tested something. No threshold between some and not
     enough -- that is what the count is for, not the warning."""
     a = (
         _swung()
