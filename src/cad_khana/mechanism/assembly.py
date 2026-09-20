@@ -30,6 +30,7 @@ from cad_khana.mechanism.assertions import (
     TangentContact,
     drop_contact_shadowed,
 )
+from cad_khana.mechanism.motion import Pose
 
 
 def _normalize_pair_maps(
@@ -448,6 +449,16 @@ class Assembly:
         if not found:
             raise KeyError(f"no sub-assembly named {head!r}")
         return replace(self, subassemblies=tuple(updated))
+
+    def posed(self, pose: Pose) -> "Assembly":
+        """This assembly at ``pose`` — every named joint set to its
+        value (``with_joint_angle`` in bulk), every other joint left as
+        built. Keys are the dotted joint paths ``joint_angles`` reports.
+        Raises as ``with_joint_angle`` does on a path that names no
+        joint."""
+        return reduce(
+            lambda a, item: a.with_joint_angle(*item), pose.items(), self
+        )
 
     def with_materials(self, mapping: dict[str, str]) -> "Assembly":
         """Return a copy with each named part's material replaced by the

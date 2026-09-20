@@ -33,6 +33,7 @@ from cad_khana.mechanism.diagnostics import (
     INTERFERENCE_VOLUME_EPSILON_MM3,
     intersection_volume,
 )
+from cad_khana.mechanism.motion import Motion
 
 Factory = Callable[[float], Assembly]
 Pair = tuple[str, str]
@@ -200,6 +201,13 @@ def over_joint(
     as a hand-written multi-joint factory."""
     lo, hi = range_deg
     return lambda t: assembly.with_joint_angle(path, lo + (hi - lo) * t)
+
+
+def over_motion(assembly: Assembly, motion: Motion) -> Factory:
+    """A factory posing ``assembly`` along a declared ``motion`` —
+    sample it at ``motion.ts`` and the window a claim declares is
+    derived from the same schedule the claim is held over."""
+    return lambda t: assembly.posed(motion.schedule(t))
 
 
 def _runs(contact: tuple[bool, ...]) -> tuple[tuple[int, int], ...]:
