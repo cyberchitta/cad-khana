@@ -367,6 +367,31 @@ class Assembly:
                 return a.location
         raise KeyError(f"no anchor named {head!r}")
 
+    def part(self, path: str) -> PlacedPart:
+        """Resolve a dotted part ``path`` to its ``PlacedPart`` in this
+        assembly's frame — the same entry ``placed_parts`` reports,
+        name qualified and ``location`` composed through each
+        sub-assembly's ``effective_location``, so a part under a jointed
+        subtree moves with the joint. The frame is the assembly the
+        call is made on: a unit's own ``part("bracket")`` is the local
+        placement, the root's ``part("turret.drive.bracket")`` the
+        world one. Raises ``KeyError`` if any segment is missing."""
+        head, _, rest = path.partition(".")
+        if rest:
+            for s in self.subassemblies:
+                if s.name == head:
+                    inner = s.assembly.part(rest)
+                    return replace(
+                        inner,
+                        name=f"{head}.{inner.name}",
+                        location=s.effective_location * inner.location,
+                    )
+            raise KeyError(f"no sub-assembly named {head!r}")
+        for p in self.parts:
+            if p.name == head:
+                return p
+        raise KeyError(f"no part named {head!r}")
+
     def with_joint(self, path: str, joint: RevoluteJoint) -> "Assembly":
         """Set the joint on the named sub-assembly. The joint's axis is
         interpreted in the owning parent Assembly's frame. ``path`` is

@@ -857,6 +857,58 @@ def test_subassembly_name_with_dot_raises():
         Assembly().with_subassembly("a.b", Assembly())
 
 
+# --- Part by path -----------------------------------------------------
+
+
+def _jointed_tree() -> Assembly:
+    unit = Assembly().with_part("rail", _cube(), location=Location((10, 0, 0)))
+    arm = Assembly().with_subassembly(
+        "unit",
+        unit,
+        location=Location((100, 0, 0)),
+        joint=RevoluteJoint(axis=Axis.Z, angle_deg=90.0, frame="local"),
+    )
+    return (
+        Assembly()
+        .with_part("base", _cube())
+        .with_subassembly("arm", arm, location=Location((0, 0, 5)))
+    )
+
+
+def test_part_returns_root_level_part_by_bare_name():
+    top = _jointed_tree()
+    assert top.part("base") is top.parts[0]
+
+
+def test_part_by_path_matches_its_placed_parts_entry():
+    top = _jointed_tree()
+    found = top.part("arm.unit.rail")
+    (placed,) = (p for p in top.placed_parts if p.name == "arm.unit.rail")
+    assert found.name == placed.name
+    assert found.part is placed.part
+    assert tuple(found.location.position) == pytest.approx((100, 10, 5))
+    assert tuple(found.location.position) == pytest.approx(
+        tuple(placed.location.position)
+    )
+
+
+def test_part_resolves_in_the_frame_of_the_assembly_it_is_called_on():
+    unit = _jointed_tree().subassemblies[0].assembly.subassemblies[0].assembly
+    local = unit.part("rail")
+    assert local.name == "rail"
+    assert tuple(local.location.position) == pytest.approx((10, 0, 0))
+
+
+def test_part_missing_name_raises_keyerror():
+    with pytest.raises(KeyError, match="no part named 'nope'"):
+        _jointed_tree().part("arm.unit.nope")
+
+
+def test_part_missing_subassembly_segment_raises_keyerror():
+    with pytest.raises(KeyError, match="no sub-assembly named 'ghost'"):
+        _jointed_tree().part("ghost.rail")
+
+
 # --- Anchors ----------------------------------------------------------
 
 

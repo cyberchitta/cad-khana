@@ -793,6 +793,15 @@ stop coinciding and the parent's `check()` fails loudly, instead of
 the drift silently desyncing the machine. Anchors carry no geometry;
 exports and interference checks ignore them.
 
+`part(path)` is the same resolution for a part: the `PlacedPart` at a
+dotted path, in the frame of the assembly you call it on —
+`top.part("turret.drive.bracket")` is the world placement,
+`drive.part("bracket")` the unit-local one. Reach for it instead of
+filtering `placed_parts` by name or re-typing a part's constructor:
+`inspect(build_chain().part("brace_head").part, …)` inspects the body
+that is actually placed, and a detail addition keyed by its unit's
+path takes its `location` from that unit's own `part(...)`.
+
 ## Animation: joints + time-parameterized assembly
 
 Beyond static assertions, `Assembly` can express **motion**: a
