@@ -21,6 +21,26 @@ build123d accepts shorthand for several common types. Use them.
 Pass `(0, 0, 5)` instead of `Vector(0, 0, 5)`. Pass `(0, 0, 90)`
 instead of `Rotation(0, 0, 90)`.
 
+**Two traps where the conversion is silent or late.** Both cost a
+sorted-studs part a red and a crash in one sitting.
+
+1. **A sector's default alignment moves its apex off the axis.**
+   `Cylinder(r, h, arc_size=90)` keeps `align=CENTER`, which centres
+   the *bounding box* of the wedge — not the axis it was cut from. On
+   0.12.0 a Ø20 90° sector lands with its bbox at (−5,−5)..(5,5), so
+   the apex sits at (−5, −5) instead of the origin, and a later
+   boolean against something on the axis comes back **silently
+   empty**. `align=None` puts the apex at the origin. Place the
+   primitives, then do the boolean — and check the intermediate is
+   non-empty before cutting with it.
+2. **`Location * Compound` can return a plain `list`** on build123d
+   **0.11.1** — the assembly then rejects it late, at `with_part`,
+   far from the line that built it. Fixed upstream: on **0.12.0** the
+   same expression returns a `Part`/`Compound` (verified). Our floor
+   is `build123d>=0.8`, so this is live for consumers below 0.12 —
+   if you are pinned there, wrap the result or move the `Location`
+   onto the operand that survives it.
+
 ## Selector operators
 
 `part.edges()`, `part.faces()`, `part.vertices()` return collections.

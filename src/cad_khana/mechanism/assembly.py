@@ -1084,10 +1084,11 @@ class Assembly:
 
     @property
     def placed_parts(self) -> tuple[PlacedPart, ...]:
-        """Flat walk over the assembly tree. Each yielded ``PlacedPart``
-        carries the original part with its ``name`` qualified into the
-        dotted tree path (``"turret.rotor.arm.spider"``; root-level
-        parts keep their bare name) and ``location`` composed through
+        """Property (not a method): a flat walk over the assembly tree,
+        as a tuple. Each ``PlacedPart`` carries the original part with
+        its ``name`` qualified into the dotted tree path
+        (``"turret.rotor.arm.spider"``; root-level parts keep their
+        bare name) and ``location`` composed through
         the parent chain so it reflects the world-frame placement
         regardless of nesting depth. The path is the part's identity:
         assertions, diagnostics, diff, exports, and the override layers

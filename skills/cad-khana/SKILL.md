@@ -204,6 +204,20 @@ effectful. Four sections, in order:
 4. Optionally `assembly = build_<name>()` — the degenerate memoized
    master, so `khana check <file>` resolves without a `:factory`.
 
+**The standalone composition is a factory too.** A unit usually has a
+composition that exists only *outside* a parent — the product subtree
+plus the stubs, press fits and group asserts that a parent would
+otherwise supply. Nothing imports it, so nothing pressures it into a
+name, and it silently becomes a run of module-level rebinds with
+real import-time effects. Give it one: `build_<unit>_standalone()`.
+
+**A declaration module binds `assembly` exactly once.** That is the
+invariant — not "avoid rebinding", which sounds like style. Sequential
+module-level bindings and a `for` loop appending asserts both defeat a
+`grep` for `x = x.`, and both mean the module's meaning depends on
+import-time statement order rather than on a factory you can call
+twice and get the same answer from.
+
 ### Check module
 
 An ordinary assembly module whose *purpose* is verification. It imports
@@ -401,6 +415,25 @@ For build123d's selector operators (`>`, `<`, `>>`, `<<`, `|`, `@`, `%`,
 - **Default arguments = the intended top-level parameter.** `housing()`
   with no args should return the current design's housing. Callers who
   want to override a single dimension pass it by keyword.
+- **Assembly factories are parameterized like part functions.** The
+  defaults are the master design; a variant is an alternate call, not a
+  second module. This covers the case where *instances of one unit
+  differ*: a motor's azimuth around its axis, a floor's role in a
+  stack. Thread it as a factory argument — the unit's own claims hold
+  at any value, `@cache` keys on it, and the parent passes it per
+  placement. Do **not** reach for a `with_detailed_geometry` override
+  here: the mesh moves with this parameter, so it is not detail. The
+  converse is the trap — a design choice fixed in a module-level
+  constant is computed at import and unreachable from a command
+  script, so sweeping it needs `sed` rather than a loop.
+- **In a multi-unit project, constants have a hierarchy.** A
+  project-root `params.py` holds the constants that cross unit
+  boundaries (shared interfaces, datums, stock sizes); each unit's own
+  `assembly.py` holds the rest. A constant that only one unit reads
+  does not belong at the root, and a constant two units must agree on
+  does not belong in either of them. (Where the shared value is a
+  *place* rather than a number, prefer an anchor — see **Named
+  interface anchors**.)
 - **Use `Location` on `.with_part()` for placement, not inside the part.**
   Part functions build geometry at a canonical pose (typically centered
   on origin); the assembly places each part in world coordinates.
@@ -424,7 +457,9 @@ For build123d's selector operators (`>`, `<`, `>>`, `<<`, `|`, `@`, `%`,
   consumer's override layer supply the current best guess. For
   cross-consumer experiments (render + FEA both reading from the same
   assembly), use `Assembly.with_materials({path: token})` — keys are
-  the qualified tree paths that `placed_parts` reports. For
+  the qualified tree paths the `placed_parts` **property** reports
+  (a property, not a method — `top.placed_parts()` raises
+  `TypeError: 'tuple' object is not callable`). For
   render-only sweeps, use the consumer's own override (e.g.
   chitra-cad's `Scene.with_materials({...})`).
 - **Two fidelity tiers — keep cheap geometry in the assembly,
@@ -434,7 +469,15 @@ For build123d's selector operators (`>`, `<`, `>>`, `<<`, `|`, `@`, `%`,
   fasteners. That's the right model for assertions: it's fast to
   tessellate, and a real V-slot profile is a strict subset of a
   solid 20×20 so any clearance the cheap model passes the detailed
-  one passes too. Detailed geometry (real `bd_warehouse` profiles,
+  one passes too. **That guarantee has a precondition: the cheap
+  proxy must be an *outer envelope* of the detailed part.** It holds
+  for an extrusion (the real profile only removes material) and
+  inverts the moment the detail sticks *out* — a gear modeled by its
+  pitch cylinder, a thread by its minor diameter, a knurl or spline
+  by its root. There the cheap clearance is optimistic, which is the
+  one failure this tool must never produce: model the proxy at the
+  tip circle / major diameter, or grow it at the claim with
+  `assert_distance(..., grow_a_mm=…)`. Detailed geometry (real `bd_warehouse` profiles,
   fasteners, finished shapes) lives in a `<module>/detail_variations.py`
   module as named bundles and applies via
   `Assembly.with_detailed_geometry(BUNDLE)` before the consumer
@@ -691,10 +734,13 @@ Two contact assertions, split by what the design intends:
 # tangent rest: must touch, must not overlap (tol is noise allowance)
 a = a.assert_tangent_contact("foot", "rail")
 
-# press-fit modeled at true interference; bounds from one honest run
+# press-fit modeled at true interference. The band comes from one
+# honest run, not from arithmetic: overlap volume is interference ×
+# diameter × engagement length, so a realistic fit is single-digit mm³
+# and a guessed band is wrong by an order of magnitude.
 a = a.assert_allowed_contact("drive_pulley_shaft", "hub_shaft_stub",
-                             max_overlap_mm3=60, min_overlap_mm3=20,
-                             reason="press fit, 0.2 mm on Ø8")
+                             min_overlap_mm3=1.5, max_overlap_mm3=2.6,
+                             reason="press fit, 0.02 mm diametral on Ø8")
 ```
 
 Both record a measured value in the JSON even on pass (`tangent`: the
@@ -890,7 +936,8 @@ exports and interference checks ignore them.
 dotted path, in the frame of the assembly you call it on —
 `top.part("turret.drive.bracket")` is the world placement,
 `drive.part("bracket")` the unit-local one. Reach for it instead of
-filtering `placed_parts` by name or re-typing a part's constructor:
+filtering the `placed_parts` property by name or re-typing a part's
+constructor:
 `inspect(build_chain().part("brace_head").part, …)` inspects the body
 that is actually placed, and a detail addition keyed by its unit's
 path takes its `location` from that unit's own `part(...)`.
@@ -1336,9 +1383,16 @@ the model to fix, not to waive. Only a low alignment supports a
   `"out_of_phase"` — a phased claim in phase at no pose looked at;
   `null` when the assertion was evaluated). Skips never fail the run; watch for an
   assertion that is *always* skipped, which usually means a typo'd
-  part name. `value` is the measured/
-  claimed scalar for `assert_distance` / `assert_scalar` (recorded
-  even on pass; `khana diff` reports its drift) and `null` otherwise.
+  part name. `value` is the measured/claimed scalar, recorded **even on
+  pass** so `khana diff` reports its drift: the distance for
+  `assert_distance`, the claimed number for `assert_scalar`, the gap in
+  mm for `assert_tangent_contact`, the overlap in mm³ for
+  `assert_allowed_contact`, the count for `assert_solid_count`. It is
+  `null` for the boolean-only kinds — `assert_no_interference`,
+  `assert_clearance` and `assert_interference` record **no
+  measurement**, only a verdict, so a clearance that is quietly closing
+  toward its bound is invisible until it crosses. Use
+  `assert_distance(min_mm=…)` instead where the trend matters.
   Held over a motion, `value` and `detail` are the **worst pose's**
   (least slack to the claim's own bound; for a kind with no measured
   value, the first failing pose — the onset).
