@@ -238,7 +238,7 @@ Version these from day one. Agents depend on field stability.
   "motions": [
     {"name": "stack_turn", "samples": 180,
      "joints_deg": {"rotating": {"min": 0.0, "max": 358.0, "max_step": 2.0}},
-     "moved": 28, "movable": 2095}
+     "moved": 28, "movable": 2082}
   ],
   "parts": {
     "<name>": {
@@ -334,7 +334,7 @@ the magnitude filter the false-green rule forbids — that is what the
 count is for. `moved: 0, movable: 0` is a third reading, and a distinct
 diagnosis in the same kind: nothing in this tree could have been moved
 by any motion. `check()` prints one line per declared motion on stderr
-(`stack_turn: 180 poses, moved 28 of 2095 claims`), which is the green
+(`stack_turn: 180 poses, moved 28 of 2082 claims`), which is the green
 side of the `failed at 8 of 181 poses` the failure path already carried;
 an assembly declaring no motion prints nothing new. `khana diff`
 reports a changed `moved` — a motion that keeps its samples and its

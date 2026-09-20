@@ -1404,6 +1404,11 @@ the model to fix, not to waive. Only a low alignment supports a
   and `assert_solid_count` claim nothing a pose can change. You no
   longer have to audit this field by hand — `motions[].moved` /
   `.movable` roll it up per motion and exclude those two kinds.
+  `moved` counts a claim the motion moved **or carried across a
+  `during=` phase boundary**, so it can exceed the number of claims
+  reading `distinct > 1`: a phased claim in phase at a single pose was
+  exercised by the motion and is counted, though it was evaluated once.
+  Don't reconcile a hand-audited count from before 0.13 against it.
 - `assertions[].worst_at` — `{motion, t, joints_deg}` of the worst
   pose; `null` when that is the as-built pose. Re-create it with
   `assembly.posed(joints_deg)` to draw or inspect it.
