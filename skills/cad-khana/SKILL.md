@@ -567,9 +567,29 @@ scalar green and every `khana draw` view unchanged. Answer the warning
 one of two ways:
 
 ```python
-a = a.assert_solid_count("body")            # must be one piece — red if severed
+a = a.assert_solid_count("body",             # must be one piece — red if severed
+                         detail="above 1 the glow band has cut the lip off — "
+                                "check the five bridges")
 a = a.assert_solid_count("glow_band", eq=5)  # five segments by design; warning goes
 ```
+
+`detail=` lands in the result beside the count. Use it: this is the one
+failure whose cause no drawing shows, so say what would have severed
+the part. Derive `eq` from the parameter that sets it (a spoke count,
+which sector carries the opening) rather than typing the number — the
+derivation is the claim.
+
+`inspect()` answers the same warning in the printability file:
+
+```python
+inspect(glow_band(), method=FDM(), name="glow_band", solid_count=5)
+```
+
+Declared, the count is a claim like `wall_min` — a `solid_count:5`
+entry in `assertions[]` with the count in `value`, a mismatch fails the
+run (waivable under kind `solid_count`), and the warning is gone.
+Undeclared, a part above one solid keeps warning. There is no way to
+silence it without stating the number.
 
 Bodies that touch only along an edge or at a point count as separate
 solids — they share no material, and will not print as one part.
@@ -1326,9 +1346,9 @@ the model to fix, not to waive. Only a low alignment supports a
 - `name`, `method` — for disambiguation when scripts inspect many parts.
 - `volume_mm3`, `bbox` — basic part metrics.
 - `solid_count` — `1` for a part in one piece; above `1` the file also
-  carries a `multi_solid` warning. `inspect()` takes no claim about it,
-  so a part that is several solids on purpose keeps the warning here —
-  declare the intent on the assembly with `assert_solid_count`.
+  carries a `multi_solid` warning unless `inspect(..., solid_count=N)`
+  declared the count, in which case `assertions` carries
+  `solid_count:N` instead.
 - `min_wall_mm` — thinnest wall found by ray sampling; `null` if
   unmeasurable.
 - `min_wall_at` — `[x, y, z]` surface point where the thinnest wall was
@@ -1348,8 +1368,9 @@ the model to fix, not to waive. Only a low alignment supports a
   perpendicular to the face it starts from (see the limitation below),
   so only the far side's angle is ever in doubt.
 - `overhang` — `null` or `{area_mm2, max_angle_deg}`.
-- `assertions` — `wall_min:…` and `overhang_max:…` entries; `passed` +
-  `detail`, plus `waived` (the rationale) when a failure was waived.
+- `assertions` — `wall_min:…` and `overhang_max:…` entries, plus
+  `solid_count:N` when the count was declared; `passed` + `detail`,
+  plus `waived` (the rationale) when a failure was waived.
 - `warnings` — non-fatal notices: `waived_failure` (a failed check that
   was waived; carries the reason and the failure detail),
   `stale_waiver` (a waiver whose check now passes — remove it), and

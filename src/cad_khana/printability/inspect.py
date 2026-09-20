@@ -115,6 +115,12 @@ def _overhang_assertion(
     return AssertionResult(name, passed, detail)
 
 
+def _solid_count_assertion(count: int, eq: int) -> AssertionResult:
+    passed = count == eq
+    detail = None if passed else f"{count} solids, expected {eq}"
+    return AssertionResult(f"solid_count:{eq}", passed, detail, value=float(count))
+
+
 def _assertion_kind(name: str) -> str:
     return name.split(":", 1)[0]
 
@@ -169,7 +175,14 @@ def inspect(
     out: str | Path = "outputs",
     name: str = "part",
     waive: dict[str, str] | None = None,
+    solid_count: int | None = None,
 ) -> PrintabilityDiagnostics:
+    """``solid_count`` declares how many solids the part is meant to be.
+    Undeclared, a part above one solid draws a ``multi_solid`` warning;
+    declared, the count is a claim like the others — it lands in
+    ``assertions`` with the count in ``value``, a mismatch fails the run
+    (or is waived under kind ``solid_count``), and the warning has
+    nothing left to say."""
     out_path = resolve_out(out)
     out_path.mkdir(parents=True, exist_ok=True)
     wall = min_wall(part)
@@ -179,16 +192,23 @@ def inspect(
         angle_threshold_deg=method.overhang_max_deg,
     )
     waivers = waive or {}
+    solids = len(part.solids())
     assertions = _apply_waivers(
         (
             _wall_assertion(wall, method),
             _overhang_assertion(overhang, method),
+        )
+        + (
+            ()
+            if solid_count is None
+            else (_solid_count_assertion(solids, solid_count),)
         ),
         waivers,
     )
-    solid_count = len(part.solids())
     warnings = _warnings(assertions, waivers) + (
-        (MultiSolid(part=name, solid_count=solid_count),) if solid_count > 1 else ()
+        (MultiSolid(part=name, solid_count=solids),)
+        if solid_count is None and solids > 1
+        else ()
     )
     failed = any(a.passed is False and a.waived is None for a in assertions)
     com = part.center()
@@ -200,7 +220,7 @@ def inspect(
         surface_area_mm2=part.area,
         center_of_mass_mm=(com.X, com.Y, com.Z),
         is_valid=part.is_valid,
-        solid_count=solid_count,
+        solid_count=solids,
         min_wall_mm=wall.thickness_mm if wall else None,
         min_wall_at=wall.at if wall else None,
         min_wall_alignment=wall.alignment if wall else None,

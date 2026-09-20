@@ -1128,3 +1128,15 @@ def test_solid_count_is_qualified_into_a_parent():
     (result,) = evaluate(top)
     assert result.name == "unit.solid_count:body"
     assert result.passed is False
+
+
+def test_solid_count_detail_rides_along_on_pass_and_on_failure():
+    hint = "above 1 the glow band has cut something off — check the five bridges"
+    ok = Assembly().with_part("body", _cube()).assert_solid_count("body", detail=hint)
+    assert evaluate(ok)[0].detail == hint
+    cut = (
+        Assembly()
+        .with_part("body", _two_bodies())
+        .assert_solid_count("body", detail=hint)
+    )
+    assert evaluate(cut)[0].detail == f"2 solids, expected 1; {hint}"

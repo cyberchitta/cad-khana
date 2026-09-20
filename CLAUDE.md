@@ -326,8 +326,14 @@ warning for that part — declare, don't suppress. It carries the count
 in `value`, takes no `during=` (the count is pose-invariant, and held
 evaluation looks once), and a failing claim is a failure, not also a
 warning. Bodies touching only along an edge count as separate.
-`inspect()` has no claim form, so its `multi_solid` warning stands for
-an intentionally multi-solid part.
+`inspect(..., solid_count=N)` is the same declaration on the
+printability side: a `solid_count:N` entry in `assertions[]` (count in
+`value`, a mismatch fails the run, waivable under kind `solid_count`)
+in place of the warning. It exists because that file's `warnings[]` is
+where `stale_waiver` lives, and a warning nobody can answer trains the
+reader to skim the one block that must not be skimmed. Both forms take
+the number, never a bare suppression. `assert_solid_count` also takes
+`detail=` — what would have severed the part, which no drawing shows.
 
 `during=` takes a `JointWindow` or a tuple that must all hold, on every
 part-referencing `assert_*` (group forms included), through one wrapper

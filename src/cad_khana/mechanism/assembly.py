@@ -758,7 +758,12 @@ class Assembly:
         return replace(self, assertions=self.assertions + (assertion,))
 
     def assert_solid_count(
-        self, part: str, *, eq: int = 1, name: str | None = None
+        self,
+        part: str,
+        *,
+        eq: int = 1,
+        detail: str | None = None,
+        name: str | None = None,
     ) -> "Assembly":
         """Assert ``part`` is exactly ``eq`` solids. Connectivity is a
         claim no other assertion makes: a cut that severs a part leaves
@@ -766,13 +771,18 @@ class Assembly:
         drawn view unchanged. ``eq=1`` bounds a part that must be one
         piece; another ``eq`` declares one that is several on purpose
         (a band parted into segments), which also keeps it out of the
-        ``multi_solid`` warnings. The count lands in ``value``. No
-        ``during=`` — the count is the same at every pose.
+        ``multi_solid`` warnings. The count lands in ``value``;
+        ``detail`` is context carried into the result (what would have
+        severed it). No ``during=`` — the count is the same at every
+        pose.
 
         Red-test it by removing the bridge, not by shrinking it: a
         0.001 mm bridge is still a bridge."""
         assertion = SolidCount(
-            part=part, eq=eq, name=name or f"solid_count:{part}"
+            part=part,
+            eq=eq,
+            name=name or f"solid_count:{part}",
+            detail=detail,
         )
         return replace(self, assertions=self.assertions + (assertion,))
 

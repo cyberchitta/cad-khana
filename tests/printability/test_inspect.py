@@ -247,3 +247,75 @@ def test_a_multi_solid_part_is_warned_about_and_does_not_fail(tmp_path: Path, ca
         {"kind": "multi_solid", "part": "pair", "solid_count": 2}
     ]
     assert "pair: warning: multi_solid: 2 solids" in capsys.readouterr().err
+
+
+def _assertion(diag, kind: str):
+    (found,) = (a for a in diag.assertions if a.name.split(":")[0] == kind)
+    return found
+
+
+def test_an_undeclared_part_carries_no_solid_count_assertion(tmp_path: Path):
+    diag = inspect(_cube(), method=FDM(), out=tmp_path, name="cube")
+    assert [a.name.split(":")[0] for a in diag.assertions] == [
+        "wall_min",
+        "overhang_max",
+    ]
+
+
+def test_a_declared_solid_count_answers_the_warning(tmp_path: Path):
+    diag = inspect(
+        _two_bodies(), method=FDM(), out=tmp_path, name="band", solid_count=2
+    )
+    claim = _assertion(diag, "solid_count")
+    assert claim.name == "solid_count:2"
+    assert claim.passed
+    assert claim.value == 2.0
+    assert diag.warnings == ()
+    assert diag.status == "ok"
+    data = json.loads((tmp_path / "band-printability.json").read_text())
+    assert data["solid_count"] == 2
+    assert data["warnings"] == []
+
+
+def test_a_wrong_declared_solid_count_fails_like_any_claim(tmp_path: Path):
+    with pytest.raises(SystemExit):
+        inspect(_two_bodies(), method=FDM(), out=tmp_path, name="body", solid_count=1)
+    data = json.loads((tmp_path / "body-printability.json").read_text())
+    assert data["status"] == "assertion_failed"
+    (claim,) = (a for a in data["assertions"] if a["name"] == "solid_count:1")
+    assert claim["passed"] is False
+    assert claim["value"] == 2.0
+    assert claim["detail"] == "2 solids, expected 1"
+    assert data["warnings"] == []  # a failure, not also a warning
+
+
+def test_a_declared_count_a_single_solid_stops_matching_fails(tmp_path: Path):
+    """The declaration cannot go stale quietly: a band that stops being
+    parted fails its ``solid_count=2`` rather than reading as fine."""
+    with pytest.raises(SystemExit):
+        inspect(_cube(), method=FDM(), out=tmp_path, name="band", solid_count=2)
+
+
+def test_a_solid_count_failure_is_waivable_by_kind(tmp_path: Path):
+    diag = inspect(
+        _two_bodies(),
+        method=FDM(),
+        out=tmp_path,
+        name="body",
+        solid_count=1,
+        waive={"solid_count": "two halves, glued after printing"},
+    )
+    assert diag.status == "ok"
+    assert _assertion(diag, "solid_count").passed is False
+    assert [w.kind for w in diag.warnings] == ["waived_failure"]
+
+
+def test_waiving_solid_count_without_declaring_it_is_an_unknown_kind(tmp_path: Path):
+    with pytest.raises(ValueError, match="solid_count"):
+        inspect(
+            _two_bodies(),
+            method=FDM(),
+            out=tmp_path,
+            name="body",
+            waive={"solid_count": "no claim to waive"},
+        )
