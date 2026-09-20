@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
+from functools import reduce
 
 from build123d import (
     Axis,
@@ -463,9 +464,14 @@ class Assembly:
         reports). A key matching a part anywhere in the hierarchy gets
         its part replaced in-place (preserving placement / material /
         color unless the override supplies them). Keys with no match
-        are additions: they land at the top level only, require an
-        explicit ``location``, and their name becomes a root-level
-        part name.
+        are additions and require an explicit ``location``. An addition
+        lands at the level its key names, in that level's frame: every
+        segment but the last names a sub-assembly, the last becomes the
+        part name there (``"turret.drive.foot_bolt"`` adds ``foot_bolt``
+        to ``drive``; a bare name adds a root-level part). It then
+        qualifies with its unit and rides that unit's placement and
+        joints, so the unit's own claims about it evaluate at any root.
+        Raises ``KeyError`` if a segment names no sub-assembly.
 
         A bare ``Part`` value is shorthand for ``DetailOverride(part=p)``.
         """
@@ -474,26 +480,44 @@ class Assembly:
             for name, v in mapping.items()
         }
         swapped = self._swap_detail(overrides, "")
-        all_names = swapped._all_part_names()
-        additions: list[PlacedPart] = []
-        for name, ov in overrides.items():
-            if name in all_names:
-                continue
-            if ov.location is None:
-                raise ValueError(
-                    f"with_detailed_geometry: addition {name!r} requires "
-                    "an explicit location"
-                )
-            additions.append(
-                PlacedPart(
-                    name=name,
-                    part=ov.part,
-                    location=ov.location,
-                    color=ov.color,
-                    material=ov.material,
-                )
+        swapped_names = swapped._all_part_names()
+        additions = {
+            name: ov
+            for name, ov in overrides.items()
+            if name not in swapped_names
+        }
+        unplaced = next(
+            (name for name, ov in additions.items() if ov.location is None),
+            None,
+        )
+        if unplaced is not None:
+            raise ValueError(
+                f"with_detailed_geometry: addition {unplaced!r} requires "
+                "an explicit location"
             )
-        return replace(swapped, parts=swapped.parts + tuple(additions))
+        return reduce(
+            lambda assembly, item: assembly._with_addition(*item),
+            additions.items(),
+            swapped,
+        )
+
+    def _with_addition(self, path: str, ov: "DetailOverride") -> "Assembly":
+        head, _, rest = path.partition(".")
+        if not rest:
+            return self.with_part(
+                head, ov.part, ov.location, ov.color, ov.material
+            )
+        if all(s.name != head for s in self.subassemblies):
+            raise KeyError(f"no sub-assembly named {head!r}")
+        return replace(
+            self,
+            subassemblies=tuple(
+                replace(s, assembly=s.assembly._with_addition(rest, ov))
+                if s.name == head
+                else s
+                for s in self.subassemblies
+            ),
+        )
 
     def _swap_detail(
         self, overrides: dict[str, "DetailOverride"], prefix: str

@@ -441,11 +441,23 @@ For build123d's selector operators (`>`, `<`, `>>`, `<<`, `|`, `@`, `%`,
   (render / FEA / kinematics) reads the assembly. The override map
   handles **both swaps and additions**: a key matching an existing
   part's qualified path swaps the part shape (placement / material /
-  color preserved); a key with no match appends a new root-level
-  `PlacedPart` from a `DetailOverride(part=…, location=…, material=…)`.
+  color preserved); a key with no match appends a new `PlacedPart`
+  from a `DetailOverride(part=…, location=…, material=…)` **at the
+  level the key names, in that level's frame** —
+  `"turret.drive.foot_bolt"` adds `foot_bolt` to the `drive` unit, a
+  bare name adds a root-level part, and a prefix naming no
+  sub-assembly raises `KeyError`.
   Fasteners that the cheap model never created enter via additions
   — and each new fastener earns its own clearance assertion at the
-  sub-assembly that owns the joint. Declare those assertions freely:
+  sub-assembly that owns the joint. **Key the addition with that
+  unit's path from the root being detailed** (bare only when the unit
+  itself is the root), not a bare name everywhere: the unit's claim
+  qualifies to
+  `<unit path>.<part>` at every composed root, so a bare-keyed
+  addition lands at the root and leaves the claim skipped forever,
+  while a path-keyed one evaluates at any root and rides the unit's
+  joints. Its `location` is then the unit-local one. Declare those
+  assertions freely:
   in a run without the detail applied they skip (`passed: null` in
   the JSON, with the missing part named) instead of crashing, and
   evaluate normally once the override adds the part. Same intrinsic-vs-placement

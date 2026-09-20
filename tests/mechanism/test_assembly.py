@@ -8,7 +8,11 @@ from cad_khana.mechanism.assembly import (
     DetailOverride,
     RevoluteJoint,
 )
-from cad_khana.mechanism.assertions import JointWindow, NoInterference
+from cad_khana.mechanism.assertions import (
+    JointWindow,
+    NoInterference,
+    evaluate,
+)
 
 
 def _cube(size: float = 10):
@@ -724,8 +728,6 @@ def test_same_leaf_name_in_two_subtrees_does_not_shadow():
     checked = top.assert_no_interference_between(
         "platform_image", "platform_dump"
     )
-    from cad_khana.mechanism.assertions import evaluate
-
     results = evaluate(checked)
     assert len(results) == 1
     assert results[0].passed
@@ -761,6 +763,71 @@ def test_with_detailed_geometry_bare_name_of_nested_part_is_addition():
     top = Assembly().with_subassembly("unit", leaf)
     with pytest.raises(ValueError, match="requires an explicit location"):
         top.with_detailed_geometry({"rail": _cube(20)})
+
+
+def _bolt_at(x: float) -> DetailOverride:
+    return DetailOverride(part=_cube(2), location=Location((x, 0, 0)))
+
+
+def test_with_detailed_geometry_dotted_addition_lands_at_its_level():
+    leaf = Assembly().with_part("rail", _cube(10))
+    top = Assembly().with_subassembly(
+        "outer", Assembly().with_subassembly("unit", leaf)
+    )
+    result = top.with_detailed_geometry({"outer.unit.bolt": _bolt_at(5)})
+    unit = result.subassemblies[0].assembly.subassemblies[0].assembly
+    assert [p.name for p in unit.parts] == ["rail", "bolt"]
+    assert result.parts == ()
+    assert [p.name for p in result.placed_parts] == [
+        "outer.unit.rail",
+        "outer.unit.bolt",
+    ]
+
+
+def test_with_detailed_geometry_dotted_addition_rides_placement_and_joint():
+    leaf = Assembly().with_part("rail", _cube(10))
+    top = Assembly().with_subassembly(
+        "unit",
+        leaf,
+        location=Location((100, 0, 0)),
+        joint=RevoluteJoint(axis=Axis.Z, angle_deg=90, frame="local"),
+    )
+    result = top.with_detailed_geometry({"unit.bolt": _bolt_at(5)})
+    bolt = {p.name: p for p in result.placed_parts}["unit.bolt"]
+    assert tuple(bolt.location.position) == pytest.approx((100, 5, 0))
+
+
+def test_with_detailed_geometry_dotted_addition_evaluates_the_units_claim():
+    # The bolt overlaps the bracket in the unit's frame; the unit is
+    # placed away from the root origin, so a root-frame bolt would miss
+    # the bracket and read as a false green.
+    unit = (
+        Assembly()
+        .with_part("bracket", _cube(10))
+        .assert_no_interference("bolt", "bracket")
+    )
+    top = Assembly().with_subassembly(
+        "unit", unit, location=Location((100, 0, 0))
+    )
+    assert [r.passed for r in evaluate(top)] == [None]
+    detailed = top.with_detailed_geometry({"unit.bolt": _bolt_at(5)})
+    assert [r.passed for r in evaluate(detailed)] == [False]
+
+
+def test_with_detailed_geometry_addition_under_unknown_prefix_raises():
+    top = Assembly().with_subassembly(
+        "unit", Assembly().with_part("rail", _cube(10))
+    )
+    with pytest.raises(KeyError, match="nope"):
+        top.with_detailed_geometry({"nope.bolt": _bolt_at(5)})
+
+
+def test_with_detailed_geometry_addition_named_like_a_sibling_raises():
+    top = Assembly().with_subassembly(
+        "unit", Assembly().with_part("rail", _cube(10))
+    )
+    with pytest.raises(ValueError, match="duplicate sibling name"):
+        top.with_detailed_geometry({"unit": _bolt_at(5)})
 
 
 def test_duplicate_sibling_part_name_raises():
