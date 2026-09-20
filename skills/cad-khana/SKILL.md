@@ -1304,7 +1304,10 @@ the model to fix, not to waive. Only a low alignment supports a
 - `assertions[].poses` — `evaluated` (poses the verdict covers: `1`
   means it looked once), `distinct` (evaluations actually run — `1`
   under a motion means **the motion never moves this claim**, so it
-  tests nothing about it), `in_phase`, `failed`.
+  tests nothing about it), `in_phase`, `failed`. Two kinds read
+  `distinct: 1` under every motion and are right to: `assert_scalar`
+  and `assert_solid_count` claim nothing a pose can change. Leave
+  them out of any audit over this field.
 - `assertions[].worst_at` — `{motion, t, joints_deg}` of the worst
   pose; `null` when that is the as-built pose. Re-create it with
   `assembly.posed(joints_deg)` to draw or inspect it.
