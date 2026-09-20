@@ -45,8 +45,11 @@ def _require_current_schema(old: Diag, new: Diag) -> None:
         )
 
 
-def _assertion_state(passed: bool | None) -> str:
-    return "passed" if passed is True else "failed" if passed is False else "skipped"
+def _assertion_state(assertion: Diag) -> str:
+    if assertion["passed"] is not None:
+        return "passed" if assertion["passed"] else "failed"
+    kind = assertion.get("skipped")
+    return f"skipped ({kind})" if kind else "skipped"
 
 
 def _waive_state(waived: str | None) -> str:
@@ -74,13 +77,14 @@ def _assertions_section(old: list[Diag], new: list[Diag]) -> list[str]:
         for name in sorted(common)
         if old_map[name]["passed"] is False and new_map[name]["passed"] is True
     ]
-    # Transitions into or out of the skipped state (passed = null).
+    # Transitions into or out of the skipped state (passed = null), or
+    # between skip classes.
     skip_changed = [
         f"  changed: {name}"
-        f" {_assertion_state(old_map[name]['passed'])}"
-        f" → {_assertion_state(new_map[name]['passed'])}"
+        f" {_assertion_state(old_map[name])}"
+        f" → {_assertion_state(new_map[name])}"
         for name in sorted(common)
-        if old_map[name]["passed"] != new_map[name]["passed"]
+        if _assertion_state(old_map[name]) != _assertion_state(new_map[name])
         and None in (old_map[name]["passed"], new_map[name]["passed"])
     ]
     # Recorded values (assert_distance / assert_scalar) that moved while
@@ -99,7 +103,7 @@ def _assertions_section(old: list[Diag], new: list[Diag]) -> list[str]:
         if old_map[name].get("waived") != new_map[name].get("waived")
     ]
     added = [
-        f"  added: {name} ({_assertion_state(new_map[name]['passed'])})"
+        f"  added: {name} ({_assertion_state(new_map[name])})"
         for name in sorted(new_map.keys() - old_map.keys())
     ]
     removed = [f"  removed: {name}" for name in sorted(old_map.keys() - new_map.keys())]

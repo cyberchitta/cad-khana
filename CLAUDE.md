@@ -220,7 +220,7 @@ A module the import-model verbs consume never calls `check()`,
 full design, its phases, and what is still owed:
 `_notes/draft-script-decomposition.md`.
 
-## Diagnostics JSON schemas (v0.9)
+## Diagnostics JSON schemas (v0.10)
 
 Version these from day one. Agents depend on field stability.
 
@@ -228,10 +228,11 @@ Version these from day one. Agents depend on field stability.
 
 ```json
 {
-  "schema_version": "0.9",
+  "schema_version": "0.10",
   "status": "ok | error | assertion_failed",
   "error": null,
   "hint": "Missing .part accessor — use `with BuildPart() as p: ...; return p.part`.",
+  "skipped_counts": {"absent_part": 0, "absent_joint": 0},
   "parts": {
     "<name>": {
       "bbox": {"min": [x,y,z], "max": [x,y,z]},
@@ -248,7 +249,7 @@ Version these from day one. Agents depend on field stability.
     {"a": "lever", "b": "housing", "volume_mm3": 0.3, "centroid": [x,y,z]}
   ],
   "assertions": [
-    {"name": "lever_clears_housing", "passed": true, "detail": null, "value": null, "waived": null}
+    {"name": "lever_clears_housing", "passed": true, "detail": null, "value": null, "waived": null, "skipped": null}
   ]
 }
 ```
@@ -258,7 +259,12 @@ assertion, `null` when it was skipped because a referenced part is
 absent from the run (`detail` names the missing parts — the standalone
 sub-assembly case, where detail-override parts aren't applied), or
 because a phased claim's joint is absent. Skipped assertions never set
-`status: "assertion_failed"`.
+`status: "assertion_failed"`. `assertions[].skipped` classes the reason —
+`"absent_part" | "absent_joint"`, `null` whenever `passed` is not — and
+top-level `skipped_counts` totals them with every class always listed,
+so a skip that is expected here (detail not applied) can be told from
+one that is a typo without parsing `detail`. Printability assertions
+share the dataclass and always carry `skipped: null`.
 
 `assert_allowed_contact(..., during=JointWindow(path, lo, hi))` scopes a
 contact to a kinematic phase: inside the window the overlap band
@@ -302,7 +308,7 @@ comparison flips on solver noise.
 
 ```json
 {
-  "schema_version": "0.9",
+  "schema_version": "0.10",
   "kind": "printability",
   "status": "ok | assertion_failed",
   "name": "housing",

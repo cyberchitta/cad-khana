@@ -119,6 +119,21 @@ def test_assertion_added_as_skipped_is_reported():
     assert "added: clr (skipped)" in out
 
 
+def test_assertion_skip_names_its_class():
+    old = _empty_mech() | {"assertions": [{"name": "clr", "passed": True, "skipped": None}]}
+    new = _empty_mech() | {"assertions": [{"name": "clr", "passed": None, "skipped": "absent_part"}]}
+    assert "changed: clr passed → skipped (absent_part)" in diff(old, new)
+
+
+def test_assertion_skip_class_change_is_reported():
+    old = _empty_mech() | {"assertions": [{"name": "clr", "passed": None, "skipped": "absent_part"}]}
+    new = _empty_mech() | {"assertions": [{"name": "clr", "passed": None, "skipped": "absent_joint"}]}
+    assert (
+        "changed: clr skipped (absent_part) → skipped (absent_joint)"
+        in diff(old, new)
+    )
+
+
 def test_assertion_stably_skipped_is_not_reported():
     skipped = {"assertions": [{"name": "clr", "passed": None, "detail": "skipped"}]}
     assert diff(_empty_mech() | skipped, _empty_mech() | skipped) == "no changes\n"

@@ -217,6 +217,21 @@ def test_assertion_against_absent_part_is_skipped():
     assert result.passed is None
     assert "skipped" in result.detail
     assert "bolt" in result.detail
+    assert result.skipped == "absent_part"
+
+
+def test_evaluated_assertions_carry_no_skip_class():
+    a = (
+        Assembly()
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((5, 0, 0)))
+        .with_part("c", _cube(), location=Location((50, 0, 0)))
+        .assert_no_interference("a", "b")
+        .assert_no_interference("a", "c")
+    )
+    failed, passed = evaluate(a)
+    assert (failed.passed, passed.passed) == (False, True)
+    assert failed.skipped is None and passed.skipped is None
 
 
 def test_clearance_against_absent_part_is_skipped():
@@ -878,6 +893,7 @@ def test_phased_contact_skips_when_the_joint_is_absent_from_this_run():
     (result,) = evaluate(a)
     assert result.passed is None
     assert "joint absent" in result.detail
+    assert result.skipped == "absent_joint"
 
 
 def test_phased_contact_window_qualifies_into_a_parent_frame():

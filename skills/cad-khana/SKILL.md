@@ -1160,13 +1160,20 @@ the model to fix, not to waive. Only a low alignment supports a
   way to verify a boolean operation changed geometry: counts shift on
   success, stay the same on a silent no-op or OCCT failure.
 - `interferences` — list of overlapping part pairs with volume + centroid.
+- `skipped_counts` — how many assertions were skipped, per class, every
+  class always listed. **Read it on every green run**: a nonzero count
+  is a claim that did not look. It should drop to zero at the root
+  where the detail is applied; one that never does is a typo or an
+  addition keyed to the wrong level.
 - `assertions` — one entry per declared assertion; `passed` + `detail`
   + `value`. `passed` is `true`/`false`/`null`: `null` means the
   assertion was skipped because a part it references is absent from
   this run (`detail` names the missing parts) — normal for assertions
-  against override-added detail parts in a standalone run. Skips never
-  fail the run; watch for an assertion that is *always* skipped,
-  which usually means a typo'd part name. `value` is the measured/
+  against override-added detail parts in a standalone run. `skipped`
+  classes the reason (`"absent_part"` | `"absent_joint"`; `null` when
+  the assertion was evaluated). Skips never fail the run; watch for an
+  assertion that is *always* skipped, which usually means a typo'd
+  part name. `value` is the measured/
   claimed scalar for `assert_distance` / `assert_scalar` (recorded
   even on pass; `khana diff` reports its drift) and `null` otherwise.
 

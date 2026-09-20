@@ -157,6 +157,15 @@ def test_check_skipped_assertion_does_not_fail_the_run(tmp_path: Path):
     assert data["status"] == "ok"
     assert data["assertions"][0]["passed"] is None
     assert "skipped" in data["assertions"][0]["detail"]
+    assert data["assertions"][0]["skipped"] == "absent_part"
+    assert data["skipped_counts"] == {"absent_part": 1, "absent_joint": 0}
+
+
+def test_check_with_nothing_skipped_still_lists_every_skip_class(tmp_path: Path):
+    check(Assembly().with_part("a", _cube()), out=tmp_path)
+    data = json.loads((tmp_path / "mechanism.json").read_text())
+    assert data["schema_version"] == "0.10"
+    assert data["skipped_counts"] == {"absent_part": 0, "absent_joint": 0}
 
 
 def test_check_skipped_alongside_failure_still_fails(tmp_path: Path):

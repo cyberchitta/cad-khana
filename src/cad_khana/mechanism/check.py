@@ -9,7 +9,11 @@ from cad_khana import _failures
 from cad_khana._paths import resolve_out
 from cad_khana.mechanism.assembly import Assembly
 from cad_khana.mechanism.assertions import evaluate as evaluate_assertions
-from cad_khana.mechanism.diagnostics import Diagnostics, compute
+from cad_khana.mechanism.diagnostics import (
+    Diagnostics,
+    compute,
+    skipped_counts,
+)
 
 
 @dataclass(frozen=True)
@@ -32,6 +36,7 @@ def check(assembly: Assembly, out: str | Path = "outputs") -> CheckResult:
     diagnostics = replace(
         compute(assembly),
         assertions=assertion_results,
+        skipped_counts=skipped_counts(assertion_results),
         status="assertion_failed" if failed else "ok",
     )
     json_path = out_path / "mechanism.json"

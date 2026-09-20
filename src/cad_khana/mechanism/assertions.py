@@ -529,7 +529,10 @@ def _evaluate_part_assertion(
     if missing:
         names = ", ".join(missing)
         return AssertionResult(
-            assertion.name, None, f"skipped: part(s) absent from this run: {names}"
+            assertion.name,
+            None,
+            f"skipped: part(s) absent from this run: {names}",
+            skipped="absent_part",
         )
     return assertion.evaluate(parts)
 
@@ -554,6 +557,7 @@ def _evaluate_one(
                 assertion.name,
                 None,
                 f"skipped: joint absent from this run: {path}",
+                skipped="absent_joint",
             )
         assertion = assertion.for_angle(angles[path])
     return _evaluate_part_assertion(assertion, parts)

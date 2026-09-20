@@ -9,7 +9,7 @@ from build123d import Part
 if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
 
-SCHEMA_VERSION = "0.9"
+SCHEMA_VERSION = "0.10"
 INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
 
 # Absolute tolerance on assertion bound comparisons, in the bound's own
@@ -18,6 +18,10 @@ INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
 # value lands exactly at the bound ± solver noise (1e-14 boolean noise,
 # ~1e-7 bbox slop observed); exact comparison flips on that noise.
 BOUND_EPSILON = 1e-6
+
+# Why an assertion can come back ``passed=None``. Free-text ``detail``
+# can't tell "expected here" from "typo"; the class can be counted.
+SKIP_CLASSES = ("absent_part", "absent_joint")
 
 
 @dataclass(frozen=True)
@@ -50,7 +54,9 @@ class Interference:
 class AssertionResult:
     """``passed`` is tri-state: ``True``/``False`` for an evaluated
     assertion, ``None`` when it was skipped because a referenced part
-    is absent from the run (``detail`` names the missing parts).
+    or joint is absent from the run (``detail`` names what is
+    missing). ``skipped`` classes that reason — one of ``SKIP_CLASSES``
+    — and is ``None`` for every evaluated assertion.
     Skipped assertions never fail a run. ``value`` carries the
     measured/claimed scalar for value-carrying assertions
     (``assert_distance``, ``assert_scalar``, ``assert_tangent_contact``
@@ -66,6 +72,15 @@ class AssertionResult:
     detail: str | None = None
     value: float | None = None
     waived: str | None = None
+    skipped: str | None = None
+
+
+def skipped_counts(results: tuple[AssertionResult, ...]) -> dict[str, int]:
+    """Skipped assertions per class — every class listed, zeros
+    included, so the shape is stable under ``khana diff``."""
+    return {
+        kind: sum(r.skipped == kind for r in results) for kind in SKIP_CLASSES
+    }
 
 
 @dataclass(frozen=True)
@@ -74,6 +89,9 @@ class Diagnostics:
     status: str = "ok"
     error: str | None = None
     hint: str | None = None
+    skipped_counts: dict[str, int] = field(
+        default_factory=lambda: skipped_counts(())
+    )
     parts: dict[str, PartDiagnostics] = field(default_factory=dict)
     interferences: tuple[Interference, ...] = ()
     assertions: tuple[AssertionResult, ...] = ()
