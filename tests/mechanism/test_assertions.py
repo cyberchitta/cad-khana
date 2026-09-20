@@ -1,5 +1,5 @@
 import pytest
-from build123d import Axis, Box, BuildPart, Location
+from build123d import Axis, Box, BuildPart, Location, Plane
 
 from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
 from cad_khana.mechanism.assertions import JointWindow, evaluate
@@ -733,8 +733,6 @@ def test_subassembly_assertions_evaluate_qualified_in_composed_run():
 def test_subassembly_plane_target_tracks_placement():
     # Declared once in the unit's frame; the same claim must hold when
     # the unit is placed elsewhere, because the plane moves with it.
-    from build123d import Plane
-
     unit = (
         Assembly()
         .with_part("ramp", _cube())
@@ -746,6 +744,25 @@ def test_subassembly_plane_target_tracks_placement():
     assert standalone.passed and composed.passed
     assert abs(standalone.value - composed.value) < 1e-6
     assert composed.name == "m05." + standalone.name
+
+
+@pytest.mark.parametrize("turn_deg", [90, 180])
+def test_subassembly_directed_distance_turns_with_placement(turn_deg: float):
+    # A direction is declared in the unit's frame, like a datum plane:
+    # placed turned, the gap is still measured along the unit's own X.
+    unit = (
+        Assembly()
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((15, 0, 0)))
+        .assert_distance("a", "b", along="X", min_mm=5, max_mm=5)
+        .assert_distance("a", Plane.YZ.offset(10), along="X", min_mm=5, max_mm=5)
+    )
+    top = Assembly().with_subassembly(
+        "u", unit, location=Location((30, 0, 0), (0, 0, turn_deg))
+    )
+    results = evaluate(top)
+    assert all(r.passed for r in results)
+    assert [r.value for r in results] == pytest.approx([5.0, 5.0])
 
 
 def test_subassembly_contact_assertions_qualify_when_composed():

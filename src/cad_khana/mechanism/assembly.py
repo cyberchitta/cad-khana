@@ -697,10 +697,11 @@ class Assembly:
 
         Without ``along``: minimum surface-to-surface distance. With
         ``along`` (an axis name like ``"-Z"`` or a vector, read as the
-        direction from ``a`` toward ``b``): the directed gap between
-        the two projection intervals — negative once they overlap
-        along that axis. A ``Plane`` target with ``along`` requires
-        the direction parallel to the plane normal.
+        direction from ``a`` toward ``b``, in this assembly's frame):
+        the directed gap between the two projection intervals —
+        negative once they overlap along that axis. A ``Plane`` target
+        with ``along`` requires the direction parallel to the plane
+        normal.
 
         ``min_mm`` / ``max_mm`` bound the measurement (at least one
         required; both together express "close but not touching").
@@ -998,13 +999,14 @@ class Assembly:
         """This level's assertions plus every sub-assembly's,
         recursively, qualified into this frame — the assertion-side
         mirror of ``placed_parts``. Part and anchor paths (and names)
-        gain the sub-assembly path prefix; datum-plane targets are
-        moved by each level's ``effective_location`` (joint included),
-        so a plane declared in a sub's local frame tracks its
-        placement. This is what lets a unit declare an assertion once,
-        at the level that owns the knowledge: standalone runs evaluate
-        it directly, composed runs evaluate the qualified form, and
-        the absent-part skip covers detail-only references either way.
+        gain the sub-assembly path prefix; datum-plane targets and
+        ``along`` directions are moved by each level's
+        ``effective_location`` (joint included), so one declared in a
+        sub's local frame tracks its placement. This is what lets a
+        unit declare an assertion once, at the level that owns the
+        knowledge: standalone runs evaluate it directly, composed runs
+        evaluate the qualified form, and the absent-part skip covers
+        detail-only references either way.
 
         This is also where a group expansion's blanket pairs yield to a
         declared ``AllowedContact`` on the same pair

@@ -579,7 +579,8 @@ a = a.assert_distance("ring_gear", "pinion",
 
 # directed gap: how far `a` travels along the axis before touching `b`
 # (negative once the projections overlap) — axis name or vector,
-# read as the direction FROM a TOWARD b
+# read as the direction FROM a TOWARD b, in this assembly's frame (it
+# turns with the unit when a parent places it rotated)
 a = a.assert_distance("pulley", "housing", along="Z", min_mm=1.0)
 
 # datum plane target (declared in this assembly's frame; `along` must

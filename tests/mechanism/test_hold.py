@@ -233,6 +233,57 @@ def test_a_datum_plane_under_a_driven_joint_moves_with_it():
     assert result.value == pytest.approx(9.0)
 
 
+def test_a_directed_distance_under_a_driven_joint_turns_with_it():
+    """The tip stays 14 mm out from the arm along the unit's own X at
+    every pose; measured along the as-built X the gap closes as the
+    unit swings."""
+    arm = (
+        Assembly()
+        .with_part("arm", _cube(), location=Location((20, 0, 0)))
+        .with_part("tip", _cube(2), location=Location((40, 0, 0)))
+        .assert_distance("arm", "tip", along="X", min_mm=14.0, max_mm=14.0)
+    )
+    a = (
+        Assembly()
+        .with_subassembly("swing", arm, joint=RevoluteJoint(axis=Axis.Z))
+        .with_motion(_swing(90))
+    )
+    result = _only(a)
+    assert result.passed
+    assert result.value == pytest.approx(14.0)
+
+
+def test_a_direction_turns_even_when_no_part_moves():
+    """Two coaxial joints turning against each other leave every part
+    where it was, but the outer unit's X has turned — and the claim is
+    about that X. At 90deg it reads across the pair, where they overlap."""
+    pair = (
+        Assembly()
+        .with_part("arm", _cube(), location=Location((20, 0, 0)))
+        .with_part("tip", _cube(2), location=Location((40, 0, 0)))
+    )
+    outer = (
+        Assembly()
+        .with_subassembly("inner", pair, joint=RevoluteJoint(axis=Axis.Z))
+        .assert_distance("inner.arm", "inner.tip", along="X", min_mm=14.0)
+    )
+    a = (
+        Assembly()
+        .with_subassembly("outer", outer, joint=RevoluteJoint(axis=Axis.Z))
+        .with_motion(
+            Motion(
+                "counter",
+                lambda t: {"outer": 90 * t, "outer.inner": -90 * t},
+                (0.0, 0.5, 1.0),
+            )
+        )
+    )
+    result = _only(a)
+    assert result.passed is False
+    assert result.poses.failed == 2
+    assert result.value == pytest.approx(-6.0)
+
+
 def test_motion_summary_says_how_much_was_looked_at():
     (summary,) = hold(_swung().with_motion(_swing(50, step=20.0))).motions
     assert summary.name == "swing_in"

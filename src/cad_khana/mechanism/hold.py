@@ -17,7 +17,9 @@ in. Poses that agree on both share one evaluation, and at each pose only
 the assertions touching a part that moved (or a joint that turned) are
 looked at again. That reuse is exact, not a heuristic: it keys on the
 composed placements themselves. A datum-plane target or an ``along``
-direction is absolute, so those key on absolute placement.
+direction is declared in its unit's frame and rides the joints above
+it, not any named part: those claims are re-derived at every pose,
+looked at every time, and key on absolute placement plus the direction.
 
 Pure: no file I/O. ``check()`` writes what this returns.
 """
@@ -136,6 +138,14 @@ def _is_absolute(claim: Assertion) -> bool:
     )
 
 
+def _direction_signature(claim: Distance) -> tuple[float, ...]:
+    return (
+        ()
+        if claim.along is None
+        else tuple(round(c, PLACEMENT_DECIMALS) for c in claim.along)
+    )
+
+
 def _geometry(assertion: Assertion, frame: _Frame) -> Key:
     """What the claim's measurement depends on at this pose."""
     claim = core(assertion)
@@ -153,7 +163,7 @@ def _geometry(assertion: Assertion, frame: _Frame) -> Key:
             if isinstance(claim.b, Plane)
             else frame.signatures[claim.b]
         )
-        return frame.signatures[claim.a] + target
+        return frame.signatures[claim.a] + target + _direction_signature(claim)
     return _signature(locations[claim.a].inverse() * locations[claim.b])
 
 
@@ -171,7 +181,8 @@ def _slack(assertion: Assertion, state: str, result: AssertionResult) -> float |
 class _Index:
     """Which assertions a pose can change: by part moved, by joint
     turned, and the few that must be looked at every time (a datum
-    plane or an anchor moves with a subtree, not with a named part)."""
+    plane, a direction or an anchor moves with a subtree, not with a
+    named part)."""
 
     by_part: dict[str, frozenset[int]]
     by_joint: dict[str, frozenset[int]]
@@ -184,9 +195,7 @@ class _Index:
         always: set[int] = set()
         for i, a in enumerate(assertions):
             claim = core(a)
-            if isinstance(claim, AnchorsCoincident) or (
-                isinstance(claim, Distance) and isinstance(claim.b, Plane)
-            ):
+            if isinstance(claim, AnchorsCoincident) or _is_absolute(claim):
                 always.add(i)
             for name in getattr(claim, "part_refs", ()):
                 by_part.setdefault(name, set()).add(i)
@@ -354,13 +363,10 @@ def hold(assembly: Assembly) -> Held:
     assertions = rest.assertions
     contacts = contact_claims(assertions)
     index = _Index.create(assertions, contacts)
-    # A datum plane is qualified through the joints above it, so a tree
-    # that declares one re-derives its assertions per pose; otherwise
-    # the list is the same at every pose.
-    replanes = any(
-        isinstance(core(a), Distance) and isinstance(core(a).b, Plane)
-        for a in assertions
-    )
+    # A datum plane or direction is qualified through the joints above
+    # it, so a tree that declares one re-derives its assertions per
+    # pose; otherwise the list is the same at every pose.
+    rederive = any(_is_absolute(core(a)) for a in assertions)
     evaluated: dict[tuple[int, Key], tuple[AssertionResult, float | None]] = {}
 
     def visit(i: int, frame: _Frame) -> _Visit:
@@ -379,7 +385,7 @@ def hold(assembly: Assembly) -> Held:
     for sample in samples[1:]:
         posed = assembly.posed(sample.pose)
         frame = _Frame(
-            sample, posed, posed.all_assertions if replanes else assertions
+            sample, posed, posed.all_assertions if rederive else assertions
         )
         for i in index.affected(rest, frame):
             later.setdefault(i, []).append(visit(i, frame))

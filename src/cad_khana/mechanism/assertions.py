@@ -43,6 +43,10 @@ def _qualified_plane(plane: Plane, location: Location) -> Plane:
     return Plane(location * plane.location)
 
 
+def _qualified_direction(d: Vector, location: Location) -> Vector:
+    return _qualified_plane(Plane(origin=(0, 0, 0), z_dir=d), location).z_dir
+
+
 @dataclass(frozen=True)
 class JointWindow:
     """The kinematic phase a claim applies in: the named revolute
@@ -282,8 +286,9 @@ class AllowedContact:
 @dataclass(frozen=True)
 class Distance:
     """Bounded distance from part ``a`` to target ``b`` — another part,
-    or a datum ``Plane`` (infinite; declared in the asserting assembly's
-    frame and composed through placements like everything else).
+    or a datum ``Plane`` (infinite). A plane and an ``along`` direction
+    are both declared in the asserting assembly's frame and composed
+    through placements like everything else.
 
     Without ``along``: the minimum surface-to-surface distance (0 when
     touching or overlapping). With ``along`` (a unit direction from
@@ -323,8 +328,17 @@ class Distance:
             if isinstance(self.b, str)
             else _qualified_plane(self.b, location)
         )
+        along = (
+            None
+            if self.along is None
+            else _qualified_direction(self.along, location)
+        )
         return replace(
-            self, a=f"{prefix}.{self.a}", b=b, name=f"{prefix}.{self.name}"
+            self,
+            a=f"{prefix}.{self.a}",
+            b=b,
+            along=along,
+            name=f"{prefix}.{self.name}",
         )
 
     def _measure(self, parts: dict[str, Part]) -> float:
