@@ -65,6 +65,16 @@ part = Pos(0, 0, h/2) * (Box(w, w, h) - Cylinder(r, h))
 `Pos(x, y, z)` is `Location((x, y, z))` with no rotation. `Rot(rx, ry, rz)`
 is rotation-only. They compose: `Pos(0,0,5) * Rot(0,90,0) * Box(...)`.
 
+**`Rot(rx, ry, rz)` applies its three angles as `Rx·Ry·Rz`** — X
+outermost, not the `Rz·Ry·Rx` that "roll, pitch, yaw" reading order
+suggests. Verified on 0.12.0: `Rot(90, 90, 0)` equals
+`Rot(90,0,0) * Rot(0,90,0)`, and the opposite order sends +X to −Z
+instead of +Y. Two angles in one `Rot` therefore land a part in a frame
+that is easy to mis-predict and that no assertion catches on its own —
+a wrong facing is not an overlap. Compose the turns explicitly when the
+result matters, and assert the facing (see SKILL.md, **What a green
+check does not mean**).
+
 **Builder** — sketches on workplanes, hole patterns, fillet/chamfer
 of selected edges, anything wanting a stateful context.
 

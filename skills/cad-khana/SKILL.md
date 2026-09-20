@@ -631,6 +631,10 @@ recording a named, diffable result. `assert_distance` /
 both record their **measured value** in the JSON even on pass, so
 `khana diff` reports drift the pass/fail boolean can't see.
 
+Promoting a bare assert is not free, though: it **widens the claim's
+scope** from the one pose its constants came from to every pose a
+motion builds. See **What a green check does not mean**.
+
 ```python
 # gear mesh: close but not touching (min AND max bound)
 a = a.assert_distance("ring_gear", "pinion",
@@ -1394,6 +1398,53 @@ the model to fix, not to waive. Only a low alignment supports a
   `multi_solid` (`part`, `solid_count` — the part is in several
   pieces).
 
+## What a green check does not mean
+
+Exit 0 means *no interference and printability passed, for the claims
+you declared, at the poses you built*. Each of the following is a real
+defect class a green check cannot see. When a slice depends on one of
+them, the check is not your evidence — find the one that is.
+
+- **Unasserted geometry.** A dimension consumed only by cosmetic
+  geometry never earns an assertion, so it silently tracks whatever it
+  was derived from. Nothing here measures appearance, and nothing sees
+  a camera. `khana draw` is how you find the claims you forgot to make
+  — draw a view before believing a green on a part whose parameters
+  moved. Check `assertions` is non-empty first (see **Vacuous green**).
+- **Orientation.** A wrong outward normal is not an overlap: a part
+  placed facing backwards passes every clearance claim. When facing
+  carries function, `assert_tangent_contact` against the surface it
+  must face — that pins the orientation too.
+- **One pose.** A claim with `poses.evaluated: 1` looked once, at the
+  pose you built. It says nothing about the sign of a motion (a
+  docstring claiming kinematics is not evidence — check at a non-rest
+  pose), nothing about a service or removal path, and nothing about the
+  pose where the envelope is actually worst. Declare a `Motion` and the
+  claims are held at every sample; where you can't, say beside the
+  assert which pose the numbers came from, or it expires silently when
+  the parameter moves.
+- **Promotion widens a claim's scope.** A bare `assert` over constants
+  is frozen at that pose; a declared `assert_distance` is re-evaluated
+  at every pose a motion builds. Promoting a rest-pose claim therefore
+  reddens frames where nothing is wrong. Ask which poses the claim was
+  ever true at, scope it with `during=`, and run the motion — not just
+  the unit's own `khana check`.
+- **A standalone green is a weaker claim than a top-level green.**
+  Claims referencing parts a run doesn't contain are skipped, not
+  failed: read `skipped_counts`, not just the exit code. A detail tier
+  that isn't applied skips the claims that were written for it.
+- **Cross-unit physical reality.** Two independently floor-standing
+  units pass every cross-unit check while being unbuildable — they
+  share one bench, and nothing infers that. Export the shared datum as
+  an anchor and `assert_anchors_coincident` at the top (see **Named
+  interface anchors**).
+
+One habit that keeps the rest honest: **turn every fixed interference
+into a named regression assert**, and write a known-bad overlap as
+`assert_interference(reason=…)` rather than deleting the claim. A
+positive assertion self-fails the moment the redesign lands, so it
+cannot rot into folklore.
+
 ## Known limitations
 
 - **Min wall thickness is approximate.** Rays are cast from tessellated
@@ -1430,7 +1481,9 @@ the model to fix, not to waive. Only a low alignment supports a
    - All `status: "ok"` → design is clean. Consider whether you've
      asserted everything that matters (a silent passing check isn't
      proof; it's just no failures detected).
-4. Edit parameters or geometry. Re-run. Repeat.
+4. Edit parameters or geometry. Re-run. Repeat. After a change that
+   moves a *global* dimension, draw one view before believing the
+   green — a derived dimension nothing asserts moves with it.
 5. When a question is shape-level rather than scalar ("is the tang
    pointing the right way", "did that cut land where I expected"), run
    `khana draw path/to/assembly.py` and read the views under
