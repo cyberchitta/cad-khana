@@ -62,6 +62,13 @@ def _value_moved(old: Any, new: Any) -> bool:
     return old != new
 
 
+def _worst_pose(assertion: Diag) -> str:
+    """Where a held assertion's value came from, when that is not the
+    as-built pose — a drifting worst value usually moved poses too."""
+    at = assertion.get("worst_at")
+    return f" (worst at {at['motion']} t={at['t']:g})" if at else ""
+
+
 def _assertions_section(old: list[Diag], new: list[Diag]) -> list[str]:
     old_map = {a["name"]: a for a in old}
     new_map = {a["name"]: a for a in new}
@@ -91,6 +98,7 @@ def _assertions_section(old: list[Diag], new: list[Diag]) -> list[str]:
     # the pass/fail state stayed put — drift the boolean can't see.
     value_changed = [
         f"  changed: {name} value {_delta(old_map[name].get('value'), new_map[name].get('value'))}"
+        f"{_worst_pose(new_map[name])}"
         for name in sorted(common)
         if old_map[name]["passed"] == new_map[name]["passed"]
         and _value_moved(old_map[name].get("value"), new_map[name].get("value"))
@@ -211,9 +219,68 @@ def _interferences_section(old: list[Diag], new: list[Diag]) -> list[str]:
     return added + removed + changed
 
 
+def _motion_changes(name: str, old: Diag, new: Diag) -> list[str]:
+    samples = (
+        [f"  changed: {name} samples {old['samples']} → {new['samples']}"]
+        if old["samples"] != new["samples"]
+        else []
+    )
+    old_joints, new_joints = old["joints_deg"], new["joints_deg"]
+    joints = [
+        f"  changed: {name} {joint} {field} "
+        f"{old_joints[joint][field]} → {new_joints[joint][field]}"
+        for joint in sorted(old_joints.keys() & new_joints.keys())
+        for field in ("min", "max", "max_step")
+        if not _numbers_close(old_joints[joint][field], new_joints[joint][field])
+    ]
+    driven = [
+        f"  changed: {name} no longer drives {joint}"
+        for joint in sorted(old_joints.keys() - new_joints.keys())
+    ] + [
+        f"  changed: {name} now drives {joint}"
+        for joint in sorted(new_joints.keys() - old_joints.keys())
+    ]
+    return samples + joints + driven
+
+
+def _motions_section(old: list[Diag], new: list[Diag]) -> list[str]:
+    """How much the run looked at. A motion that went away, or came
+    back coarser, changes what every held green below it means."""
+    old_map = {m["name"]: m for m in old}
+    new_map = {m["name"]: m for m in new}
+    added = [
+        f"  added: {name} ({new_map[name]['samples']} samples)"
+        for name in sorted(new_map.keys() - old_map.keys())
+    ]
+    removed = [
+        f"  removed: {name} ({old_map[name]['samples']} samples)"
+        for name in sorted(old_map.keys() - new_map.keys())
+    ]
+    changed = [
+        line
+        for name in sorted(old_map.keys() & new_map.keys())
+        for line in _motion_changes(name, old_map[name], new_map[name])
+    ]
+    return added + removed + changed
+
+
+def _mech_warning_label(w: Diag) -> str:
+    subject = w.get("joint") or w.get("assertion")
+    return f"{w['kind']}: {subject}" if subject else w["kind"]
+
+
+def _mech_warnings_section(old: list[Diag], new: list[Diag]) -> list[str]:
+    old_labels = {_mech_warning_label(w) for w in old}
+    new_labels = {_mech_warning_label(w) for w in new}
+    return [f"  added: {label}" for label in sorted(new_labels - old_labels)] + [
+        f"  removed: {label}" for label in sorted(old_labels - new_labels)
+    ]
+
+
 def _diff_mechanism(old: Diag, new: Diag) -> str:
     sections: tuple[tuple[str, list[str]], ...] = (
         ("status", _status_section(old, new)),
+        ("motions", _motions_section(old.get("motions", []), new.get("motions", []))),
         ("parts", _mech_parts_section(old.get("parts", {}), new.get("parts", {}))),
         (
             "interferences",
@@ -225,6 +292,12 @@ def _diff_mechanism(old: Diag, new: Diag) -> str:
             "assertions",
             _assertions_section(
                 old.get("assertions", []), new.get("assertions", [])
+            ),
+        ),
+        (
+            "warnings",
+            _mech_warnings_section(
+                old.get("warnings", []), new.get("warnings", [])
             ),
         ),
     )

@@ -669,6 +669,35 @@ disjoint `t` intervals. Derive the window from geometry with
 `classify` (below) rather than guessing it; if the joint is absent from
 a run, the assertion skips like an absent part.
 
+**`during=` works on every part-referencing assertion** — the
+single-pair forms and both group forms — and takes one `JointWindow` or
+a tuple that must *all* hold (a claim true only "with the platform
+level **and** the arm down" is two joints). What "outside the window"
+means follows from the kind of claim:
+
+- A **requirement** (`assert_no_interference`, `assert_clearance`,
+  `assert_distance`, `assert_tangent_contact`, `assert_interference`)
+  **lapses**: `passed: null`, `skipped: "out_of_phase"`. Use it for a
+  claim that is only meant at rest — without `during=`, a claim held
+  over a motion is a claim about *every* pose of it.
+- A **permission** (`assert_allowed_contact`) lapses to the default it
+  was an exception to — no contact — **unless another contact claim on
+  the same pair is in phase there**, which then governs. Phased contact
+  claims on one pair partition the motion:
+
+```python
+a = (
+    a.assert_allowed_contact(pad, block, max_overlap_mm3=20,
+                             during=JointWindow("rotor.platform", 5.4, 22.5))
+    .assert_allowed_contact(pad, block, min_overlap_mm3=4, max_overlap_mm3=20,
+                            during=JointWindow("rotor.platform", 12.0, 18.0))
+)   # may touch in the wide window, MUST engage in the narrow one
+```
+
+The phase is part of an auto-generated name (`…@rotor.platform
+[5.4, 22.5]deg`), so claims on one pair in different phases don't
+collide.
+
 ### Declare assertions where the knowledge lives
 
 Sub-assembly assertions **propagate**: a composed parent evaluates
@@ -943,6 +972,65 @@ between them.
   `khana check` (or a single `export_glb`) before fanning out to
   the full animated sweep.
 
+### Declared motions: claims held over the motion, on every check
+
+A claim checked at one pose says nothing about the poses between. A
+turning ramp that clears its columns as built and ploughs through them
+14° later is a green `mechanism.json` — unless the assembly **declares
+the motion**, in which case `khana check` holds every assertion over it:
+
+```python
+from cad_khana.mechanism.motion import Motion
+
+def build_floor() -> Assembly:
+    return (
+        Assembly()
+        ...
+        .with_subassembly("rotating", rotating(), joint=RevoluteJoint(axis=Axis.Z))
+        .assert_no_interference_between("rotating", "columns")
+        .with_motion(Motion.over_joint("stack_turn", "rotating", 0, 358, step=2))
+    )
+```
+
+`Motion.over_joint(name, joint_path, lo, hi, step)` samples both ends
+and never steps wider than `step`. Motion that drives several joints
+from a schedule is the general form — a function `t -> {joint path:
+value}` plus the `t` values to sample; joints a pose leaves out stay as
+built:
+
+```python
+Motion("dump_cycle", lambda t: {"rotor": rotor_deg(t), "rotor.platform": tilt_deg(t)},
+       ts=tuple(i / 160 for i in range(161)))
+```
+
+What `check()` then does, and what it costs:
+
+- Every assertion is evaluated at the as-built pose **and at each
+  sample of each motion** (each motion on its own, the rest of the tree
+  as built). One result per assertion: failed if *any* pose failed,
+  `value` / `detail` from the worst pose, `worst_at` naming it.
+- Poses that place a claim's parts identically share one evaluation, so
+  only the claims that span a driven joint multiply. A unit check stays
+  fast; a whole-machine root holding a 180-sample motion is minutes.
+- **A unit's motion is held at every root that composes the unit**,
+  like its assertions. If that is too slow at a large root, declare the
+  motion on the unit's own check target rather than inside the factory
+  the root composes.
+- **Once a motion is declared, every unphased claim is a claim about
+  the whole motion.** A distance that is only true at rest will redden —
+  give it a `during=` window (above). This is the point, not a side
+  effect: it is what was silently unchecked before.
+- `interferences[]` and part diagnostics still describe the as-built
+  pose only (`warnings` says so). A pair nobody asserted is not held.
+- It is **sampled**: a claim green at every sample can still fail
+  between two of them. `motions[].joints_deg.<joint>.max_step` is the
+  resolution you looked at; choose `step` against the smallest feature
+  that could slip through.
+
+Use one declaration for both jobs — derive a window with
+`sweep(over_motion(assembly, motion), motion.ts)`, then hold it with
+`during=` under the same `Motion`.
+
 ### Sweep diagnostics: what touches what, and when
 
 `cad_khana.mechanism.sweep` answers questions about a *motion* rather
@@ -973,14 +1061,17 @@ clear→contact interval and bisects inside it — bisection alone would
 assume contact only ever starts once, and `Onset.brackets` tells you
 how many transitions the samples actually showed.
 
-**A sweep is never a substitute for a multi-pose `check()` loop.** The
-two look alike from outside — both are "the factory at N values" — and
-are opposite in kind: `sweep` measures raw pairwise overlap volumes and
+**A sweep is never a substitute for holding the claims.** The two look
+alike from outside — both are "the mechanism at N poses" — and are
+opposite in kind: `sweep` measures raw pairwise overlap volumes and
 `classify` labels phases, but **neither evaluates a single assertion**,
-and neither writes a `mechanism.json` you can diff. If you want the
-declared claims re-checked at each of twelve poses, that is a command
-script looping `check(factory(t), out=...)`. Swapping it for `sweep`
-deletes the regression net.
+and neither writes a `mechanism.json` you can diff. To have the
+declared claims re-checked at every pose, declare the motion
+(`with_motion`, above) and `khana check` does it on every run. A
+command script looping `check(factory(t), out=...)` is only for motion
+a schedule of joint values can't express (geometry that changes, a part
+that moves without a joint). Swapping either for `sweep` deletes the
+regression net.
 
 **All of this is sampled, and sampling a motion is an inner
 approximation.** `never` means "at none of the sampled parameters",
@@ -1159,7 +1250,11 @@ the model to fix, not to waive. Only a low alignment supports a
 - `parts[name].face_count` / `edge_count` / `vertex_count` — cheapest
   way to verify a boolean operation changed geometry: counts shift on
   success, stay the same on a silent no-op or OCCT failure.
-- `interferences` — list of overlapping part pairs with volume + centroid.
+- `interferences` — list of overlapping part pairs with volume +
+  centroid, **at the as-built pose only**, motion or no motion.
+- `motions` — one entry per declared motion: `samples`, and per driven
+  joint the range covered and `max_step`, the widest gap between
+  adjacent samples. Empty means every green below is a one-pose green.
 - `skipped_counts` — how many assertions were skipped, per class, every
   class always listed. **Read it on every green run**: a nonzero count
   is a claim that did not look. It should drop to zero at the root
@@ -1170,12 +1265,29 @@ the model to fix, not to waive. Only a low alignment supports a
   assertion was skipped because a part it references is absent from
   this run (`detail` names the missing parts) — normal for assertions
   against override-added detail parts in a standalone run. `skipped`
-  classes the reason (`"absent_part"` | `"absent_joint"`; `null` when
-  the assertion was evaluated). Skips never fail the run; watch for an
+  classes the reason (`"absent_part"` | `"absent_joint"` |
+  `"out_of_phase"` — a phased claim in phase at no pose looked at;
+  `null` when the assertion was evaluated). Skips never fail the run; watch for an
   assertion that is *always* skipped, which usually means a typo'd
   part name. `value` is the measured/
   claimed scalar for `assert_distance` / `assert_scalar` (recorded
   even on pass; `khana diff` reports its drift) and `null` otherwise.
+  Held over a motion, `value` and `detail` are the **worst pose's**
+  (least slack to the claim's own bound; for a kind with no measured
+  value, the first failing pose — the onset).
+- `assertions[].poses` — `evaluated` (poses the verdict covers: `1`
+  means it looked once), `distinct` (evaluations actually run — `1`
+  under a motion means **the motion never moves this claim**, so it
+  tests nothing about it), `in_phase`, `failed`.
+- `assertions[].worst_at` — `{motion, t, joints_deg}` of the worst
+  pose; `null` when that is the as-built pose. Re-create it with
+  `assembly.posed(joints_deg)` to draw or inspect it.
+- `warnings` — never fail the run, always worth reading:
+  `joint_never_driven` (a joint no motion moves — everything about it
+  is a rest-pose green), `never_in_phase` (a phased claim whose window
+  no pose entered: widen the motion or fix the window), and
+  `interferences_rest_pose_only` (a motion is declared, and
+  `interferences[]` did not follow it).
 
 `<name>-printability.json` after every `inspect()`:
 

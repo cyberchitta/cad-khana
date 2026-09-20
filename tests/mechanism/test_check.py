@@ -2,12 +2,13 @@ import json
 from pathlib import Path
 
 import pytest
-from build123d import Box, BuildPart, Location
+from build123d import Axis, Box, BuildPart, Location
 from pytest import approx
 
-from cad_khana.mechanism.assembly import Assembly
+from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
 from cad_khana.mechanism.check import check
 from cad_khana.mechanism.diagnostics import SCHEMA_VERSION
+from cad_khana.mechanism.motion import Motion
 
 
 def _cube(size: float = 10):
@@ -158,14 +159,22 @@ def test_check_skipped_assertion_does_not_fail_the_run(tmp_path: Path):
     assert data["assertions"][0]["passed"] is None
     assert "skipped" in data["assertions"][0]["detail"]
     assert data["assertions"][0]["skipped"] == "absent_part"
-    assert data["skipped_counts"] == {"absent_part": 1, "absent_joint": 0}
+    assert data["skipped_counts"] == {
+        "absent_part": 1,
+        "absent_joint": 0,
+        "out_of_phase": 0,
+    }
 
 
 def test_check_with_nothing_skipped_still_lists_every_skip_class(tmp_path: Path):
     check(Assembly().with_part("a", _cube()), out=tmp_path)
     data = json.loads((tmp_path / "mechanism.json").read_text())
-    assert data["schema_version"] == "0.10"
-    assert data["skipped_counts"] == {"absent_part": 0, "absent_joint": 0}
+    assert data["schema_version"] == "0.11"
+    assert data["skipped_counts"] == {
+        "absent_part": 0,
+        "absent_joint": 0,
+        "out_of_phase": 0,
+    }
 
 
 def test_check_skipped_alongside_failure_still_fails(tmp_path: Path):
@@ -201,3 +210,64 @@ def test_check_records_interferences(tmp_path: Path):
     assert hit["centroid"][1] == approx(0.0, abs=1e-9)
 
 
+
+
+def _swung() -> Assembly:
+    """A cube on a Z joint, clear of ``post`` as built and swung into
+    it by 60deg."""
+    arm = Assembly().with_part("arm", _cube(), location=Location((20, 0, 0)))
+    return (
+        Assembly()
+        .with_part("post", _cube(), location=Location((0, 20, 0)))
+        .with_subassembly("swing", arm, joint=RevoluteJoint(axis=Axis.Z))
+        .assert_no_interference("post", "swing.arm", name="arm_clears_post")
+    )
+
+
+def test_check_without_a_motion_says_it_looked_once(tmp_path: Path):
+    check(_swung(), out=tmp_path)
+    data = json.loads((tmp_path / "mechanism.json").read_text())
+    assert data["motions"] == []
+    assert data["assertions"][0]["poses"] == {
+        "evaluated": 1,
+        "distinct": 1,
+        "in_phase": 1,
+        "failed": 0,
+    }
+    assert data["assertions"][0]["worst_at"] is None
+    assert data["warnings"] == [{"kind": "joint_never_driven", "joint": "swing"}]
+
+
+def test_check_holds_assertions_over_a_declared_motion(tmp_path: Path, capsys):
+    assembly = _swung().with_motion(
+        Motion.over_joint("swing_in", "swing", 0.0, 90.0, step=30.0)
+    )
+    with pytest.raises(SystemExit):
+        check(assembly, out=tmp_path)
+    data = json.loads((tmp_path / "mechanism.json").read_text())
+    assert data["status"] == "assertion_failed"
+    assert data["motions"] == [
+        {
+            "name": "swing_in",
+            "samples": 4,
+            "joints_deg": {
+                "swing": {"min": 0.0, "max": 90.0, "max_step": approx(30.0)}
+            },
+        }
+    ]
+    (held,) = data["assertions"]
+    assert held["passed"] is False
+    assert held["poses"] == {
+        "evaluated": 5,
+        "distinct": 4,
+        "in_phase": 5,
+        "failed": 2,
+    }
+    assert held["worst_at"] == {
+        "motion": "swing_in",
+        "t": approx(2 / 3),
+        "joints_deg": {"swing": approx(60.0)},
+    }
+    assert data["warnings"] == [{"kind": "interferences_rest_pose_only"}]
+    assert data["interferences"] == []
+    assert "2 of 5 poses" in capsys.readouterr().err

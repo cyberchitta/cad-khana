@@ -189,6 +189,9 @@ class TangentContact:
         )
         return AssertionResult(self.name, passed, detail, value=gap)
 
+    def slack(self, value: float) -> float:
+        return self.tol_mm - value
+
 
 @dataclass(frozen=True)
 class AllowedContact:
@@ -202,12 +205,13 @@ class AllowedContact:
     diffable. ``reason`` documents the intent and is appended to the
     failure detail.
 
-    ``during`` narrows the claim to a kinematic phase: inside the
-    window the overlap band stands, outside it contact is not allowed
-    at all. That is the difference between declaring a contact and
-    suppressing a pair — a suppressed pair is invisible at every frame,
-    where a phased claim still fails if the contact shows up in the
-    wrong phase."""
+    A contact claim is a *permission*, and under ``Phased`` it lapses
+    differently from a requirement: what lies beneath a permission is
+    the default it was an exception to, so outside its phase the pair
+    is held to no contact at all (``forbidden``). That is the
+    difference between declaring a contact and suppressing a pair — a
+    suppressed pair is invisible at every frame, where a phased claim
+    still fails if the contact shows up in the wrong phase."""
 
     a: str
     b: str
@@ -215,7 +219,6 @@ class AllowedContact:
     max_overlap_mm3: float
     min_overlap_mm3: float | None = None
     reason: str | None = None
-    during: JointWindow | None = None
 
     @property
     def part_refs(self) -> tuple[str, ...]:
@@ -227,32 +230,21 @@ class AllowedContact:
             a=f"{prefix}.{self.a}",
             b=f"{prefix}.{self.b}",
             name=f"{prefix}.{self.name}",
-            during=(
-                None
-                if self.during is None
-                else replace(self.during, path=f"{prefix}.{self.during.path}")
-            ),
         )
 
-    def for_angle(self, angle_deg: float) -> "AllowedContact":
-        """This claim resolved against the joint's current angle, so it
-        evaluates from ``parts`` alone like every other assertion.
-        Inside the window the band is unchanged; outside it the band
-        collapses to the interference epsilon — any real overlap in the
-        wrong phase then fails, naming the window it fell outside."""
-        window = self.during
-        if window.contains(angle_deg):
-            return replace(self, during=None)
-        phase = (
-            f"contact declared only during {window.describe()}, "
-            f"joint at {angle_deg:g}deg"
-        )
+    def forbidden(self, phase: str) -> "AllowedContact":
+        """This claim outside its phase: the band collapses to the
+        interference epsilon, so any real overlap fails, with ``phase``
+        (the window it fell outside) in the reason."""
         return replace(
             self,
-            during=None,
             max_overlap_mm3=INTERFERENCE_VOLUME_EPSILON_MM3,
             min_overlap_mm3=None,
-            reason="; ".join(s for s in (self.reason, phase) if s),
+            reason="; ".join(
+                s
+                for s in (self.reason, f"contact declared only during {phase}")
+                if s
+            ),
         )
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
@@ -276,6 +268,14 @@ class AllowedContact:
         )
         return AssertionResult(
             self.name, not (above or below), detail, value=overlap
+        )
+
+    def slack(self, value: float) -> float:
+        return min(
+            self.max_overlap_mm3 - value,
+            value - self.min_overlap_mm3
+            if self.min_overlap_mm3 is not None
+            else float("inf"),
         )
 
 
@@ -349,6 +349,12 @@ class Distance:
         )
         return AssertionResult(
             self.name, not (below or above), detail, value=measured
+        )
+
+    def slack(self, value: float) -> float:
+        return min(
+            value - self.min_mm if self.min_mm is not None else float("inf"),
+            self.max_mm - value if self.max_mm is not None else float("inf"),
         )
 
 
@@ -463,16 +469,85 @@ class AnchorsCoincident:
         return AssertionResult(self.name, passed, detail)
 
 
-Assertion = (
+PartAssertion = (
     NoInterference
     | Clearance
     | TangentContact
     | AllowedContact
     | ExpectedInterference
-    | AnchorsCoincident
     | Distance
-    | ScalarClaim
 )
+
+
+@dataclass(frozen=True)
+class Phased:
+    """``inner`` held only during a kinematic phase — every window in
+    ``during`` containing its joint's value. The one phase mechanism:
+    ``during=`` on each ``assert_*`` wraps the claim in this.
+
+    Outside the phase a claim says nothing, and what "nothing" means
+    follows from its kind. A *requirement* (no-interference, clearance,
+    distance, tangent contact, expected interference) lapses —
+    ``passed: null``, skip class ``out_of_phase``. A *permission*
+    (``AllowedContact``) lapses to the default it was an exception to,
+    no contact — unless another contact claim on the same pair is in
+    phase, in which case that one governs and this one is
+    ``out_of_phase``. Phased permissions on a pair partition the
+    motion; where none applies, contact is forbidden.
+    """
+
+    inner: PartAssertion
+    during: tuple[JointWindow, ...]
+
+    @property
+    def name(self) -> str:
+        return self.inner.name
+
+    @property
+    def part_refs(self) -> tuple[str, ...]:
+        return self.inner.part_refs
+
+    def qualified(self, prefix: str, location: Location) -> "Phased":
+        return Phased(
+            self.inner.qualified(prefix, location),
+            tuple(replace(w, path=f"{prefix}.{w.path}") for w in self.during),
+        )
+
+    def describe(self) -> str:
+        return " & ".join(w.describe() for w in self.during)
+
+    def absent_joints(self, values: dict[str, float]) -> tuple[str, ...]:
+        return tuple(w.path for w in self.during if w.path not in values)
+
+    def in_phase(self, values: dict[str, float]) -> bool:
+        return all(w.contains(values[w.path]) for w in self.during)
+
+    def state(self, values: dict[str, float]) -> str:
+        """Where the joints stand against the windows, for a detail
+        line: ``"swing at 90deg"``."""
+        return ", ".join(
+            f"{w.path} at {values[w.path]:g}deg" for w in self.during
+        )
+
+
+Assertion = (
+    PartAssertion | Phased | AnchorsCoincident | ScalarClaim
+)
+
+# Where a claim stands at one pose. ``FORBID`` is a permission outside
+# its phase with no sibling permission in force; ``OUT`` is a lapsed
+# requirement, or a permission another one governs.
+IN = "in"
+OUT = "out_of_phase"
+FORBID = "forbid"
+ABSENT_JOINT = "absent_joint"
+
+Contacts = dict[frozenset[str], tuple["AllowedContact | Phased", ...]]
+
+
+def core(assertion: Assertion) -> Assertion:
+    """The claim itself, with any phase wrapper removed."""
+    return assertion.inner if isinstance(assertion, Phased) else assertion
 
 
 def drop_contact_shadowed(
@@ -491,82 +566,125 @@ def drop_contact_shadowed(
     pair then failed as a plain interference — a real press fit reading
     as a broken one, with nothing pointing at declaration order.
     """
-    contacts = {
-        frozenset((a.a, a.b))
-        for a in assertions
-        if isinstance(a, AllowedContact)
-    }
+    contacts = contact_claims(assertions)
     return tuple(
         a
         for a in assertions
         if not (
-            isinstance(a, NoInterference)
-            and a.from_group
-            and frozenset((a.a, a.b)) in contacts
+            isinstance(core(a), NoInterference)
+            and core(a).from_group
+            and frozenset(a.part_refs) in contacts
         )
     )
+
+
+def contact_claims(assertions: tuple[Assertion, ...]) -> Contacts:
+    """Every contact claim, phased or not, by the pair it is about."""
+    claims: Contacts = {}
+    for a in assertions:
+        if isinstance(core(a), AllowedContact):
+            pair = frozenset(a.part_refs)
+            claims[pair] = claims.get(pair, ()) + (a,)
+    return claims
 
 
 def _placed(p: PlacedPart) -> Part:
     return p.part.moved(p.location)
 
 
-def _evaluate_part_assertion(
-    assertion: NoInterference
-    | Clearance
-    | TangentContact
-    | AllowedContact
-    | ExpectedInterference
-    | Distance,
-    parts: dict[str, Part],
-) -> AssertionResult:
-    """Skip (``passed=None``) instead of evaluating when a referenced
-    part is absent. Absence is a legitimate run state, not an input
-    error: detail geometry (fasteners, motors) is applied by an
-    override, and a standalone sub-assembly run evaluates the same
-    assertion list without those parts."""
-    missing = sorted(n for n in assertion.part_refs if n not in parts)
-    if missing:
-        names = ", ".join(missing)
-        return AssertionResult(
-            assertion.name,
-            None,
-            f"skipped: part(s) absent from this run: {names}",
-            skipped="absent_part",
-        )
-    return assertion.evaluate(parts)
+def _in_force(claim: Assertion, values: dict[str, float]) -> bool:
+    return not isinstance(claim, Phased) or (
+        not claim.absent_joints(values) and claim.in_phase(values)
+    )
 
 
-def _evaluate_one(
+def phase(
+    assertion: Assertion, values: dict[str, float], contacts: Contacts
+) -> str:
+    if not isinstance(assertion, Phased):
+        return IN
+    if assertion.absent_joints(values):
+        return ABSENT_JOINT
+    if assertion.in_phase(values):
+        return IN
+    if not isinstance(assertion.inner, AllowedContact):
+        return OUT
+    governed = any(
+        claim != assertion and _in_force(claim, values)
+        for claim in contacts[frozenset(assertion.part_refs)]
+    )
+    return OUT if governed else FORBID
+
+
+def resolved(assertion: Assertion, state: str) -> Assertion:
+    """The claim as it stands in ``state`` — itself, or for a permission
+    out of phase, its forbidding form."""
+    return (
+        assertion.inner.forbidden(assertion.describe())
+        if state == FORBID
+        else core(assertion)
+    )
+
+
+def _skipped(name: str, kind: str, detail: str) -> AssertionResult:
+    return AssertionResult(name, None, f"skipped: {detail}", skipped=kind)
+
+
+def evaluate_one(
     assertion: Assertion,
     assembly: Assembly,
     parts: dict[str, Part],
-    angles: dict[str, float],
+    values: dict[str, float],
+    contacts: Contacts,
 ) -> AssertionResult:
+    """One assertion at one pose. Absence — of a joint, then of a part —
+    is reported ahead of the phase: it is the same at every pose, and a
+    typo'd name must not hide behind a skip class that reads as
+    expected. Absence is a legitimate run state, not an input error:
+    detail geometry is applied by an override, and a standalone
+    sub-assembly run evaluates the same list below the level that owns
+    the joint."""
     if isinstance(assertion, AnchorsCoincident):
         return assertion.evaluate_on(assembly)
     if isinstance(assertion, ScalarClaim):
         return assertion.evaluate()
-    if isinstance(assertion, AllowedContact) and assertion.during is not None:
-        # A joint absent from this run is the same legitimate state as an
-        # absent part — a sub-assembly checked standalone below the level
-        # that owns the joint. Skip rather than guess a phase.
-        path = assertion.during.path
-        if path not in angles:
-            return AssertionResult(
-                assertion.name,
-                None,
-                f"skipped: joint absent from this run: {path}",
-                skipped="absent_joint",
-            )
-        assertion = assertion.for_angle(angles[path])
-    return _evaluate_part_assertion(assertion, parts)
+    state = phase(assertion, values, contacts)
+    if state == ABSENT_JOINT:
+        joints = ", ".join(assertion.absent_joints(values))
+        return _skipped(
+            assertion.name,
+            "absent_joint",
+            f"joint absent from this run: {joints}",
+        )
+    missing = sorted(n for n in assertion.part_refs if n not in parts)
+    if missing:
+        return _skipped(
+            assertion.name,
+            "absent_part",
+            f"part(s) absent from this run: {', '.join(missing)}",
+        )
+    if state == OUT:
+        return _skipped(
+            assertion.name,
+            OUT,
+            f"out of phase — holds only during {assertion.describe()}; "
+            f"{assertion.state(values)}",
+        )
+    result = resolved(assertion, state).evaluate(parts)
+    return (
+        replace(result, detail=f"{result.detail}; {assertion.state(values)}")
+        if state == FORBID and result.detail
+        else result
+    )
 
 
 def evaluate(assembly: Assembly) -> tuple[AssertionResult, ...]:
+    """Every assertion at the pose the assembly is in. ``hold`` is the
+    same over every declared motion."""
     parts = {p.name: _placed(p) for p in assembly.placed_parts}
-    angles = assembly.joint_angles
+    values = assembly.joint_angles
+    assertions = assembly.all_assertions
+    contacts = contact_claims(assertions)
     return tuple(
-        _evaluate_one(a, assembly, parts, angles)
-        for a in assembly.all_assertions
+        evaluate_one(a, assembly, parts, values, contacts) for a in assertions
     )

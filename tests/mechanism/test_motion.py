@@ -112,3 +112,55 @@ def test_sweep_runs_over_a_declared_motion():
     )
     (phase,) = classify(result)
     assert phase.kind == TRANSIENT
+
+
+def _swing_in() -> Motion:
+    return Motion.over_joint("swing_in", "swing", 0.0, 90.0, step=45.0)
+
+
+def test_with_motion_returns_new_assembly():
+    built = _hinged()
+    declared = built.with_motion(_swing_in())
+    assert built.motions == ()
+    assert [m.name for m in declared.motions] == ["swing_in"]
+
+
+def test_with_motion_rejects_a_duplicate_name():
+    with pytest.raises(ValueError, match="swing_in"):
+        _hinged().with_motion(_swing_in()).with_motion(_swing_in())
+
+
+def test_with_motion_rejects_a_dotted_name():
+    with pytest.raises(ValueError, match="separator"):
+        _hinged().with_motion(Motion("a.b", lambda t: {}, (0.0,)))
+
+
+def test_a_units_motion_qualifies_into_the_root_that_composes_it():
+    """Declared once, on the unit that owns the joint — like its
+    assertions, it is held at every root the unit is composed into."""
+    unit = _hinged().with_motion(_swing_in())
+    root = Assembly().with_subassembly(
+        "turret", unit, joint=RevoluteJoint(axis=Axis.Z)
+    )
+    (motion,) = root.all_motions
+    assert motion.name == "turret.swing_in"
+    assert motion.ts == _swing_in().ts
+    assert motion.poses == (
+        {"turret.swing": 0.0},
+        {"turret.swing": 45.0},
+        {"turret.swing": 90.0},
+    )
+    assert root.posed(motion.poses[1]).joint_angles == {
+        "turret": 0.0,
+        "turret.swing": 45.0,
+    }
+
+
+def test_all_motions_lists_own_before_nested():
+    unit = _hinged().with_motion(_swing_in())
+    root = (
+        Assembly()
+        .with_subassembly("turret", unit, joint=RevoluteJoint(axis=Axis.Z))
+        .with_motion(Motion.over_joint("turn", "turret", 0.0, 90.0, step=90.0))
+    )
+    assert [m.name for m in root.all_motions] == ["turn", "turret.swing_in"]

@@ -26,11 +26,14 @@ from cad_khana.mechanism.assertions import (
     ExpectedInterference,
     JointWindow,
     NoInterference,
+    Phased,
     ScalarClaim,
     TangentContact,
     drop_contact_shadowed,
 )
-from cad_khana.mechanism.motion import Pose
+from cad_khana.mechanism.motion import Motion, Pose
+
+During = JointWindow | tuple[JointWindow, ...] | None
 
 
 def _normalize_pair_maps(
@@ -45,21 +48,48 @@ def _normalize_pair_maps(
     return reasons, sup
 
 
+def _windows(during: During) -> tuple[JointWindow, ...]:
+    return (
+        ()
+        if during is None
+        else (during,)
+        if isinstance(during, JointWindow)
+        else tuple(during)
+    )
+
+
+def _phase_label(during: During) -> str:
+    """The phase is part of a claim's identity: one pair can carry a
+    different claim in each phase, and the auto-names must not
+    collide."""
+    windows = _windows(during)
+    return "@" + " & ".join(w.describe() for w in windows) if windows else ""
+
+
+def _phased(assertion: Assertion, during: During) -> Assertion:
+    windows = _windows(during)
+    return Phased(assertion, windows) if windows else assertion
+
+
 def _pair_assertion(
-    a: str, b: str, reasons: dict[frozenset[str], str]
+    a: str, b: str, reasons: dict[frozenset[str], str], during: During = None
 ) -> Assertion:
     """The assertion for one pair: ``ExpectedInterference`` when the pair
     is a documented known overlap, ``NoInterference`` otherwise. Names
     match the single-pair ``assert_*`` auto-names so group expansion is
     diff-identical to an equivalent hand-written loop."""
     key = frozenset((a, b))
-    if key in reasons:
-        return ExpectedInterference(
-            a=a, b=b, name=f"interference:{a}/{b}", reason=reasons[key]
+    label = _phase_label(during)
+    claim = (
+        ExpectedInterference(
+            a=a, b=b, name=f"interference:{a}/{b}{label}", reason=reasons[key]
         )
-    return NoInterference(
-        a=a, b=b, name=f"no_interference:{a}/{b}", from_group=True
+        if key in reasons
+        else NoInterference(
+            a=a, b=b, name=f"no_interference:{a}/{b}{label}", from_group=True
+        )
     )
+    return _phased(claim, during)
 
 
 _AXIS_DIRECTIONS: dict[str, tuple[float, float, float]] = {
@@ -117,17 +147,14 @@ def _allowed_contact_name(
     b: str,
     min_mm3: float | None,
     max_mm3: float,
-    during: JointWindow | None,
+    during: During,
 ) -> str:
     bounds = "".join(
         s
         for s, v in ((f">={min_mm3}", min_mm3), (f"<={max_mm3}", max_mm3))
         if v is not None
     )
-    # The phase is part of the claim's identity: one pair can carry a
-    # different band in each phase, and the names must not collide.
-    phase = "" if during is None else f"@{during.describe()}"
-    return f"allowed_contact:{a}/{b}{bounds}{phase}"
+    return f"allowed_contact:{a}/{b}{bounds}{_phase_label(during)}"
 
 
 @dataclass(frozen=True)
@@ -268,6 +295,7 @@ class Assembly:
     subassemblies: tuple[SubAssembly, ...] = ()
     assertions: tuple[Assertion, ...] = ()
     anchors: tuple[Anchor, ...] = ()
+    motions: tuple[Motion, ...] = ()
 
     def _check_sibling_name(self, name: str) -> None:
         """Sibling names must be unique at each tree level — they are
@@ -460,6 +488,23 @@ class Assembly:
             lambda a, item: a.with_joint_angle(*item), pose.items(), self
         )
 
+    def with_motion(self, motion: Motion) -> "Assembly":
+        """Declare a motion this assembly goes through. ``check()``
+        holds every assertion over it — at the as-built pose and at
+        each of the motion's samples — so a claim is no longer about
+        the one pose the assembly happened to be built in. Joint paths
+        in the schedule are relative to this assembly; the motion
+        qualifies into any root that composes it (``all_motions``).
+        Names cannot contain ``.`` and must be unique at this level."""
+        if "." in motion.name:
+            raise ValueError(
+                f"motion name {motion.name!r} contains '.' — reserved as "
+                f"the tree-path separator"
+            )
+        if any(m.name == motion.name for m in self.motions):
+            raise ValueError(f"duplicate motion name {motion.name!r}")
+        return replace(self, motions=self.motions + (motion,))
+
     def with_materials(self, mapping: dict[str, str]) -> "Assembly":
         """Return a copy with each named part's material replaced by the
         value in ``mapping``. Keys are qualified tree paths — the same
@@ -591,13 +636,30 @@ class Assembly:
             )
         return names
 
-    def assert_no_interference(
-        self, a: str, b: str, name: str | None = None
-    ) -> "Assembly":
-        assertion = NoInterference(
-            a=a, b=b, name=name or f"no_interference:{a}/{b}"
+    def _asserting(self, assertion: Assertion, during: During) -> "Assembly":
+        return replace(
+            self, assertions=self.assertions + (_phased(assertion, during),)
         )
-        return replace(self, assertions=self.assertions + (assertion,))
+
+    def assert_no_interference(
+        self,
+        a: str,
+        b: str,
+        name: str | None = None,
+        *,
+        during: During = None,
+    ) -> "Assembly":
+        """``during`` — here and on every part-referencing ``assert_*``
+        — holds the claim only in a kinematic phase: one ``JointWindow``
+        or a tuple that must all hold (see ``Phased``). Outside it a
+        requirement like this one lapses to ``passed: null``
+        (``out_of_phase``) rather than holding pose-wide."""
+        assertion = NoInterference(
+            a=a,
+            b=b,
+            name=name or f"no_interference:{a}/{b}{_phase_label(during)}",
+        )
+        return self._asserting(assertion, during)
 
     def assert_clearance(
         self,
@@ -605,14 +667,17 @@ class Assembly:
         b: str,
         min_mm: float,
         name: str | None = None,
+        *,
+        during: During = None,
     ) -> "Assembly":
         assertion = Clearance(
             a=a,
             b=b,
             min_mm=min_mm,
-            name=name or f"clearance:{a}/{b}>={min_mm}",
+            name=name
+            or f"clearance:{a}/{b}>={min_mm}{_phase_label(during)}",
         )
-        return replace(self, assertions=self.assertions + (assertion,))
+        return self._asserting(assertion, during)
 
     def assert_distance(
         self,
@@ -625,6 +690,7 @@ class Assembly:
         grow_a_mm: float = 0.0,
         grow_b_mm: float = 0.0,
         name: str | None = None,
+        during: During = None,
     ) -> "Assembly":
         """Assert a bounded distance from part ``a`` to ``b`` — another
         part, or a datum ``Plane`` declared in this assembly's frame.
@@ -659,14 +725,16 @@ class Assembly:
         assertion = Distance(
             a=a,
             b=b,
-            name=name or _distance_name(a, b, along, min_mm, max_mm),
+            name=name
+            or _distance_name(a, b, along, min_mm, max_mm)
+            + _phase_label(during),
             min_mm=min_mm,
             max_mm=max_mm,
             along=d,
             grow_a_mm=grow_a_mm,
             grow_b_mm=grow_b_mm,
         )
-        return replace(self, assertions=self.assertions + (assertion,))
+        return self._asserting(assertion, during)
 
     def assert_scalar(
         self,
@@ -694,6 +762,7 @@ class Assembly:
         *,
         tol_mm: float = 1e-3,
         name: str | None = None,
+        during: During = None,
     ) -> "Assembly":
         """Assert ``a`` and ``b`` touch: surface gap ≤ ``tol_mm`` and
         no real overlap. The required-contact claim for tangent rests
@@ -703,9 +772,12 @@ class Assembly:
         gaps. The measured gap is recorded in the result even on pass,
         so ``khana diff`` sees drift."""
         assertion = TangentContact(
-            a=a, b=b, tol_mm=tol_mm, name=name or f"tangent_contact:{a}/{b}"
+            a=a,
+            b=b,
+            tol_mm=tol_mm,
+            name=name or f"tangent_contact:{a}/{b}{_phase_label(during)}",
         )
-        return replace(self, assertions=self.assertions + (assertion,))
+        return self._asserting(assertion, during)
 
     def assert_allowed_contact(
         self,
@@ -715,7 +787,7 @@ class Assembly:
         max_overlap_mm3: float,
         min_overlap_mm3: float | None = None,
         reason: str | None = None,
-        during: JointWindow | None = None,
+        during: During = None,
         name: str | None = None,
     ) -> "Assembly":
         """Assert any overlap between ``a`` and ``b`` stays within
@@ -728,14 +800,17 @@ class Assembly:
         the result even on pass, so ``khana diff`` sees drift.
         ``reason`` documents the intent, appended to failure detail.
 
-        ``during`` (a ``JointWindow``) confines the claim to a
-        kinematic phase — the contact a lifter makes with the part it
-        lifts, allowed while the lifter is raised and a real fault at
-        rest. Outside the window the pair is held to plain
-        no-interference, so the claim keeps its teeth at every other
-        frame instead of going blind like a suppressed pair. Use
-        ``khana``'s ``sweep``/``classify`` to derive the window from
-        geometry rather than guessing it.
+        ``during`` (a ``JointWindow``, or a tuple that must all hold)
+        confines the claim to a kinematic phase — the contact a lifter
+        makes with the part it lifts, allowed while the lifter is
+        raised and a real fault at rest. Outside the window the pair is
+        held to plain no-interference, so the claim keeps its teeth at
+        every other frame instead of going blind like a suppressed
+        pair — unless another contact claim on the same pair is in
+        phase there, which then governs: phased claims on one pair
+        partition the motion ("may touch lightly in W1", "must engage
+        in W2"). Use ``khana``'s ``sweep``/``classify`` to derive the
+        window from geometry rather than guessing it.
 
         Group ``assert_no_interference_*`` calls covering this pair
         skip it on the strength of this declaration — declaring the
@@ -747,13 +822,12 @@ class Assembly:
             max_overlap_mm3=max_overlap_mm3,
             min_overlap_mm3=min_overlap_mm3,
             reason=reason,
-            during=during,
             name=name
             or _allowed_contact_name(
                 a, b, min_overlap_mm3, max_overlap_mm3, during
             ),
         )
-        return replace(self, assertions=self.assertions + (assertion,))
+        return self._asserting(assertion, during)
 
     def assert_interference(
         self,
@@ -761,6 +835,8 @@ class Assembly:
         b: str,
         reason: str | None = None,
         name: str | None = None,
+        *,
+        during: During = None,
     ) -> "Assembly":
         """Assert that `a` and `b` DO interfere — a regression alarm
         for a known, accepted overlap. Fails if the overlap disappears
@@ -772,10 +848,10 @@ class Assembly:
         assertion = ExpectedInterference(
             a=a,
             b=b,
-            name=name or f"interference:{a}/{b}",
+            name=name or f"interference:{a}/{b}{_phase_label(during)}",
             reason=reason,
         )
-        return replace(self, assertions=self.assertions + (assertion,))
+        return self._asserting(assertion, during)
 
     def assert_anchors_coincident(
         self,
@@ -838,6 +914,7 @@ class Assembly:
         *,
         known_overlaps: Iterable[tuple[str, str, str]] = (),
         suppressed: Iterable[tuple[str, str]] = (),
+        during: During = None,
     ) -> "Assembly":
         """Assert no interference for every cross pair ``(a, b)`` with
         ``a`` from ``group_a`` and ``b`` from ``group_b``.
@@ -871,7 +948,8 @@ class Assembly:
 
         Emitted assertions are the plain single-pair forms with their
         usual auto-names, so replacing a hand-written double loop with
-        this call leaves ``mechanism.json`` unchanged.
+        this call leaves ``mechanism.json`` unchanged. ``during`` holds
+        every emitted pair to one phase, as it would on each by hand.
         """
         a_names = self._resolve_group(group_a)
         b_names = self._resolve_group(group_b)
@@ -886,7 +964,7 @@ class Assembly:
                 if key in sup or key in seen:
                     continue
                 seen.add(key)
-                new.append(_pair_assertion(a, b, reasons))
+                new.append(_pair_assertion(a, b, reasons, during))
         return replace(self, assertions=self.assertions + tuple(new))
 
     def assert_no_interference_within(
@@ -895,12 +973,14 @@ class Assembly:
         *,
         known_overlaps: Iterable[tuple[str, str, str]] = (),
         suppressed: Iterable[tuple[str, str]] = (),
+        during: During = None,
     ) -> "Assembly":
         """Assert no interference for every unordered pair within
         ``group`` (pair order follows the group's order: ``(names[i],
         names[j])`` for ``i < j``). Group selectors, ``known_overlaps``,
-        ``suppressed``, the ``AllowedContact`` skip, and name-stability
-        semantics are exactly as in ``assert_no_interference_between``.
+        ``suppressed``, ``during``, the ``AllowedContact`` skip, and
+        name-stability semantics are exactly as in
+        ``assert_no_interference_between``.
         """
         names = self._resolve_group(group)
         reasons, sup = _normalize_pair_maps(known_overlaps, suppressed)
@@ -910,7 +990,7 @@ class Assembly:
                 a, b = names[i], names[j]
                 if a == b or frozenset((a, b)) in sup:
                     continue
-                new.append(_pair_assertion(a, b, reasons))
+                new.append(_pair_assertion(a, b, reasons, during))
         return replace(self, assertions=self.assertions + tuple(new))
 
     @property
@@ -937,6 +1017,18 @@ class Assembly:
             for a in s.assembly.all_assertions
         )
         return drop_contact_shadowed(self.assertions + nested)
+
+    @property
+    def all_motions(self) -> tuple[Motion, ...]:
+        """This level's motions plus every sub-assembly's, recursively,
+        qualified into this frame — the motion-side mirror of
+        ``all_assertions``. Each is held on its own, the rest of the
+        tree as built."""
+        return self.motions + tuple(
+            m.qualified(s.name)
+            for s in self.subassemblies
+            for m in s.assembly.all_motions
+        )
 
     @property
     def joint_angles(self) -> dict[str, float]:

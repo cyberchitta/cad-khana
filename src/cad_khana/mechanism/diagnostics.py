@@ -9,7 +9,7 @@ from build123d import Part
 if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
 
-SCHEMA_VERSION = "0.10"
+SCHEMA_VERSION = "0.11"
 INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
 
 # Absolute tolerance on assertion bound comparisons, in the bound's own
@@ -21,7 +21,8 @@ BOUND_EPSILON = 1e-6
 
 # Why an assertion can come back ``passed=None``. Free-text ``detail``
 # can't tell "expected here" from "typo"; the class can be counted.
-SKIP_CLASSES = ("absent_part", "absent_joint")
+# ``out_of_phase``: a phased claim that was in phase at no pose looked at.
+SKIP_CLASSES = ("absent_part", "absent_joint", "out_of_phase")
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,53 @@ class Interference:
 
 
 @dataclass(frozen=True)
+class PoseCounts:
+    """How much one assertion's verdict covers. ``evaluated`` — the
+    poses it was held at: the as-built pose plus every sample of every
+    declared motion, so ``1`` is a claim saying it was checked once.
+    ``distinct`` — the geometric evaluations that took; poses that
+    place the claim's parts identically share one, so ``1`` under a
+    motion means the motion never moves this claim. ``in_phase`` — the
+    poses inside the claim's ``during`` (all of them when it has none).
+    ``failed`` — the poses it failed at. All zero when the assertion
+    was skipped for an absent part or joint."""
+
+    evaluated: int
+    distinct: int
+    in_phase: int
+    failed: int
+
+
+@dataclass(frozen=True)
+class WorstAt:
+    """The sampled pose an assertion's ``value`` and ``detail`` come
+    from, when it is not the as-built pose. ``joints_deg`` holds the
+    motion's scheduled joint values there."""
+
+    motion: str
+    t: float
+    joints_deg: dict[str, float]
+
+
+@dataclass(frozen=True)
+class JointRange:
+    """One driven joint across a motion's samples. ``max_step`` is the
+    widest gap between adjacent samples — the resolution the motion was
+    looked at, exactly, and nothing about what lies between them."""
+
+    min: float
+    max: float
+    max_step: float
+
+
+@dataclass(frozen=True)
+class MotionSummary:
+    name: str
+    samples: int
+    joints_deg: dict[str, JointRange]
+
+
+@dataclass(frozen=True)
 class AssertionResult:
     """``passed`` is tri-state: ``True``/``False`` for an evaluated
     assertion, ``None`` when it was skipped because a referenced part
@@ -65,7 +113,14 @@ class AssertionResult:
     kinds.
     ``waived`` is the waiver rationale when a failure was waived
     (printability ``inspect(..., waive=...)``); ``passed`` stays
-    honestly ``False`` — a waived failure just doesn't fail the run."""
+    honestly ``False`` — a waived failure just doesn't fail the run.
+
+    Held over motions (``hold``), one result covers many poses:
+    ``passed`` is false if any pose failed, ``value`` and ``detail``
+    are the worst pose's, ``worst_at`` names it (``None`` for the
+    as-built pose) and ``poses`` counts what was looked at. Both stay
+    ``None`` on a single-pose ``evaluate`` and on printability
+    assertions."""
 
     name: str
     passed: bool | None
@@ -73,6 +128,8 @@ class AssertionResult:
     value: float | None = None
     waived: str | None = None
     skipped: str | None = None
+    poses: PoseCounts | None = None
+    worst_at: WorstAt | None = None
 
 
 def skipped_counts(results: tuple[AssertionResult, ...]) -> dict[str, int]:
@@ -92,9 +149,11 @@ class Diagnostics:
     skipped_counts: dict[str, int] = field(
         default_factory=lambda: skipped_counts(())
     )
+    motions: tuple[MotionSummary, ...] = ()
     parts: dict[str, PartDiagnostics] = field(default_factory=dict)
     interferences: tuple[Interference, ...] = ()
     assertions: tuple[AssertionResult, ...] = ()
+    warnings: tuple[dict[str, str], ...] = ()
 
 
 def intersection_volume(a: Part, b: Part) -> float:

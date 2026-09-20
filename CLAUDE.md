@@ -94,6 +94,8 @@ cad-khana/
         assembly.py           # Assembly class: named parts + locations
         assertions.py         # NoInterference, Clearance + evaluate()
         diagnostics.py        # bbox, volume, interferences
+        motion.py             # Motion: a schedule of poses, declared as data
+        hold.py               # held evaluation: assertions over every motion
         sweep.py              # sampled-motion queries: sweep/classify/onset
         check.py              # check() orchestrator + CheckResult
       printability/
@@ -220,7 +222,7 @@ A module the import-model verbs consume never calls `check()`,
 full design, its phases, and what is still owed:
 `_notes/draft-script-decomposition.md`.
 
-## Diagnostics JSON schemas (v0.10)
+## Diagnostics JSON schemas (v0.11)
 
 Version these from day one. Agents depend on field stability.
 
@@ -228,11 +230,15 @@ Version these from day one. Agents depend on field stability.
 
 ```json
 {
-  "schema_version": "0.10",
+  "schema_version": "0.11",
   "status": "ok | error | assertion_failed",
   "error": null,
   "hint": "Missing .part accessor — use `with BuildPart() as p: ...; return p.part`.",
-  "skipped_counts": {"absent_part": 0, "absent_joint": 0},
+  "skipped_counts": {"absent_part": 0, "absent_joint": 0, "out_of_phase": 0},
+  "motions": [
+    {"name": "stack_turn", "samples": 180,
+     "joints_deg": {"rotating": {"min": 0.0, "max": 358.0, "max_step": 2.0}}}
+  ],
   "parts": {
     "<name>": {
       "bbox": {"min": [x,y,z], "max": [x,y,z]},
@@ -249,7 +255,14 @@ Version these from day one. Agents depend on field stability.
     {"a": "lever", "b": "housing", "volume_mm3": 0.3, "centroid": [x,y,z]}
   ],
   "assertions": [
-    {"name": "lever_clears_housing", "passed": true, "detail": null, "value": null, "waived": null, "skipped": null}
+    {"name": "lever_clears_housing", "passed": true, "detail": null, "value": null, "waived": null, "skipped": null,
+     "poses": {"evaluated": 181, "distinct": 46, "in_phase": 181, "failed": 0},
+     "worst_at": {"motion": "stack_turn", "t": 0.0333, "joints_deg": {"rotating": 12.0}}}
+  ],
+  "warnings": [
+    {"kind": "joint_never_driven", "joint": "rotor"},
+    {"kind": "never_in_phase", "assertion": "pad_engages"},
+    {"kind": "interferences_rest_pose_only"}
   ]
 }
 ```
@@ -257,14 +270,56 @@ Version these from day one. Agents depend on field stability.
 `assertions[].passed` is tri-state: `true`/`false` for an evaluated
 assertion, `null` when it was skipped because a referenced part is
 absent from the run (`detail` names the missing parts — the standalone
-sub-assembly case, where detail-override parts aren't applied), or
-because a phased claim's joint is absent. Skipped assertions never set
+sub-assembly case, where detail-override parts aren't applied),
+because a phased claim's joint is absent, or because a phased claim was
+in phase at no pose looked at. Skipped assertions never set
 `status: "assertion_failed"`. `assertions[].skipped` classes the reason —
-`"absent_part" | "absent_joint"`, `null` whenever `passed` is not — and
+`"absent_part" | "absent_joint" | "out_of_phase"`, `null` whenever `passed` is not — and
 top-level `skipped_counts` totals them with every class always listed,
 so a skip that is expected here (detail not applied) can be told from
 one that is a typo without parsing `detail`. Printability assertions
-share the dataclass and always carry `skipped: null`.
+share the dataclass and always carry `skipped: null`, `poses: null`,
+`worst_at: null`.
+
+**A claim's scope is a set of poses.** `Assembly.with_motion(Motion)`
+declares a motion — a schedule `t -> {joint path: value}` plus its
+samples — and `check()` holds every assertion at the as-built pose and
+at each sample of each declared motion (`mechanism/hold.py`), each
+motion on its own with the rest of the tree as built. A unit's motions
+qualify into every root that composes it (`Assembly.all_motions`), as
+its assertions do. One result per assertion: `passed` is false if any
+pose failed, `value` / `detail` are the worst pose's — a failing pose
+over a passing one, then least slack to the claim's own bound, and for
+a kind with no measured value the first pose (the onset) — and
+`worst_at` names it, `null` meaning the as-built pose. `poses` says how
+much was looked at: `evaluated` (`1` is a claim saying it looked once),
+`distinct` (evaluations actually run; `1` under a motion means the
+motion never moves this claim), `in_phase`, `failed`; all zero on an
+absent-part / absent-joint skip. `motions[]` reports each driven
+joint's range and exact `max_step`. Held evaluation is **sampled** and
+says so through those counts and the step — it claims no bound between
+samples. Reuse across poses is exact, not heuristic: it keys on the
+composed relative placement of a claim's parts (absolute for a datum
+plane or `along`) plus its phase state, so a window on a joint that
+moves neither part is still re-resolved.
+
+`warnings[]` on `mechanism.json` never changes `status` or the exit
+code: `joint_never_driven` (a joint no motion moves — a rest-pose
+green), `never_in_phase` (a phased claim in phase at no pose), and
+`interferences_rest_pose_only` when a motion is declared —
+`interferences[]` and `parts` always describe the as-built pose; there
+is no per-pose all-pairs scan.
+
+`during=` takes a `JointWindow` or a tuple that must all hold, on every
+part-referencing `assert_*` (group forms included), through one wrapper
+(`Phased`). Outside its phase a claim says nothing, and what that means
+follows from its kind: a **requirement** lapses (`passed: null`,
+`out_of_phase`); a **permission** (`assert_allowed_contact`) lapses to
+the default it was an exception to — no contact — unless another
+contact claim on the same pair is in phase, which then governs. Phased
+permissions on one pair partition the motion. The two ship together:
+held evaluation without `during=` would silently widen every rest-only
+claim to the whole motion.
 
 `assert_allowed_contact(..., during=JointWindow(path, lo, hi))` scopes a
 contact to a kinematic phase: inside the window the overlap band
@@ -308,7 +363,7 @@ comparison flips on solver noise.
 
 ```json
 {
-  "schema_version": "0.10",
+  "schema_version": "0.11",
   "kind": "printability",
   "status": "ok | assertion_failed",
   "name": "housing",

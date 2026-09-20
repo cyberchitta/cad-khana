@@ -179,6 +179,83 @@ def test_warning_added_and_removed():
     assert "removed: stale_waiver: overhang_max:45.0" in out
 
 
+# --- mechanism diff: motions and warnings ---------------------------------
+
+
+def _motion(samples: int = 180, max_step: float = 2.0) -> dict:
+    return {
+        "name": "stack_turn",
+        "samples": samples,
+        "joints_deg": {
+            "rotating": {"min": 0.0, "max": 358.0, "max_step": max_step}
+        },
+    }
+
+
+def test_a_motion_no_longer_declared_is_reported():
+    """The run that stopped looking must not diff as clean."""
+    old = {**_empty_mech(), "motions": [_motion()]}
+    out = diff(old, _empty_mech())
+    assert "motions:" in out
+    assert "removed: stack_turn (180 samples)" in out
+
+
+def test_a_motion_declared_is_reported():
+    new = {**_empty_mech(), "motions": [_motion()]}
+    assert "added: stack_turn (180 samples)" in diff(_empty_mech(), new)
+
+
+def test_a_motion_sampled_more_coarsely_is_reported():
+    old = {**_empty_mech(), "motions": [_motion()]}
+    new = {**_empty_mech(), "motions": [_motion(samples=90, max_step=4.0)]}
+    out = diff(old, new)
+    assert "changed: stack_turn samples 180 → 90" in out
+    assert "changed: stack_turn rotating max_step 2.0 → 4.0" in out
+
+
+def test_mechanism_warnings_are_diffed():
+    old = {
+        **_empty_mech(),
+        "warnings": [{"kind": "joint_never_driven", "joint": "rotor"}],
+    }
+    new = {
+        **_empty_mech(),
+        "warnings": [
+            {"kind": "never_in_phase", "assertion": "pad_engages"},
+            {"kind": "interferences_rest_pose_only"},
+        ],
+    }
+    out = diff(old, new)
+    assert "warnings:" in out
+    assert "removed: joint_never_driven: rotor" in out
+    assert "added: never_in_phase: pad_engages" in out
+    assert "added: interferences_rest_pose_only" in out
+
+
+def test_value_drift_names_the_pose_it_came_from():
+    def held(value, t):
+        return {
+            **_empty_mech(),
+            "assertions": [
+                {
+                    "name": "d",
+                    "passed": True,
+                    "detail": None,
+                    "value": value,
+                    "worst_at": {
+                        "motion": "stack_turn",
+                        "t": t,
+                        "joints_deg": {"rotating": 360 * t},
+                    },
+                }
+            ],
+        }
+
+    out = diff(held(0.35, 0.1), held(0.30, 0.25))
+    assert "changed: d value" in out
+    assert "(worst at stack_turn t=0.25)" in out
+
+
 # --- printability diff --------------------------------------------------
 
 

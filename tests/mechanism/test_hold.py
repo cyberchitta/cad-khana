@@ -1,0 +1,278 @@
+import pytest
+from build123d import Axis, Box, BuildPart, Location, Plane
+
+from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
+from cad_khana.mechanism.assertions import JointWindow
+from cad_khana.mechanism.diagnostics import JointRange, PoseCounts, WorstAt
+from cad_khana.mechanism.hold import hold
+from cad_khana.mechanism.motion import Motion
+
+
+def _cube(size: float = 10):
+    with BuildPart() as p:
+        Box(size, size, size)
+    return p.part
+
+
+def _swung() -> Assembly:
+    """A cube on a Z revolute joint, built clear of a fixed post at
+    0deg; it starts to overlap the post past ~45deg and coincides with
+    it at 90deg. A second fixed cube, ``base``, is far from both."""
+    arm = (
+        Assembly()
+        .with_part("arm", _cube(), location=Location((20, 0, 0)))
+        .with_part("tip", _cube(2), location=Location((40, 0, 0)))
+    )
+    return (
+        Assembly()
+        .with_part("post", _cube(), location=Location((0, 20, 0)))
+        .with_part("base", _cube(), location=Location((0, 0, -50)))
+        .with_subassembly("swing", arm, joint=RevoluteJoint(axis=Axis.Z))
+    )
+
+
+def _swing(hi: float, step: float = 15.0) -> Motion:
+    return Motion.over_joint("swing_in", "swing", 0.0, hi, step)
+
+
+def _only(assembly: Assembly):
+    (result,) = hold(assembly).assertions
+    return result
+
+
+def test_no_motion_is_one_pose():
+    result = _only(_swung().assert_no_interference("post", "swing.arm"))
+    assert result.passed
+    assert result.poses == PoseCounts(evaluated=1, distinct=1, in_phase=1, failed=0)
+    assert result.worst_at is None
+
+
+def test_a_claim_green_as_built_fails_over_the_motion_that_breaks_it():
+    a = (
+        _swung()
+        .assert_no_interference("post", "swing.arm")
+        .with_motion(_swing(90))
+    )
+    result = _only(a)
+    assert result.passed is False
+    assert result.poses.evaluated == 8  # as built + 7 samples
+    assert result.poses.failed == 3  # 60, 75, 90deg
+    assert result.worst_at.motion == "swing_in"
+    assert result.worst_at.joints_deg == {"swing": pytest.approx(60.0)}
+    assert "3 of 8 poses" in result.detail
+
+
+def test_a_claim_the_motion_never_moves_is_evaluated_once():
+    a = (
+        _swung()
+        .assert_no_interference("post", "base")
+        .with_motion(_swing(90))
+    )
+    result = _only(a)
+    assert result.passed
+    assert result.poses == PoseCounts(evaluated=8, distinct=1, in_phase=8, failed=0)
+
+
+def test_parts_that_move_together_are_evaluated_once():
+    a = (
+        _swung()
+        .assert_no_interference("swing.arm", "swing.tip")
+        .with_motion(_swing(90))
+    )
+    assert _only(a).poses.distinct == 1
+
+
+def test_a_pose_met_twice_is_evaluated_once():
+    a = (
+        _swung()
+        .assert_no_interference("base", "swing.arm")
+        .with_motion(Motion.over_joint("turn", "swing", 0.0, 360.0, step=90.0))
+    )
+    # as built, 0, 90, 180, 270, 360 — three of them the same pose
+    assert _only(a).poses == PoseCounts(
+        evaluated=6, distinct=4, in_phase=6, failed=0
+    )
+
+
+def test_value_is_the_worst_over_the_motion_and_says_where():
+    a = (
+        _swung()
+        .assert_distance("post", "swing.arm", min_mm=1.0)
+        .with_motion(_swing(30))
+    )
+    result = _only(a)
+    assert result.passed
+    assert result.value < 200**0.5  # closer than as built
+    assert result.worst_at == WorstAt(
+        motion="swing_in", t=1.0, joints_deg={"swing": pytest.approx(30.0)}
+    )
+
+
+def test_worst_is_the_as_built_pose_when_the_motion_only_helps():
+    a = (
+        _swung()
+        .assert_distance("post", "swing.arm", min_mm=1.0)
+        .with_motion(Motion.over_joint("away", "swing", 0.0, -30.0, step=15.0))
+    )
+    result = _only(a)
+    assert result.value == pytest.approx(200**0.5)
+    assert result.worst_at is None
+
+
+def test_a_phased_requirement_counts_only_its_phase():
+    a = (
+        _swung()
+        .assert_no_interference(
+            "post", "swing.arm", during=JointWindow("swing", 0, 30)
+        )
+        .with_motion(_swing(90))
+    )
+    result = _only(a)
+    assert result.passed
+    assert result.poses.in_phase == 4  # as built, 0, 15, 30
+    assert result.poses.evaluated == 8
+    assert result.skipped is None
+
+
+def test_a_requirement_never_in_phase_is_skipped_and_warned():
+    a = (
+        _swung()
+        .assert_no_interference(
+            "post", "swing.arm", name="raised", during=JointWindow("swing", 100, 120)
+        )
+        .with_motion(_swing(90))
+    )
+    held = hold(a)
+    (result,) = held.assertions
+    assert result.passed is None
+    assert result.skipped == "out_of_phase"
+    assert result.poses.in_phase == 0
+    assert {"kind": "never_in_phase", "assertion": "raised"} in held.warnings
+
+
+def test_a_permission_forbids_the_contact_outside_its_window():
+    a = (
+        _swung()
+        .assert_allowed_contact(
+            "post", "swing.arm", max_overlap_mm3=2000,
+            during=JointWindow("swing", 80, 100),
+        )
+        .with_motion(_swing(90))
+    )
+    result = _only(a)
+    assert result.passed is False  # overlaps at 60 and 75deg, outside it
+    assert result.poses.failed == 2
+    assert result.poses.in_phase == 1
+
+
+def test_a_window_on_a_joint_that_moves_neither_part_is_still_held():
+    """The pair never moves, so its geometry is the same at every pose
+    — but the permission is not, and reusing the as-built verdict
+    would hold green through the phase that forbids the contact."""
+    a = (
+        _swung()
+        .with_part("block", _cube(), location=Location((5, 20, 0)))
+        .assert_allowed_contact(
+            "post", "block", max_overlap_mm3=2000,
+            during=JointWindow("swing", 0, 10),
+        )
+        .with_motion(_swing(90))
+    )
+    result = _only(a)
+    assert result.passed is False
+    assert result.poses.in_phase == 2
+
+
+def test_layered_permissions_partition_the_motion():
+    a = (
+        _swung()
+        .assert_allowed_contact(
+            "post", "swing.arm", max_overlap_mm3=5,
+            during=JointWindow("swing", 0, 50),
+        )
+        .assert_allowed_contact(
+            "post", "swing.arm", max_overlap_mm3=2000,
+            during=JointWindow("swing", 50, 100),
+        )
+        .with_motion(_swing(90))
+    )
+    assert [r.passed for r in hold(a).assertions] == [True, True]
+
+
+def test_a_units_motion_is_held_at_the_root_that_composes_it():
+    unit = (
+        _swung()
+        .assert_no_interference("post", "swing.arm")
+        .with_motion(_swing(90))
+    )
+    held = hold(Assembly().with_subassembly("m05", unit))
+    (result,) = held.assertions
+    assert result.passed is False
+    assert result.worst_at.motion == "m05.swing_in"
+    assert result.worst_at.joints_deg == {"m05.swing": pytest.approx(60.0)}
+
+
+def test_a_datum_plane_under_a_driven_joint_moves_with_it():
+    """The tip clears its unit's own datum plane at every pose, because
+    the plane rides the joint with it; held against the as-built plane
+    the tip would swing through it at 15deg."""
+    arm = (
+        Assembly()
+        .with_part("tip", _cube(2), location=Location((40, 0, 0)))
+        .assert_distance(
+            "tip", Plane(origin=(0, 10, 0), z_dir=(0, 1, 0)), min_mm=5.0
+        )
+    )
+    a = (
+        Assembly()
+        .with_subassembly("swing", arm, joint=RevoluteJoint(axis=Axis.Z))
+        .with_motion(_swing(90))
+    )
+    result = _only(a)
+    assert result.passed
+    assert result.value == pytest.approx(9.0)
+
+
+def test_motion_summary_says_how_much_was_looked_at():
+    (summary,) = hold(_swung().with_motion(_swing(50, step=20.0))).motions
+    assert summary.name == "swing_in"
+    assert summary.samples == 4
+    (joint_range,) = summary.joints_deg.values()
+    assert list(summary.joints_deg) == ["swing"]
+    assert joint_range == JointRange(
+        min=0.0, max=pytest.approx(50.0), max_step=pytest.approx(50 / 3)
+    )
+
+
+def test_a_joint_no_motion_drives_is_warned():
+    assert {"kind": "joint_never_driven", "joint": "swing"} in hold(
+        _swung()
+    ).warnings
+    assert not any(
+        w["kind"] == "joint_never_driven"
+        for w in hold(_swung().with_motion(_swing(90))).warnings
+    )
+
+
+def test_rest_pose_only_interferences_are_marked_once_a_motion_is_declared():
+    marker = {"kind": "interferences_rest_pose_only"}
+    assert marker not in hold(_swung()).warnings
+    assert marker in hold(_swung().with_motion(_swing(90))).warnings
+
+
+def test_absence_is_not_a_pose_count():
+    a = (
+        _swung()
+        .assert_no_interference("post", "swing.bolt")
+        .with_motion(_swing(90))
+    )
+    result = _only(a)
+    assert result.skipped == "absent_part"
+    assert result.poses == PoseCounts(evaluated=0, distinct=0, in_phase=0, failed=0)
+
+
+def test_scalar_claims_ride_along_unchanged():
+    a = _swung().assert_scalar("budget", 3.0, le=5.0).with_motion(_swing(90))
+    result = _only(a)
+    assert result.passed and result.value == 3.0
+    assert result.poses.distinct == 1

@@ -1,3 +1,4 @@
+import pytest
 from build123d import Axis, Box, BuildPart, Location
 
 from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
@@ -907,3 +908,160 @@ def test_phased_contact_window_qualifies_into_a_parent_frame():
 def test_phased_contact_name_records_the_window():
     a = _lifter(90, JointWindow("swing", 80, 100))
     assert "swing [80, 100]deg" in evaluate(a)[0].name
+
+
+# --- during= on every part-referencing kind (Phased) ---------------------
+
+
+def _swung(angle_deg: float) -> Assembly:
+    """``_lifter``'s geometry with no claim declared: clear at 0deg,
+    fully overlapping at 90deg."""
+    arm = Assembly().with_part("arm", _cube(), location=Location((20, 0, 0)))
+    return (
+        Assembly()
+        .with_part("post", _cube(), location=Location((0, 20, 0)))
+        .with_subassembly(
+            "swing", arm, joint=RevoluteJoint(axis=Axis.Z, angle_deg=angle_deg)
+        )
+    )
+
+
+def test_phased_requirement_lapses_outside_its_window():
+    a = _swung(90).assert_no_interference(
+        "post", "swing.arm", during=JointWindow("swing", 0, 10)
+    )
+    (result,) = evaluate(a)
+    assert result.passed is None
+    assert result.skipped == "out_of_phase"
+    assert "swing [0, 10]deg" in result.detail
+    assert "swing at 90deg" in result.detail
+
+
+def test_phased_requirement_holds_inside_its_window():
+    a = _swung(90).assert_no_interference(
+        "post", "swing.arm", during=JointWindow("swing", 80, 100)
+    )
+    (result,) = evaluate(a)
+    assert result.passed is False
+    assert result.skipped is None
+
+
+def test_phased_requirement_skips_on_an_absent_joint():
+    a = _swung(0).assert_clearance(
+        "post", "swing.arm", min_mm=1, during=JointWindow("nope", 0, 10)
+    )
+    (result,) = evaluate(a)
+    assert result.skipped == "absent_joint"
+    assert "nope" in result.detail
+
+
+def test_phased_requirement_with_an_absent_part_reports_the_part():
+    """Absence is the same at every pose; the phase is not. Reporting
+    the phase first would hide a typo'd part name behind a skip class
+    that reads as expected."""
+    a = _swung(90).assert_no_interference(
+        "post", "swing.bolt", during=JointWindow("swing", 0, 10)
+    )
+    (result,) = evaluate(a)
+    assert result.skipped == "absent_part"
+
+
+def _two_jointed(swing_deg: float, gate_deg: float) -> Assembly:
+    gate = Assembly().with_part("flag", _cube(2), location=Location((0, 0, 50)))
+    return _swung(swing_deg).with_subassembly(
+        "gate", gate, joint=RevoluteJoint(axis=Axis.Z, angle_deg=gate_deg)
+    )
+
+
+def test_phase_of_several_windows_needs_every_one():
+    during = (JointWindow("swing", 80, 100), JointWindow("gate", 0, 5))
+
+    def result(gate_deg):
+        a = _two_jointed(90, gate_deg).assert_no_interference(
+            "post", "swing.arm", during=during
+        )
+        return evaluate(a)[0]
+
+    assert result(0).passed is False
+    assert result(30).skipped == "out_of_phase"
+
+
+def test_phased_distance_records_its_value_in_phase():
+    a = _swung(0).assert_distance(
+        "post", "swing.arm", min_mm=1, during=JointWindow("swing", 0, 10)
+    )
+    (result,) = evaluate(a)
+    assert result.passed
+    assert result.value == pytest.approx(200**0.5)
+
+
+def test_phase_is_part_of_an_auto_name():
+    a = _swung(0).assert_no_interference(
+        "post", "swing.arm", during=JointWindow("swing", 0, 10)
+    )
+    assert evaluate(a)[0].name == "no_interference:post/swing.arm@swing [0, 10]deg"
+
+
+def test_phased_requirement_qualifies_into_a_parent_frame():
+    unit = _swung(90).assert_no_interference(
+        "post", "swing.arm", during=JointWindow("swing", 80, 100)
+    )
+    (result,) = evaluate(Assembly().with_subassembly("m03", unit))
+    assert result.name.startswith("m03.")
+    assert result.passed is False
+
+
+def test_out_of_phase_permission_yields_to_one_in_phase():
+    """Phased permissions on one pair partition the motion: "may touch
+    lightly near rest" does not forbid the contact another claim
+    declares for the raised phase."""
+    a = (
+        _swung(90)
+        .assert_allowed_contact(
+            "post", "swing.arm", max_overlap_mm3=5,
+            during=JointWindow("swing", 0, 10),
+        )
+        .assert_allowed_contact(
+            "post", "swing.arm", max_overlap_mm3=2000,
+            during=JointWindow("swing", 80, 100),
+        )
+    )
+    near_rest, raised = evaluate(a)
+    assert near_rest.skipped == "out_of_phase"
+    assert raised.passed
+
+
+def test_permissions_all_out_of_phase_forbid_the_contact():
+    a = (
+        _swung(90)
+        .assert_allowed_contact(
+            "post", "swing.arm", max_overlap_mm3=5,
+            during=JointWindow("swing", 0, 10),
+        )
+        .assert_allowed_contact(
+            "post", "swing.arm", max_overlap_mm3=2000,
+            during=JointWindow("swing", 20, 30),
+        )
+    )
+    assert [r.passed for r in evaluate(a)] == [False, False]
+
+
+def test_group_claims_take_a_phase():
+    a = _swung(90).assert_no_interference_between(
+        ("post",), "swing", during=JointWindow("swing", 0, 10)
+    )
+    (result,) = evaluate(a)
+    assert result.skipped == "out_of_phase"
+
+
+def test_phased_group_pair_still_yields_to_a_declared_contact():
+    a = (
+        _swung(90)
+        .assert_no_interference_between(
+            ("post",), "swing", during=JointWindow("swing", 0, 10)
+        )
+        .assert_allowed_contact("post", "swing.arm", max_overlap_mm3=2000)
+    )
+    assert [r.name for r in evaluate(a)] == [
+        "allowed_contact:post/swing.arm<=2000"
+    ]

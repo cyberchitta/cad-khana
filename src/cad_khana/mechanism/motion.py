@@ -47,3 +47,14 @@ class Motion:
     @property
     def poses(self) -> tuple[Pose, ...]:
         return tuple(self.schedule(t) for t in self.ts)
+
+    def qualified(self, prefix: str) -> "Motion":
+        """This motion as seen from a parent that composes its owner
+        under ``prefix`` — name and joint paths gain the prefix, as an
+        assertion's do."""
+        schedule = self.schedule
+        return Motion(
+            f"{prefix}.{self.name}",
+            lambda t: {f"{prefix}.{k}": v for k, v in schedule(t).items()},
+            self.ts,
+        )
