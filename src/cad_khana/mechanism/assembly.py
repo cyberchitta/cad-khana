@@ -772,8 +772,8 @@ class Assembly:
         piece; another ``eq`` declares one that is several on purpose
         (a band parted into segments), which also keeps it out of the
         ``multi_solid`` warnings. The count lands in ``value``;
-        ``detail`` is context carried into the result (what would have
-        severed it). No ``during=`` — the count is the same at every
+        ``detail`` is the failure hypothesis (what would have severed
+        it), shown only when the claim fails. No ``during=`` — the count is the same at every
         pose.
 
         Red-test it by removing the bridge, not by shrinking it: a

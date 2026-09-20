@@ -414,9 +414,10 @@ class SolidCount:
     drawing. ``eq=1`` bounds it; any other ``eq`` declares a part that
     is several solids on purpose, which is also what keeps it out of
     the ``multi_solid`` warnings. A topological claim, so it has no
-    phase: the count is the same at every pose. ``detail`` is context
-    carried into the result — what would have severed it, which no
-    drawing shows — alone on pass, appended to the count on failure."""
+    phase: the count is the same at every pose. ``detail`` is the
+    failure hypothesis — what would have severed it, which no drawing
+    shows — appended to the count on failure and absent on a pass: on
+    a green ``eq=2`` it would read as a report of the failure itself."""
 
     part: str
     eq: int
@@ -435,8 +436,12 @@ class SolidCount:
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
         count = len(parts[self.part].solids())
         passed = count == self.eq
-        failure = None if passed else f"{count} solids, expected {self.eq}"
-        detail = "; ".join(s for s in (failure, self.detail) if s) or None
+        failure = f"{count} solids, expected {self.eq}"
+        detail = (
+            None
+            if passed
+            else "; ".join(s for s in (failure, self.detail) if s)
+        )
         return AssertionResult(self.name, passed, detail, value=float(count))
 
 

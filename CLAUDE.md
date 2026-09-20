@@ -333,7 +333,11 @@ in place of the warning. It exists because that file's `warnings[]` is
 where `stale_waiver` lives, and a warning nobody can answer trains the
 reader to skim the one block that must not be skimmed. Both forms take
 the number, never a bare suppression. `assert_solid_count` also takes
-`detail=` — what would have severed the part, which no drawing shows.
+`detail=` — the failure hypothesis, what would have severed the part,
+which no drawing shows. It is appended on failure and **absent on a
+pass**, unlike `assert_scalar`'s: that one labels a value and is as
+true on a pass; this one, on a green `eq=2`, reads as a report of the
+failure it is green about.
 
 `during=` takes a `JointWindow` or a tuple that must all hold, on every
 part-referencing `assert_*` (group forms included), through one wrapper

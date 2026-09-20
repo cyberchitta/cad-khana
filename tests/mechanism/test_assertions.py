@@ -1130,10 +1130,19 @@ def test_solid_count_is_qualified_into_a_parent():
     assert result.passed is False
 
 
-def test_solid_count_detail_rides_along_on_pass_and_on_failure():
+def test_solid_count_detail_is_a_failure_hypothesis_so_a_pass_stays_silent():
+    """Unlike ``assert_scalar``'s detail, which labels a value and is as
+    true on a pass, this one explains a severance — on a green ``eq=2``
+    it would read as a report of the failure it is green about."""
     hint = "above 1 the glow band has cut something off — check the five bridges"
     ok = Assembly().with_part("body", _cube()).assert_solid_count("body", detail=hint)
-    assert evaluate(ok)[0].detail == hint
+    assert evaluate(ok)[0].detail is None
+    parted = (
+        Assembly()
+        .with_part("band", _two_bodies())
+        .assert_solid_count("band", eq=2, detail="fewer means the bridges are gone")
+    )
+    assert evaluate(parted)[0].detail is None
     cut = (
         Assembly()
         .with_part("body", _two_bodies())

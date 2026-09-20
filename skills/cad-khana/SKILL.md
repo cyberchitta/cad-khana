@@ -573,11 +573,22 @@ a = a.assert_solid_count("body",             # must be one piece — red if seve
 a = a.assert_solid_count("glow_band", eq=5)  # five segments by design; warning goes
 ```
 
-`detail=` lands in the result beside the count. Use it: this is the one
-failure whose cause no drawing shows, so say what would have severed
-the part. Derive `eq` from the parameter that sets it (a spoke count,
-which sector carries the opening) rather than typing the number — the
-derivation is the claim.
+`detail=` is appended to the count **when the claim fails**, and only
+then. Use it: this is the one failure whose cause no drawing shows, so
+write it as the failure hypothesis, in the imperative — what would have
+severed the part and where to look. It stays out of a passing result
+on purpose: on a green `eq=2` the same sentence would read as a report
+of the failure. (`assert_scalar`'s `detail` is different — it labels a
+value, so it shows either way.)
+
+Derive `eq` from the **design intent the count expresses** (a spoke
+count, which sector carries the opening) rather than typing the
+number — and **never from the feature whose removal is the red
+test**. `eq=len(BRIDGE_DEGS)` tracks the injection: empty the list and
+the claim moves with it and stays green, a rubber stamp that looks
+identical to a real claim before and after. Where the count has no
+source independent of the geometry under test, state the number and
+say why in a comment.
 
 `inspect()` answers the same warning in the printability file:
 
@@ -590,6 +601,12 @@ entry in `assertions[]` with the count in `value`, a mismatch fails the
 run (waivable under kind `solid_count`), and the warning is gone.
 Undeclared, a part above one solid keeps warning. There is no way to
 silence it without stating the number.
+
+The assembly claim and the `inspect()` claim state one fact twice, so
+give them **one derivation**: a constant or a small function in the
+declaration module (`sector_solid_count(k, height)`), imported by the
+printability script — not the expression copied, which leaves the two
+free to drift.
 
 Bodies that touch only along an edge or at a point count as separate
 solids — they share no material, and will not print as one part.
