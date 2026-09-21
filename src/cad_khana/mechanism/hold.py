@@ -313,10 +313,11 @@ def _moved(
     later: dict[int, list[_Visit]],
     movable: tuple[bool, ...],
 ) -> int:
-    """How many movable claims this motion moved. "Moved" is the
-    shipped ``distinct`` key narrowed to one motion's samples -- not a
-    second definition, and it carries phase state, so a claim that only
-    crosses a ``during=`` boundary counts."""
+    """How many movable claims this motion moved: more than one
+    distinct ``key`` among its rest visit and this motion's samples.
+    Unlike ``distinct``, skipped visits are kept -- the key carries phase
+    state, so a claim that only crosses a ``during=`` boundary counts,
+    even one in phase at a single pose (``distinct: 1``)."""
     return sum(
         1
         for i, ok in enumerate(movable)
