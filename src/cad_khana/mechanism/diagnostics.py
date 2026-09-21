@@ -9,7 +9,7 @@ from build123d import Part
 if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
 
-SCHEMA_VERSION = "0.13"
+SCHEMA_VERSION = "0.14"
 INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
 
 # Absolute tolerance on assertion bound comparisons, in the bound's own

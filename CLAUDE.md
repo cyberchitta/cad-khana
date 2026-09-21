@@ -223,7 +223,7 @@ A module the import-model verbs consume never calls `check()`,
 full design, its phases, and what is still owed:
 `_notes/draft-script-decomposition.md`.
 
-## Diagnostics JSON schemas (v0.13)
+## Diagnostics JSON schemas (v0.14)
 
 Version these from day one. Agents depend on field stability.
 
@@ -241,7 +241,7 @@ for three bumps.
 
 ```json
 {
-  "schema_version": "0.13",
+  "schema_version": "0.14",
   "status": "ok | error | assertion_failed",
   "error": null,
   "hint": "Missing .part accessor — use `with BuildPart() as p: ...; return p.part`.",
@@ -314,9 +314,15 @@ Maintainer facts behind those fields:
   the number, never a bare suppression. The printability form exists
   because that file's `warnings[]` holds `stale_waiver`, and a warning
   nobody can answer trains readers to skim the block that must not be
-  skimmed. `assert_solid_count`'s `detail=` is failure-only because on a
-  green `eq=2` it would read as a report of the failure it is green
-  about.
+  skimmed.
+- **`detail` on a pass carries labels, never failure hypotheses.**
+  `assert_scalar`'s `detail=` and a contact claim's `reason=`
+  (`assert_allowed_contact`, `assert_interference`, `known_overlaps`)
+  are true whether the claim holds, so they show on a pass (0.14 for
+  `reason`, after a consumer misread a green file's overlap with no
+  explanation anywhere in it). `assert_solid_count`'s `detail=` is
+  failure-only: on a green `eq=2` it would read as a report of the
+  failure it is green about.
 - `mechanism/sweep.py` is pure and sampled — an inner approximation
   (`never` means "at none of the sampled parameters"). Its primitive is
   a `factory(t) -> Assembly` because real motion drives several joints
@@ -331,7 +337,7 @@ Maintainer facts behind those fields:
 
 ```json
 {
-  "schema_version": "0.13",
+  "schema_version": "0.14",
   "kind": "printability",
   "status": "ok | assertion_failed",
   "name": "housing",
@@ -382,6 +388,10 @@ tip.
 Waivers are keyed by assertion **kind** (the part before the `:`), so
 thresholds stay honest and a waiver survives a threshold change; a
 waived failure keeps `passed: false` — the measurement is what it is.
+**A threshold decides `passed` and what area counts, never whether the
+reading exists** (0.14): `overhang.max_angle_deg` is reported whatever
+`overhang_max_deg` says, because consumers raised it to 90° to keep the
+check "informational" and it erased the measurement instead.
 
 Diagnostic JSONs are **ephemeral**: rewritten in full on every
 `check()` / `inspect()` run. `khana diff` requires both inputs at the

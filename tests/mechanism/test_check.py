@@ -169,7 +169,7 @@ def test_check_skipped_assertion_does_not_fail_the_run(tmp_path: Path):
 def test_check_with_nothing_skipped_still_lists_every_skip_class(tmp_path: Path):
     check(Assembly().with_part("a", _cube()), out=tmp_path)
     data = json.loads((tmp_path / "mechanism.json").read_text())
-    assert data["schema_version"] == "0.13"
+    assert data["schema_version"] == "0.14"
     assert data["skipped_counts"] == {
         "absent_part": 0,
         "absent_joint": 0,

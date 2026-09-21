@@ -16,6 +16,14 @@ if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
 
 
+def _with_reason(failure: str | None, reason: str | None) -> str | None:
+    """A contact claim's ``detail``: the failure if any, then the reason,
+    which is recorded on a pass as well."""
+    return "; ".join(
+        s for s in (failure, reason and f"reason: {reason}") if s
+    ) or None
+
+
 def _extent(shape: Part, d: Vector) -> tuple[float, float]:
     """Projection interval of ``shape`` onto the unit direction ``d``:
     ``(min, max)`` of ``p . d`` over the shape's points. Computed by
@@ -206,8 +214,9 @@ class AllowedContact:
     engagement itself the claim — a press-fit that drifts back to a
     clearance fit fails rather than silently passing. The measured
     overlap volume is recorded in ``value`` even on pass, so runs are
-    diffable. ``reason`` documents the intent and is appended to the
-    failure detail.
+    diffable. ``reason`` documents the intent and is recorded in
+    ``detail`` on a pass too (appended to the failure otherwise): it
+    labels the claim, and a label is as true when the claim holds.
 
     A contact claim is a *permission*, and under ``Phased`` it lapses
     differently from a requirement: what lies beneath a permission is
@@ -265,13 +274,11 @@ class AllowedContact:
             if below
             else None
         )
-        detail = (
-            f"{failure}; reason: {self.reason}"
-            if failure and self.reason
-            else failure
-        )
         return AssertionResult(
-            self.name, not (above or below), detail, value=overlap
+            self.name,
+            not (above or below),
+            _with_reason(failure, self.reason),
+            value=overlap,
         )
 
     def slack(self, value: float) -> float:
@@ -474,12 +481,14 @@ class ExpectedInterference:
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
         volume = intersection_volume(parts[self.a], parts[self.b])
         passed = volume > INTERFERENCE_VOLUME_EPSILON_MM3
-        if passed:
-            detail = None
-        else:
-            base = f"expected interference absent (volume {volume:.4f}mm^3)"
-            detail = f"{base}; reason: {self.reason}" if self.reason else base
-        return AssertionResult(self.name, passed, detail)
+        failure = (
+            None
+            if passed
+            else f"expected interference absent (volume {volume:.4f}mm^3)"
+        )
+        return AssertionResult(
+            self.name, passed, _with_reason(failure, self.reason)
+        )
 
 
 @dataclass(frozen=True)

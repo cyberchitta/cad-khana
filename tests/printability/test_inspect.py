@@ -112,6 +112,15 @@ def test_inspect_fails_when_overhang_exceeds_threshold(tmp_path: Path):
     assert overhang_failures
 
 
+
+def test_raised_overhang_threshold_still_records_the_angle(tmp_path: Path):
+    result = inspect(
+        _l_shape(), method=FDM(overhang_max_deg=90.0), out=tmp_path, name="ell"
+    )
+    data = json.loads((tmp_path / "ell-printability.json").read_text())
+    assert result.status == "ok"
+    assert data["overhang"] == {"area_mm2": 0.0, "max_angle_deg": approx(90.0, abs=0.01)}
+
 # --- waivers ------------------------------------------------------------
 
 

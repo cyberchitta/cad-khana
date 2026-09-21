@@ -163,6 +163,34 @@ def test_interference_reason_appears_in_failure_detail():
     assert "junction design pending" in result.detail
 
 
+
+def test_interference_reason_recorded_on_pass():
+    # A reason labels the claim, and a label is as true on a pass — the
+    # assert_scalar rule, not assert_solid_count's failure hypothesis.
+    a = (
+        Assembly()
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((9, 0, 0)))
+        .assert_interference("a", "b", reason="junction design pending")
+    )
+    (result,) = evaluate(a)
+    assert result.passed
+    assert result.detail == "reason: junction design pending"
+
+
+def test_known_overlap_reason_recorded_on_pass():
+    a = (
+        Assembly()
+        .with_part("a", _cube())
+        .with_part("b", _cube(), location=Location((9, 0, 0)))
+        .assert_no_interference_between(
+            ("a",), ("b",), known_overlaps=[("a", "b", "junction pending")]
+        )
+    )
+    (result,) = evaluate(a)
+    assert result.passed
+    assert result.detail == "reason: junction pending"
+
 def test_interference_default_name_contains_both_parts():
     a = (
         Assembly()
@@ -489,6 +517,34 @@ def test_allowed_contact_reason_appears_in_failure_detail():
     (result,) = evaluate(a)
     assert "press fit" in result.detail
 
+
+
+def test_allowed_contact_reason_recorded_on_pass():
+    # The 09-18 misreading: a green file showed the overlap and nowhere
+    # said why it was allowed.
+    a = (
+        Assembly()
+        .with_part("shaft", _cube())
+        .with_part("bore", _cube(), location=Location((9, 0, 0)))
+        .assert_allowed_contact(
+            "shaft", "bore", max_overlap_mm3=150, reason="press fit"
+        )
+    )
+    (result,) = evaluate(a)
+    assert result.passed
+    assert result.detail == "reason: press fit"
+
+
+def test_allowed_contact_without_reason_passes_with_no_detail():
+    a = (
+        Assembly()
+        .with_part("shaft", _cube())
+        .with_part("bore", _cube(), location=Location((9, 0, 0)))
+        .assert_allowed_contact("shaft", "bore", max_overlap_mm3=150)
+    )
+    (result,) = evaluate(a)
+    assert result.passed
+    assert result.detail is None
 
 def test_allowed_contact_bound_tolerates_solver_noise():
     a = (

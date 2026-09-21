@@ -661,9 +661,11 @@ It takes no `during=` — the count is the same at every pose.
 `assert_interference` is the exception, not the rule. Use it only when
 a real design constraint leaves an overlap that hasn't been resolved
 yet (e.g., a junction whose bracket hasn't been designed). The
-`reason=` string is included in the failure message when the overlap
-goes away, so a future reader understands what the assertion was
-guarding against. Default to `assert_no_interference` everywhere else.
+`reason=` string is recorded in `detail` on every run — after the
+failure when the overlap goes away — so a reader of a green file sees
+why the overlap is there. The same holds for `assert_allowed_contact`
+and group `known_overlaps`. Default to `assert_no_interference`
+everywhere else.
 
 ### Distance and scalar claims
 
@@ -1452,7 +1454,11 @@ the model to fix, not to waive. Only a low alignment supports a
   This one number decides the question because every reading is taken
   perpendicular to the face it starts from (see the limitation below),
   so only the far side's angle is ever in doubt.
-- `overhang` — `null` or `{area_mm2, max_angle_deg}`.
+- `overhang` — `{area_mm2, max_angle_deg}`, or `null` when no face
+  (off the build plate) points down at all. `max_angle_deg` is the
+  steepest downward face **whatever the threshold**; `area_mm2` counts
+  only faces past `overhang_max_deg`, so it is `0.0` when none are.
+  Raising the threshold stops the failure, never the reading.
 - `assertions` — `wall_min:…` and `overhang_max:…` entries, plus
   `solid_count:N` when the count was declared; `passed` + `detail`,
   plus `waived` (the rationale) when a failure was waived.

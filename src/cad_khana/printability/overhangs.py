@@ -8,6 +8,9 @@ from build123d import Part, Vector
 from cad_khana.core.tessellation import Triangle, _tessellate
 
 BUILD_PLATE_EPSILON_MM = 1e-3
+# Below this a facet is a vertical wall carrying solver noise (a
+# tessellated cylinder reads ~1e-16°), not a face that points down.
+FACING_DOWN_EPSILON_DEG = 1e-6
 
 
 @dataclass(frozen=True)
@@ -51,15 +54,17 @@ def detect_overhang(
     up = Vector(*up_axis).normalized()
     min_up = _build_plate_level(part, up)
     triangles = _tessellate(part)
-    flagged = tuple(
+    facing_down = tuple(
         (t.area, ang)
         for t in triangles
-        if (ang := _overhang_angle_deg(t.normal, up)) > angle_threshold_deg
+        if (ang := _overhang_angle_deg(t.normal, up)) > FACING_DOWN_EPSILON_DEG
         and not _on_build_plate(t, up, min_up)
     )
-    if not flagged:
-        return None
-    return Overhang(
-        area_mm2=sum(a for a, _ in flagged),
-        max_angle_deg=max(ang for _, ang in flagged),
+    return (
+        Overhang(
+            area_mm2=sum(a for a, ang in facing_down if ang > angle_threshold_deg),
+            max_angle_deg=max(ang for _, ang in facing_down),
+        )
+        if facing_down
+        else None
     )
