@@ -116,6 +116,7 @@ cad-khana/
     mechanism/                # per-module tests for mechanism.*
     printability/             # per-module tests for printability.*
     test_cli.py, test_diff.py, test_target.py  # cross-cutting tests
+    test_docs.py              # SKILL.md schema facts derived from code
 ```
 
 **Discipline:** the library modules (`mechanism/*`, `printability/*`) have
@@ -226,6 +227,16 @@ full design, its phases, and what is still owed:
 
 Version these from day one. Agents depend on field stability.
 
+**What each field means is written once, in `skills/cad-khana/SKILL.md`
+§JSON diagnostics essentials** — the surface every consumer reads. This
+section holds only the shapes and the maintainer's delta: the contract,
+and why things are the way they are. `tests/test_docs.py` derives the
+enumerable facts from the code — the schema version, every warning
+kind, every skip class, which claim kinds carry `value` — and fails when
+SKILL.md omits one. **A schema change edits SKILL.md and bumps
+`SCHEMA_VERSION`**; restating a field meaning here is how the two drifted
+for three bumps.
+
 `mechanism.json` — written by `check()`:
 
 ```json
@@ -271,162 +282,50 @@ Version these from day one. Agents depend on field stability.
 }
 ```
 
-`assertions[].passed` is tri-state: `true`/`false` for an evaluated
-assertion, `null` when it was skipped because a referenced part is
-absent from the run (`detail` names the missing parts — the standalone
-sub-assembly case, where detail-override parts aren't applied),
-because a phased claim's joint is absent, or because a phased claim was
-in phase at no pose looked at. Skipped assertions never set
-`status: "assertion_failed"`. `assertions[].skipped` classes the reason —
-`"absent_part" | "absent_joint" | "out_of_phase"`, `null` whenever `passed` is not — and
-top-level `skipped_counts` totals them with every class always listed,
-so a skip that is expected here (detail not applied) can be told from
-one that is a typo without parsing `detail`. Printability assertions
-share the dataclass and always carry `skipped: null`, `poses: null`,
-`worst_at: null`.
+Maintainer facts behind those fields:
 
-**A claim's scope is a set of poses.** `Assembly.with_motion(Motion)`
-declares a motion — a schedule `t -> {joint path: value}` plus its
-samples — and `check()` holds every assertion at the as-built pose and
-at each sample of each declared motion (`mechanism/hold.py`), each
-motion on its own with the rest of the tree as built. A unit's motions
-qualify into every root that composes it (`Assembly.all_motions`), as
-its assertions do. One result per assertion: `passed` is false if any
-pose failed, `value` / `detail` are the worst pose's — a failing pose
-over a passing one, then least slack to the claim's own bound, and for
-a kind with no measured value the first pose (the onset) — and
-`worst_at` names it, `null` meaning the as-built pose. `poses` says how
-much was looked at: `evaluated` (`1` is a claim saying it looked once),
-`distinct` (evaluations actually run; `1` under a motion means the
-motion never moves this claim), `in_phase`, `failed`; all zero on an
-absent-part / absent-joint skip. `motions[]` reports each driven
-joint's range and exact `max_step`. Held evaluation is **sampled** and
-says so through those counts and the step — it claims no bound between
-samples. Reuse across poses is exact, not heuristic: it keys on the
-composed relative placement of a claim's parts (absolute for a datum
-plane or `along`) plus its phase state, so a window on a joint that
-moves neither part is still re-resolved.
-
-`warnings[]` on `mechanism.json` never changes `status` or the exit
-code: `joint_never_driven` (a joint no motion moves — a rest-pose
-green), `never_in_phase` (a phased claim in phase at no pose),
-`motion_moved_nothing` (below), and
-`interferences_rest_pose_only` when a motion is declared —
-`interferences[]` and `parts` always describe the as-built pose; there
-is no per-pose all-pairs scan.
-
-**A motion that tests nothing is a green, so it has to say so.**
-`motions[].moved` / `.movable` and the `motion_moved_nothing` warning
-answer "was this claim held over the motion, or looked at once?" —
-which `poses.distinct` had always answered per claim while no surface
-reported it. `movable` counts the claims a motion *could* move: it
-excludes the kinds that are pose-invariant by construction
-(`assert_scalar`, `assert_solid_count`, whose `distinct: 1` is correct
-and whose inclusion would make the warning born noisy) and the claims
-skipped for an absent part or joint, which the run never held. `moved`
-counts those that reached more than one distinct evaluation under *that*
-motion — the same key `poses.distinct` uses, narrowed to one motion, so
-a claim that only crosses a `during=` boundary counts as moved. The two
-are not interchangeable in one respect, and it is the respect a reader
-checking the roll-up by hand will hit: `distinct` counts only *evaluated*
-poses, and a claim out of phase is skipped, so a phased claim in phase at
-a single pose reports `distinct: 1` while `moved` counts it — the motion
-did take it in and out of phase. **`moved` can therefore exceed the
-number of claims reading `distinct > 1`**, which is why a hand-audited
-count from before 0.13 must not be reconciled against it. Measured: a
-consumer's `role_sweep` read 24/28/28 by hand and 25/29/29 from the tool,
-the difference being one half-open `during=` window entered at exactly
-one of 14 poses (`evaluated: 14, distinct: 1, in_phase: 1`).
-
-The warning fires on `moved: 0` and
-**only** on zero: a motion that moved 28 of 2082 claims tested
-something, and any threshold between "some" and "not enough" would be
-the magnitude filter the false-green rule forbids — that is what the
-count is for. `moved: 0, movable: 0` is a third reading, and a distinct
-diagnosis in the same kind: nothing in this tree could have been moved
-by any motion. `check()` prints one line per declared motion on stderr
-(`stack_turn: 180 poses, moved 28 of 2082 claims`), which is the green
-side of the `failed at 8 of 181 poses` the failure path already carried;
-an assembly declaring no motion prints nothing new. `khana diff`
-reports a changed `moved` — a motion that keeps its samples and its
-joint range and stops testing anything is a regression no other line
-shows.
-
-**Connectivity is a claim nothing else makes.** Volume, bbox,
-clearance, interference and every drawn view are blind to whether a
-part is in one piece — a consumer shipped-in-CAD a body whose lip a
-cut had detached into a free ring, every scalar green. So
-`parts.<name>.solid_count` (and `solid_count` on the printability
-file) is always reported, and a part above `1` that no claim speaks
-for draws a `multi_solid` warning. It is a warning, not a failure,
-because a part can be several solids on purpose (a band parted into
-segments): `assert_solid_count(part, eq=N)` is both the bound (`eq=1`)
-and the declaration of intent (`eq=5`), and either one silences the
-warning for that part — declare, don't suppress. It carries the count
-in `value`, takes no `during=` (the count is pose-invariant, and held
-evaluation looks once), and a failing claim is a failure, not also a
-warning. Bodies touching only along an edge count as separate.
-`inspect(..., solid_count=N)` is the same declaration on the
-printability side: a `solid_count:N` entry in `assertions[]` (count in
-`value`, a mismatch fails the run, waivable under kind `solid_count`)
-in place of the warning. It exists because that file's `warnings[]` is
-where `stale_waiver` lives, and a warning nobody can answer trains the
-reader to skim the one block that must not be skimmed. Both forms take
-the number, never a bare suppression. `assert_solid_count` also takes
-`detail=` — the failure hypothesis, what would have severed the part,
-which no drawing shows. It is appended on failure and **absent on a
-pass**, unlike `assert_scalar`'s: that one labels a value and is as
-true on a pass; this one, on a green `eq=2`, reads as a report of the
-failure it is green about.
-
-`during=` takes a `JointWindow` or a tuple that must all hold, on every
-part-referencing `assert_*` (group forms included), through one wrapper
-(`Phased`). Outside its phase a claim says nothing, and what that means
-follows from its kind: a **requirement** lapses (`passed: null`,
-`out_of_phase`); a **permission** (`assert_allowed_contact`) lapses to
-the default it was an exception to — no contact — unless another
-contact claim on the same pair is in phase, which then governs. Phased
-permissions on one pair partition the motion. The two ship together:
-held evaluation without `during=` would silently widen every rest-only
-claim to the whole motion.
-
-`assert_allowed_contact(..., during=JointWindow(path, lo, hi))` scopes a
-contact to a kinematic phase: inside the window the overlap band
-applies, outside it the pair is held to plain no-interference — the
-difference between declaring a contact and suppressing a pair, which is
-blind at every frame. The window is a **joint angle**, not an animation
-parameter: the joint is the physical DOF, so re-timing an animation
-can't invalidate the claim, and a contact recurring at several
-parameters is typically one angle window over several disjoint `t`
-intervals (measured on m03's lifter pad — two `t` intervals, one 5.4–22.5°
-window). Windows are derived from geometry via `mechanism.sweep`, not
-guessed.
-
-`mechanism/sweep.py` is the sampled-motion surface — `sweep(factory, ts)`
-→ per-pair overlap volumes and per-frame joint angles, `classify` →
-`always`/`never`/`transient` with contact intervals and angle spans,
-`onset` → bracketed-then-bisected first contact. Its primitive is a
-`factory(t) -> Assembly`, not a joint plus a range, because real motion
-drives several joints at once from non-linear schedules. It is pure (no
-I/O) and **sampled**, therefore an inner approximation: `never` means
-"at none of the sampled parameters". Sweeps derive a claim; assertions
-hold it.
-
-`assertions[].value` carries the measured/claimed scalar for
-value-carrying assertions (`assert_distance`, `assert_scalar`,
-`assert_tangent_contact` gap in mm, `assert_allowed_contact` overlap
-in mm³, `assert_solid_count` count) even on pass — `khana diff` reports drift the boolean can't
-see — and is `null` for the boolean-only kinds.
-
-Sub-assembly assertion lists propagate: a composed parent evaluates
-every nested assertion with part/anchor paths, names, and datum-plane
-targets qualified into its frame (`Assembly.all_assertions`), so a
-unit declares each claim once at the level that owns the knowledge.
-
-Assertion bound comparisons carry a small absolute tolerance
-(`BOUND_EPSILON`, 1e-6 in the bound's units): consumers routinely
-derive geometry from the same constant they bound against, so exact
-comparison flips on solver noise.
+- **Held evaluation** (`mechanism/hold.py`) holds every assertion at the
+  as-built pose and at each sample of each declared motion, each motion
+  on its own. Reuse across poses is exact, not heuristic: it keys on the
+  composed relative placement of a claim's parts (absolute for a datum
+  plane or `along`) plus its phase state, so a window on a joint that
+  moves neither part is still re-resolved. It is sampled and claims no
+  bound between samples. Printability assertions share the
+  `AssertionResult` dataclass and always carry `skipped`, `poses` and
+  `worst_at` as `null`.
+- **`during=` and held evaluation ship together**: held evaluation
+  without phases would silently widen every rest-only claim to the whole
+  motion. A requirement lapses outside its phase; a permission lapses to
+  the default it was an exception to. Windows are joint angles, not `t`,
+  and are derived via `mechanism.sweep`, never guessed.
+- **`motions[].moved` warns on zero and only on zero.** Any threshold
+  between "some" and "not enough" is the magnitude filter the
+  false-green rule forbids; the count is what answers "enough".
+  `movable` excludes the pose-invariant kinds (`_pose_invariant` is the
+  one predicate, also used by `_geometry`) and absent-skipped claims.
+  `moved` keeps skipped visits where `poses.distinct` drops them — that
+  is what makes a `during=` crossing count, and why `moved` can exceed
+  the number of claims reading `distinct > 1`. `check()` prints one
+  stderr line per declared motion; `khana diff` reports a changed
+  `moved`.
+- **Connectivity**: `multi_solid` is a warning, not a failure, because a
+  part can be several solids on purpose — `assert_solid_count` /
+  `inspect(..., solid_count=N)` both bound and declare, and always take
+  the number, never a bare suppression. The printability form exists
+  because that file's `warnings[]` holds `stale_waiver`, and a warning
+  nobody can answer trains readers to skim the block that must not be
+  skimmed. `assert_solid_count`'s `detail=` is failure-only because on a
+  green `eq=2` it would read as a report of the failure it is green
+  about.
+- `mechanism/sweep.py` is pure and sampled — an inner approximation
+  (`never` means "at none of the sampled parameters"). Its primitive is
+  a `factory(t) -> Assembly` because real motion drives several joints
+  from non-linear schedules. Sweeps derive a claim; assertions hold it.
+- Sub-assembly assertions and motions qualify into every composing root
+  (`Assembly.all_assertions`, `Assembly.all_motions`).
+- Bound comparisons carry `BOUND_EPSILON` (1e-6 in the bound's units):
+  consumers derive geometry from the constant they bound against, so
+  exact comparison flips on solver noise.
 
 `<name>-printability.json` — written by each `inspect()`:
 
@@ -451,7 +350,8 @@ comparison flips on solver noise.
     {"name": "wall_min:1.5", "passed": false, "detail": "min wall 0.31mm below min 1.5mm at (x, y, z), alignment 0.24 — the faces splay apart here, so this is the tip of a wedge feature rather than a wall between parallel faces", "waived": "knife-edge runout at the star ridge, alignment 0.24"}
   ],
   "warnings": [
-    {"kind": "waived_failure", "assertion": "wall_min:1.5", "reason": "knife-edge runout at the star ridge, alignment 0.24", "detail": "min wall 0.31mm below min 1.5mm at (x, y, z), alignment 0.24 — ..."}
+    {"kind": "waived_failure", "assertion": "wall_min:1.5", "reason": "knife-edge runout at the star ridge, alignment 0.24", "detail": "min wall 0.31mm below min 1.5mm at (x, y, z), alignment 0.24 — ..."},
+    {"kind": "multi_solid", "part": "housing", "solid_count": 2}
   ]
 }
 ```
@@ -479,21 +379,9 @@ magnitude, and there is no quantile or robustness statistic, because
 hiding a genuine thin region is a worse failure than reporting a wedge
 tip.
 
-`min_wall_alignment` is the evidence field for the readings that
-remain, and it settles the question alone because the entry angle is
-fixed at `-1`: the exit face's outward normal projected on the ray,
-`1.0` for parallel faces and falling toward `0` as they splay. Below ~0.7 the
-minimum sits at the tip of a wedge feature (real material, but not a
-wall thickness); near `1.0` a tiny reading is a genuine sliver in the
-model and should be fixed rather than waived.
-
-Waivers: `inspect(..., waive={"wall_min": "reason", "overhang_max":
-"reason"})`, keyed by assertion **kind** (the part before the `:`), so
-thresholds stay honest and waivers survive threshold changes. A waived
-failure keeps `passed: false` (the measurement is what it is), records
-the rationale in `waived`, lands in `warnings[]` as a
-`waived_failure`, and doesn't fail the run. A waiver whose assertion
-passes becomes a `stale_waiver` warning; an unknown waive key raises.
+Waivers are keyed by assertion **kind** (the part before the `:`), so
+thresholds stay honest and a waiver survives a threshold change; a
+waived failure keeps `passed: false` — the measurement is what it is.
 
 Diagnostic JSONs are **ephemeral**: rewritten in full on every
 `check()` / `inspect()` run. `khana diff` requires both inputs at the

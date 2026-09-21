@@ -1389,8 +1389,8 @@ the model to fix, not to waive. Only a low alignment supports a
   mm for `assert_tangent_contact`, the overlap in mm³ for
   `assert_allowed_contact`, the count for `assert_solid_count`. It is
   `null` for the boolean-only kinds — `assert_no_interference`,
-  `assert_clearance` and `assert_interference` record **no
-  measurement**, only a verdict, so a clearance that is quietly closing
+  `assert_clearance`, `assert_interference` and
+  `assert_anchors_coincident` record **no measurement**, only a verdict, so a clearance that is quietly closing
   toward its bound is invisible until it crosses. Use
   `assert_distance(min_mm=…)` instead where the trend matters.
   Held over a motion, `value` and `detail` are the **worst pose's**
