@@ -142,8 +142,8 @@ def build_hinge(
         .assert_no_interference("tang", "clevis")
         .assert_no_interference("pin", "clevis")
         .assert_no_interference("pin", "tang")
-        .assert_clearance("tang", "clevis", min_mm=0.3)
-        .assert_clearance("pin", "clevis", min_mm=0.2)
+        .assert_distance("tang", "clevis", min_mm=0.3)
+        .assert_distance("pin", "clevis", min_mm=0.2)
     )
 
 

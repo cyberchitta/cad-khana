@@ -70,46 +70,22 @@ def test_no_interference_custom_name_is_respected():
     assert evaluate(a)[0].name == "custom_rule"
 
 
-def test_clearance_passes_when_gap_exceeds_min():
-    a = (
-        Assembly()
-        .with_part("a", _cube())
-        .with_part("b", _cube(), location=Location((20, 0, 0)))
-        .assert_clearance("a", "b", min_mm=5)
-    )
-    result = evaluate(a)[0]
-    assert result.passed
-    assert result.detail is None
-
-
-def test_clearance_fails_when_gap_below_min():
-    a = (
-        Assembly()
-        .with_part("a", _cube())
-        .with_part("b", _cube(), location=Location((12, 0, 0)))
-        .assert_clearance("a", "b", min_mm=5)
-    )
-    result = evaluate(a)[0]
-    assert not result.passed
-    assert "clearance" in result.detail.lower()
-
-
-def test_clearance_fails_when_parts_touch():
+def test_distance_min_fails_when_parts_touch():
     a = (
         Assembly()
         .with_part("a", _cube())
         .with_part("b", _cube(), location=Location((10, 0, 0)))
-        .assert_clearance("a", "b", min_mm=0.2)
+        .assert_distance("a", "b", min_mm=0.2)
     )
     assert not evaluate(a)[0].passed
 
 
-def test_clearance_fails_when_parts_interfere():
+def test_distance_min_fails_when_parts_interfere():
     a = (
         Assembly()
         .with_part("a", _cube())
         .with_part("b", _cube(), location=Location((5, 0, 0)))
-        .assert_clearance("a", "b", min_mm=0.2)
+        .assert_distance("a", "b", min_mm=0.2)
     )
     assert not evaluate(a)[0].passed
 
@@ -218,7 +194,7 @@ def test_multiple_assertions_all_evaluated_in_order():
         .with_part("a", _cube())
         .with_part("b", _cube(), location=Location((20, 0, 0)))
         .assert_no_interference("a", "b", name="first")
-        .assert_clearance("a", "b", min_mm=5, name="second")
+        .assert_distance("a", "b", min_mm=5, name="second")
     )
     results = evaluate(a)
     assert [r.name for r in results] == ["first", "second"]
@@ -231,7 +207,7 @@ def test_failures_and_passes_coexist():
         .with_part("a", _cube())
         .with_part("b", _cube(), location=Location((5, 0, 0)))
         .assert_no_interference("a", "b")
-        .assert_clearance("a", "b", min_mm=0.2)
+        .assert_distance("a", "b", min_mm=0.2)
     )
     results = evaluate(a)
     assert len(results) == 2
@@ -263,12 +239,6 @@ def test_evaluated_assertions_carry_no_skip_class():
     assert failed.skipped is None and passed.skipped is None
 
 
-def test_clearance_against_absent_part_is_skipped():
-    a = Assembly().with_part("a", _cube()).assert_clearance("a", "bolt", min_mm=0.2)
-    (result,) = evaluate(a)
-    assert result.passed is None
-
-
 def test_expected_interference_against_absent_part_is_skipped():
     a = Assembly().with_part("a", _cube()).assert_interference("a", "bolt")
     (result,) = evaluate(a)
@@ -276,7 +246,7 @@ def test_expected_interference_against_absent_part_is_skipped():
 
 
 def test_skip_detail_names_every_missing_part():
-    a = Assembly().with_part("a", _cube()).assert_clearance("bolt", "nut", min_mm=1)
+    a = Assembly().with_part("a", _cube()).assert_distance("bolt", "nut", min_mm=1)
     (result,) = evaluate(a)
     assert "bolt" in result.detail and "nut" in result.detail
 
@@ -287,7 +257,7 @@ def test_skipped_and_failed_assertions_coexist():
         .with_part("a", _cube())
         .with_part("b", _cube(), location=Location((5, 0, 0)))
         .assert_no_interference("a", "b", name="real_failure")
-        .assert_clearance("a", "bolt", min_mm=0.2, name="detail_only")
+        .assert_distance("a", "bolt", min_mm=0.2, name="detail_only")
     )
     by_name = {r.name: r for r in evaluate(a)}
     assert by_name["real_failure"].passed is False
@@ -778,12 +748,12 @@ def test_subassembly_assertions_evaluate_qualified_in_composed_run():
         Assembly()
         .with_part("a", _cube())
         .with_part("b", _cube(), location=Location((20, 0, 0)))
-        .assert_clearance("a", "b", min_mm=5)
+        .assert_distance("a", "b", min_mm=5)
     )
     top = Assembly().with_subassembly("u", unit, location=Location((0, 0, 50)))
     (result,) = evaluate(top)
     assert result.passed
-    assert result.name == "u.clearance:a/b>=5"
+    assert result.name == "u.distance:a/b>=5"
 
 
 def test_subassembly_plane_target_tracks_placement():
@@ -838,7 +808,7 @@ def test_subassembly_detail_only_assertion_skips_when_composed():
     unit = (
         Assembly()
         .with_part("a", _cube())
-        .assert_clearance("a", "bolt", min_mm=0.2)
+        .assert_distance("a", "bolt", min_mm=0.2)
     )
     top = Assembly().with_subassembly("u", unit)
     (result,) = evaluate(top)
@@ -880,17 +850,6 @@ def test_distance_max_bound_tolerates_solver_noise():
         .with_part("gear", _cube())
         .with_part("pinion", _cube(), location=Location((10.2, 0, 0)))
         .assert_distance("gear", "pinion", max_mm=0.2 - 1e-9)
-    )
-    (result,) = evaluate(a)
-    assert result.passed
-
-
-def test_clearance_bound_tolerates_solver_noise():
-    a = (
-        Assembly()
-        .with_part("a", _cube())
-        .with_part("b", _cube(), location=Location((20, 0, 0)))
-        .assert_clearance("a", "b", min_mm=10 + 1e-9)
     )
     (result,) = evaluate(a)
     assert result.passed
@@ -1020,7 +979,7 @@ def test_phased_requirement_holds_inside_its_window():
 
 
 def test_phased_requirement_skips_on_an_absent_joint():
-    a = _swung(0).assert_clearance(
+    a = _swung(0).assert_distance(
         "post", "swing.arm", min_mm=1, during=JointWindow("nope", 0, 10)
     )
     (result,) = evaluate(a)

@@ -120,7 +120,7 @@ def test_check_collects_all_assertion_failures(tmp_path: Path):
         .with_part("a", _cube())
         .with_part("b", _cube(), location=Location((5, 0, 0)))
         .assert_no_interference("a", "b", name="first")
-        .assert_clearance("a", "b", min_mm=0.2, name="second")
+        .assert_distance("a", "b", min_mm=0.2, name="second")
     )
     with pytest.raises(SystemExit):
         check(assembly, out=tmp_path)
@@ -136,7 +136,7 @@ def test_check_failure_prints_summary_to_stderr(tmp_path: Path, capsys):
         .with_part("a", _cube())
         .with_part("b", _cube(), location=Location((5, 0, 0)))
         .assert_no_interference("a", "b", name="first")
-        .assert_clearance("a", "b", min_mm=0.2, name="second")
+        .assert_distance("a", "b", min_mm=0.2, name="second")
     )
     with pytest.raises(SystemExit):
         check(assembly, out=tmp_path)
@@ -150,7 +150,7 @@ def test_check_skipped_assertion_does_not_fail_the_run(tmp_path: Path):
     assembly = (
         Assembly()
         .with_part("a", _cube())
-        .assert_clearance("a", "bolt", min_mm=0.2, name="detail_only")
+        .assert_distance("a", "bolt", min_mm=0.2, name="detail_only")
     )
     result = check(assembly, out=tmp_path)
     assert result.diagnostics.status == "ok"
@@ -183,7 +183,7 @@ def test_check_skipped_alongside_failure_still_fails(tmp_path: Path):
         .with_part("a", _cube())
         .with_part("b", _cube(), location=Location((5, 0, 0)))
         .assert_no_interference("a", "b", name="real")
-        .assert_clearance("a", "bolt", min_mm=0.2, name="detail_only")
+        .assert_distance("a", "bolt", min_mm=0.2, name="detail_only")
     )
     with pytest.raises(SystemExit):
         check(assembly, out=tmp_path)

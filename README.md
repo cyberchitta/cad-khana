@@ -175,7 +175,7 @@ def build_mechanism(lift_mm: float = 12.0) -> Assembly:
         .with_part("housing", housing(), location=Location((0, 0, 0)))
         .with_part("lever",   lever(),   location=Location((0, 0, lift_mm)))
         .assert_no_interference("lever", "housing")
-        .assert_clearance("lever", "housing", min_mm=0.2)
+        .assert_distance("lever", "housing", min_mm=0.2)
     )
 
 

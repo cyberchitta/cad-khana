@@ -81,12 +81,12 @@ def test_assertion_regression_shows_detail():
     old = _empty_mech() | {"assertions": [{"name": "clr", "passed": True, "detail": None}]}
     new = _empty_mech() | {
         "assertions": [
-            {"name": "clr", "passed": False, "detail": "clearance 0.1mm below min 0.2mm"}
+            {"name": "clr", "passed": False, "detail": "distance 0.1mm below min 0.2mm"}
         ]
     }
     out = diff(old, new)
     assert "regressed: clr" in out
-    assert "clearance 0.1mm" in out
+    assert "distance 0.1mm" in out
 
 
 def test_assertion_fix_is_reported():

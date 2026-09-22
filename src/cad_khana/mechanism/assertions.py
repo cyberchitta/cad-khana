@@ -127,36 +127,6 @@ class NoInterference:
 
 
 @dataclass(frozen=True)
-class Clearance:
-    a: str
-    b: str
-    min_mm: float
-    name: str
-
-    @property
-    def part_refs(self) -> tuple[str, ...]:
-        return (self.a, self.b)
-
-    def qualified(self, prefix: str, location: Location) -> "Clearance":
-        return replace(
-            self,
-            a=f"{prefix}.{self.a}",
-            b=f"{prefix}.{self.b}",
-            name=f"{prefix}.{self.name}",
-        )
-
-    def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
-        dist = parts[self.a].distance_to(parts[self.b])
-        passed = dist >= self.min_mm - BOUND_EPSILON
-        detail = (
-            None
-            if passed
-            else f"clearance {dist:.4f}mm below min {self.min_mm}mm"
-        )
-        return AssertionResult(self.name, passed, detail)
-
-
-@dataclass(frozen=True)
 class TangentContact:
     """Assert ``a`` and ``b`` touch: surface gap ≤ ``tol_mm`` and no
     real overlap (intersection volume ≤ epsilon). The required-contact
@@ -533,7 +503,6 @@ class AnchorsCoincident:
 
 PartAssertion = (
     NoInterference
-    | Clearance
     | TangentContact
     | AllowedContact
     | ExpectedInterference
@@ -548,8 +517,8 @@ class Phased:
     ``during=`` on each ``assert_*`` wraps the claim in this.
 
     Outside the phase a claim says nothing, and what "nothing" means
-    follows from its kind. A *requirement* (no-interference, clearance,
-    distance, tangent contact, expected interference) lapses —
+    follows from its kind. A *requirement* (no-interference, distance, tangent
+    contact, expected interference) lapses —
     ``passed: null``, skip class ``out_of_phase``. A *permission*
     (``AllowedContact``) lapses to the default it was an exception to,
     no contact — unless another contact claim on the same pair is in

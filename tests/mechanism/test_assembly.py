@@ -78,9 +78,9 @@ def test_assert_no_interference_returns_new_assembly():
     assert len(extended.assertions) == 1
 
 
-def test_assert_clearance_returns_new_assembly():
+def test_assert_distance_returns_new_assembly():
     original = Assembly()
-    extended = original.assert_clearance("a", "b", min_mm=0.2)
+    extended = original.assert_distance("a", "b", min_mm=0.2)
     assert original.assertions == ()
     assert len(extended.assertions) == 1
 
@@ -96,7 +96,7 @@ def test_chained_assertions_preserve_order():
     assembly = (
         Assembly()
         .assert_no_interference("a", "b", name="first")
-        .assert_clearance("a", "b", min_mm=0.2, name="second")
+        .assert_distance("a", "b", min_mm=0.2, name="second")
     )
     assert [a.name for a in assembly.assertions] == ["first", "second"]
 

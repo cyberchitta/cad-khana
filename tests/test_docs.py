@@ -48,7 +48,6 @@ def _pair() -> Assembly:
 # which is what makes the value enumeration below complete.
 CLAIMS = {
     "assert_no_interference": lambda x: x.assert_no_interference("a", "b"),
-    "assert_clearance": lambda x: x.assert_clearance("a", "b", min_mm=0.1),
     "assert_distance": lambda x: x.assert_distance("a", "b", min_mm=0.0),
     "assert_scalar": lambda x: x.assert_scalar("s", 1.0),
     "assert_solid_count": lambda x: x.assert_solid_count("a"),

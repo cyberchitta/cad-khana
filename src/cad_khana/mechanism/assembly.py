@@ -21,7 +21,6 @@ from cad_khana.mechanism.assertions import (
     AllowedContact,
     AnchorsCoincident,
     Assertion,
-    Clearance,
     Distance,
     ExpectedInterference,
     JointWindow,
@@ -659,24 +658,6 @@ class Assembly:
             a=a,
             b=b,
             name=name or f"no_interference:{a}/{b}{_phase_label(during)}",
-        )
-        return self._asserting(assertion, during)
-
-    def assert_clearance(
-        self,
-        a: str,
-        b: str,
-        min_mm: float,
-        name: str | None = None,
-        *,
-        during: During = None,
-    ) -> "Assembly":
-        assertion = Clearance(
-            a=a,
-            b=b,
-            min_mm=min_mm,
-            name=name
-            or f"clearance:{a}/{b}>={min_mm}{_phase_label(during)}",
         )
         return self._asserting(assertion, during)
 

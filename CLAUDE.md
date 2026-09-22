@@ -92,7 +92,7 @@ cad-khana/
     cad_khana/                # PEP 420 namespace package, no __init__.py
       mechanism/
         assembly.py           # Assembly class: named parts + locations
-        assertions.py         # NoInterference, Clearance + evaluate()
+        assertions.py         # NoInterference, Distance, … + evaluate()
         diagnostics.py        # bbox, volume, interferences
         motion.py             # Motion: a schedule of poses, declared as data
         hold.py               # held evaluation: assertions over every motion
@@ -158,7 +158,7 @@ def build_mechanism(lift_mm: float = 12.0) -> Assembly:
         .with_part("housing", housing(), location=Location((0, 0, 0)))
         .with_part("lever",   lever(),   location=Location((0, 0, lift_mm)))
         .assert_no_interference("lever", "housing")
-        .assert_clearance("lever", "housing", min_mm=0.2)
+        .assert_distance("lever", "housing", min_mm=0.2)
     )
 
 

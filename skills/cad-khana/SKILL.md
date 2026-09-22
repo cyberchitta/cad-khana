@@ -322,7 +322,7 @@ free.
    asserting a pair that will never collide is one line; the cost of
    *not* asserting a pair that silently overlaps is a printed part
    you can't assemble. Default to over-asserting.
-4. **Add `assert_clearance(a, b, min_mm=…)` between every pair of
+4. **Add `assert_distance(a, b, min_mm=…)` between every pair of
    parts that move relative to each other.** Pick a real number
    (≥ 0.2 mm for FDM at 0.4 mm nozzle) — not a placeholder you mean
    to revisit.
@@ -367,7 +367,7 @@ def build_mount(pin_gap: float = PIN_GAP) -> Assembly:
         .with_part("bracket", bracket())
         .with_part("pin", pin(), location=Location((0, 0, pin_z)) * Rot(90, 0, 0))
         .assert_no_interference("pin", "bracket")
-        .assert_clearance("pin", "bracket", min_mm=pin_gap * 0.9)
+        .assert_distance("pin", "bracket", min_mm=pin_gap * 0.9)
     )
 
 # 4. degenerate memoized master, so `khana check <file>` resolves
@@ -589,7 +589,6 @@ JSON stale from a previous run while it still reads as current.
 | Assertion | Checks |
 |---|---|
 | `.assert_no_interference(a, b)` | Parts `a` and `b` don't overlap (intersection volume ≤ 0.001 mm³). |
-| `.assert_clearance(a, b, min_mm=…)` | Minimum distance between `a` and `b` is at least `min_mm`. |
 | `.assert_distance(a, b, min_mm=…, max_mm=…)` | Bounded distance from part `a` to part `b` **or a datum `Plane`**. Either bound alone, or both for "close but not touching" (a gear mesh). See below for `along=` and `grow_*_mm`. |
 | `.assert_scalar(name, value, ge=…, le=…)` | A named claim about a non-geometric scalar (friction budget, torque margin). No bounds = pure recorder. |
 | `.assert_tangent_contact(a, b, tol_mm=…)` | Parts `a` and `b` **touch**: surface gap ≤ `tol_mm` (default 1e-3, noise allowance — not a design gap) and no real overlap. A gap fails, an overlap fails. See below. |
@@ -787,8 +786,8 @@ a tuple that must *all* hold (a claim true only "with the platform
 level **and** the arm down" is two joints). What "outside the window"
 means follows from the kind of claim:
 
-- A **requirement** (`assert_no_interference`, `assert_clearance`,
-  `assert_distance`, `assert_tangent_contact`, `assert_interference`)
+- A **requirement** (`assert_no_interference`, `assert_distance`,
+  `assert_tangent_contact`, `assert_interference`)
   **lapses**: `passed: null`, `skipped: "out_of_phase"`. Use it for a
   claim that is only meant at rest — without `during=`, a claim held
   over a motion is a claim about *every* pose of it.
@@ -817,7 +816,7 @@ every nested assertion with part/anchor paths, names, and datum-plane
 targets qualified into its frame (a plane declared in a unit's local
 frame moves with the unit's placement and joint). Declare each claim
 once, at the sub-assembly that owns it — standalone runs evaluate it
-directly, composed runs evaluate the qualified form (`u.clearance:a/b>=5`),
+directly, composed runs evaluate the qualified form (`u.distance:a/b>=5`),
 and assertions against detail-only parts skip (`passed: null`) in runs
 that lack them. Don't mirror an assertion at both levels; that just
 evaluates it twice under two names.
@@ -1394,10 +1393,8 @@ the model to fix, not to waive. Only a low alignment supports a
   mm for `assert_tangent_contact`, the overlap in mm³ for
   `assert_allowed_contact`, the count for `assert_solid_count`. It is
   `null` for the boolean-only kinds — `assert_no_interference`,
-  `assert_clearance`, `assert_interference` and
-  `assert_anchors_coincident` record **no measurement**, only a verdict, so a clearance that is quietly closing
-  toward its bound is invisible until it crosses. Use
-  `assert_distance(min_mm=…)` instead where the trend matters.
+  `assert_interference` and `assert_anchors_coincident` record **no
+  measurement**, only a verdict.
   Held over a motion, `value` and `detail` are the **worst pose's**
   (least slack to the claim's own bound; for a kind with no measured
   value, the first failing pose — the onset).
@@ -1534,8 +1531,8 @@ cannot rot into folklore.
 - **Interference check is O(n²)** over parts. Fine up to ~20 parts.
 - **Tangent contact reads as zero clearance.** Two parts sharing a face
   (e.g., a lid sitting on a rim) have `distance_to == 0`, which fails
-  `assert_clearance` by definition. Use `assert_no_interference` when
-  parts are meant to touch.
+  any `assert_distance(min_mm=…)` above zero by definition. Use
+  `assert_no_interference` when parts are meant to touch.
 
 ## Workflow
 

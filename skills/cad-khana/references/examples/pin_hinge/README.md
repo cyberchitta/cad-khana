@@ -38,8 +38,8 @@ here: this mechanism is one unit. SKILL.md describes it.
   the tolerated *degenerate* form that lets `khana check <file>` resolve
   without a `:factory`.
 - **Assertions as first-class claims.** `assert_no_interference` on all
-  three pairs; `assert_clearance` for the tang's swing room and the pin's
-  radial play.
+  three pairs; `assert_distance(min_mm=…)` for the tang's swing room and
+  the pin's radial play.
 - **A waiver with a reason.** Both printed parts trip `overhang_max` at
   90° — the crown of the horizontal pivot bore, which is real geometry.
   It is waived with a rationale that cites the bore span it depends on,
