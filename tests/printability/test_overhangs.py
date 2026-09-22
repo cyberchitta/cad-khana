@@ -53,6 +53,7 @@ def test_threshold_does_not_erase_the_measurement():
     overhang = detect_overhang(part, angle_threshold_deg=95.0)
     assert overhang is not None
     assert overhang.area_mm2 == 0.0
+    assert isinstance(overhang.area_mm2, float)  # the JSON reads 0.0, not 0
     assert overhang.max_angle_deg == approx(90.0, abs=0.01)
 
 

@@ -62,7 +62,9 @@ def detect_overhang(
     )
     return (
         Overhang(
-            area_mm2=sum(a for a, ang in facing_down if ang > angle_threshold_deg),
+            area_mm2=sum(
+                (a for a, ang in facing_down if ang > angle_threshold_deg), 0.0
+            ),
             max_angle_deg=max(ang for _, ang in facing_down),
         )
         if facing_down
