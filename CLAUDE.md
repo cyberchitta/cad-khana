@@ -380,7 +380,10 @@ the thin direction and the flat face opposite has no centroid beneath
 it. Those creases are found in the mesh and cast a fan of rays between
 their two facets' inward normals, at the angular tolerance — what a
 fillet there would have cast, in the limit of zero radius. It is a
-sampling change, not a filter: it can only add readings. Rays are rejected only on geometric grounds — **never** by
+sampling change, not a filter: it can only add readings. A crease ray has
+no entry face, so it does not meet perpendicular; its alignment still
+reads like a facet ray's, because the fan's shortest span meets the face
+opposite most squarely. Rays are rejected only on geometric grounds — **never** by
 magnitude, and there is no quantile or robustness statistic, because
 hiding a genuine thin region is a worse failure than reporting a wedge
 tip.

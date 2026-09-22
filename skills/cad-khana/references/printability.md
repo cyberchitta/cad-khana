@@ -74,8 +74,13 @@ Three properties follow, and all three are deliberate:
   grazed corner yields an arbitrarily short one — an unrelated 20×6 mm
   plate clipped at 75° reported 0.09 mm. Counting only the originating
   span costs no coverage, because every face is sampled from its own
-  facets. It is also what lets `min_wall_alignment` decide a waiver on
-  its own: the entry angle is fixed at -1, so only the exit is in doubt.
+  facets. It is also what makes `min_wall_alignment` readable on its
+  own: the entry angle is fixed at -1, so only the exit is in doubt. A
+  crease ray starts on an edge, which has no entry angle, but the
+  shortest span in its fan is the one meeting the face opposite most
+  squarely, so it reads the same way — a 90° groove leaving a 0.5 mm web
+  reads 0.5 at alignment 0.99–1.0 with the floor opposite level or
+  tilted up to 60°.
 
 ### What it gets right
 
@@ -120,10 +125,12 @@ Three properties follow, and all three are deliberate:
 
 Use `min_wall_mm` as a floor, not a ceiling: if it reports 0.4 mm on a
 part you think has 2 mm walls, investigate — and read
-`min_wall_alignment` first, since it decides whether "investigate"
-means *fix the model* (alignment near 1.0: two parallel faces really
-are that close) or *accept a feature tip* (low alignment). If it
-reports 2 mm on a part with a hidden diagonal pinch, it may still be
+`min_wall_alignment` first, since it says what you are looking for:
+near 1.0, two parallel faces really are that close, a sliver to fix;
+low, the tip of a wedge. It does not say whether the wedge matters. Two
+faces meeting at 48° is an ordinary edge; a wall that runs out to a
+knife edge over its whole height is a feathered fin. Both read low. Look at the witness point before waiving. If
+it reports 2 mm on a part with a hidden diagonal pinch, it may still be
 wrong.
 
 ## Overhangs

@@ -34,10 +34,17 @@ class WallSample:
     wedge-shaped feature rather than a wall — real material, but not a wall
     thickness. It is reported, never filtered.
 
-    It characterises the reading on its own because the entry alignment is
-    -1 by construction: a sample only ever spans the facet its ray was cast
-    for (see `_wall_span`), or starts at a crease along a direction the
-    crease's own normals span (see `_crease_samples`).
+    On a facet ray the entry alignment is -1 by construction — a sample
+    only ever spans the facet its ray was cast for (see `_wall_span`) — so
+    the exit alone gives the angle between the two faces. A crease ray
+    starts on an edge or point, which has no single normal, but the shortest
+    span in its fan (see `_crease_samples`) is the one that meets the face
+    opposite most squarely, so it reads the same way: a web under a groove
+    is near 1.0.
+
+    It locates the reading; it does not decide a waiver. A wedge tip can be
+    an ordinary printed corner or a feathered fin running the height of a
+    wall — only the witness tells which.
     """
 
     thickness_mm: float
