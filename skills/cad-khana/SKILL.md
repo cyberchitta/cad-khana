@@ -895,7 +895,10 @@ contact pair is never skipped: that contradiction is yours to see.
 
 Expanded assertions are the plain single-pair forms with their usual
 auto-names, so migrating a hand-written loop to a group call leaves
-`mechanism.json` unchanged.
+`mechanism.json` unchanged — provided the loop wrote each pair in the
+order the group emits it (`_between`: `group_a` side first; `_within`:
+list order; a subtree path: sorted). A name is `no_interference:a/b`, so
+a reversed pair renames the claim and `khana diff` reports it.
 
 ### Named interface anchors
 

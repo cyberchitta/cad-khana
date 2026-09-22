@@ -139,11 +139,19 @@ overhang_angle = asin(max(0, -N · u))
 ```
 
 A vertical wall gives 0°, a horizontal downward-facing ceiling gives
-90°. Triangles with `overhang_angle > FDM.overhang_max_deg` (default
-45°) are candidates. The build-plate face — triangles whose centroid
-lies on the minimum-`u` plane and whose normal points straight along
-`-u` — is filtered out before reporting. Per part, the diagnostic
-reports total flagged area and the maximum overhang angle observed.
+90°. Two kinds of triangle are dropped first: the build-plate face —
+triangles whose centroid lies on the minimum-`u` plane and whose normal
+points straight along `-u` — and triangles within
+`FACING_DOWN_EPSILON_DEG` (1e-6°) of vertical, which is solver noise on
+a wall (a tessellated cylinder reads ~1e-16°), not a face pointing
+down. Over what remains, the diagnostic reports `max_angle_deg`, the
+steepest downward-facing triangle **whatever the threshold**, and
+`area_mm2`, the area of triangles with `overhang_angle >
+FDM.overhang_max_deg` (default 45°) — `0.0` when none are. The
+threshold decides the pass and which area counts, never whether the
+reading exists: raising it to 90° leaves a ceiling reading
+`max_angle_deg: 90.0` with no area. The block is `null` only when no
+triangle faces down at all.
 
 ### What it gets right
 
