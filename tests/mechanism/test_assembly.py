@@ -616,6 +616,37 @@ def test_known_overlap_overrides_the_allowed_contact_skip():
     ]
 
 
+def test_group_list_expands_a_subtree_entry_in_place():
+    sub = Assembly().with_part("z_part", _cube()).with_part("a_part", _cube())
+    top = (
+        Assembly()
+        .with_part("first", _cube(), location=Location((0, 0, 40)))
+        .with_part("last", _cube(), location=Location((0, 0, 80)))
+        .with_subassembly("unit", sub)
+    )
+    grouped = top.assert_no_interference_within(("first", "unit", "last"))
+    assert [a.name for a in grouped.assertions] == [
+        "no_interference:first/unit.a_part",
+        "no_interference:first/unit.z_part",
+        "no_interference:first/last",
+        "no_interference:unit.a_part/unit.z_part",
+        "no_interference:unit.a_part/last",
+        "no_interference:unit.z_part/last",
+    ]
+
+
+def test_group_list_subtree_entry_catches_the_overlap():
+    probe = Assembly().with_part("trap", _cube())
+    top = (
+        Assembly()
+        .with_part("probe", _cube())
+        .with_subassembly("rotating", probe)
+        .assert_no_interference_between(("probe",), ("rotating",))
+    )
+    (result,) = evaluate(top)
+    assert (result.passed, result.skipped) == (False, None)
+
+
 def test_group_path_missing_raises_keyerror():
     top = Assembly().with_subassembly("unit", Assembly())
     with pytest.raises(KeyError):

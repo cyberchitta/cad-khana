@@ -636,6 +636,17 @@ class Assembly:
             )
         return names
 
+    def _all_subassembly_paths(self) -> set[str]:
+        """Qualified tree paths of every sub-assembly in the tree."""
+        return {
+            path
+            for s in self.subassemblies
+            for path in (
+                s.name,
+                *(f"{s.name}.{n}" for n in s.assembly._all_subassembly_paths()),
+            )
+        }
+
     def _asserting(self, assertion: Assertion, during: During) -> "Assembly":
         return replace(
             self, assertions=self.assertions + (_phased(assertion, during),)
@@ -909,7 +920,10 @@ class Assembly:
         sub-assembly path and resolves to every part under that subtree,
         as qualified paths from *this* assembly's root (sorted, for
         deterministic expansion order); any other iterable is taken as
-        explicit part paths in the given order."""
+        part paths in the given order, with an entry that names a
+        sub-assembly expanded in place the same way. Left unexpanded,
+        that entry names no part, so its pairs skip as ``absent_part``
+        and a real overlap reads green."""
         if isinstance(group, str):
             sub = self._subassembly_at(group)
             return tuple(
@@ -917,7 +931,14 @@ class Assembly:
                     f"{group}.{n}" for n in sub.assembly._all_part_names()
                 )
             )
-        return tuple(group)
+        subtrees = self._all_subassembly_paths()
+        return tuple(
+            path
+            for entry in group
+            for path in (
+                self._resolve_group(entry) if entry in subtrees else (entry,)
+            )
+        )
 
     def assert_no_interference_between(
         self,
@@ -931,8 +952,9 @@ class Assembly:
         """Assert no interference for every cross pair ``(a, b)`` with
         ``a`` from ``group_a`` and ``b`` from ``group_b``.
 
-        Groups are explicit name iterables, or a dotted sub-assembly
-        path selecting every part under that subtree. Expansion is a
+        Groups are name iterables, or a dotted sub-assembly path
+        selecting every part under that subtree; a sub-assembly path
+        inside an iterable expands in place the same way. Expansion is a
         macro over the *current* group contents — parts added to a
         subtree afterwards are not covered.
 

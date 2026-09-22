@@ -862,7 +862,8 @@ double loop:
 A group is an iterable of part paths, or a **dotted sub-assembly path**
 (`"turret.rotor"`) selecting every part under that subtree — expanded
 to full paths from the asserting assembly's root
-(`"turret.rotor.arm.spider"`), sorted. Expansion is a macro over the
+(`"turret.rotor.arm.spider"`), sorted. The two mix: a sub-assembly
+path inside the iterable expands in place. Expansion is a macro over the
 current contents — parts added afterwards aren't covered, so declare
 group assertions after composition.
 
