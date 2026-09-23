@@ -1,7 +1,7 @@
 [project]
 name = "cad-khana"
 version = "0.2.0"
-description = "Claude Code skill and diagnostics-first Build123d wrapper for LLM-driven CAD iteration."
+description = "Agent skill and diagnostics-first Build123d wrapper for LLM-driven design of 3D-printable mechanisms."
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 license = "Apache-2.0"
