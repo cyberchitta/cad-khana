@@ -1,9 +1,14 @@
 """Schema facts documented for agents stay in step with the code.
 
-``SKILL.md`` §JSON diagnostics essentials is the single place field
-meanings are written down; ``CLAUDE.md`` carries only the schema version
-and the maintainer's delta. These tests derive each enumerable fact from
-the code and fail when the documentation omits one — the drift that
+Each fact has one home and is checked there, not in the skill's files
+concatenated — a fact mentioned in passing elsewhere must not satisfy a
+home that dropped it. Field meanings live in ``references/diagnostics.md``;
+every warning kind is named in ``SKILL.md`` itself, because a warning
+never fails a run and an agent that doesn't know the kind won't load a
+reference to find it; the claim catalogue lives in
+``references/assertions.md``. ``CLAUDE.md`` carries only the schema
+version and the maintainer's delta. These tests derive each enumerable
+fact from the code and fail when its home omits one — the drift that
 survived three schema bumps before ``55fab5a`` caught it by eye.
 """
 
@@ -20,7 +25,10 @@ from cad_khana.mechanism.diagnostics import SCHEMA_VERSION, SKIP_CLASSES
 
 ROOT = Path(__file__).parent.parent
 CLAUDE = (ROOT / "CLAUDE.md").read_text()
-SKILL = (ROOT / "skills/cad-khana/SKILL.md").read_text()
+SKILL_DIR = ROOT / "skills/cad-khana"
+SKILL = (SKILL_DIR / "SKILL.md").read_text()
+DIAGNOSTICS = (SKILL_DIR / "references/diagnostics.md").read_text()
+ASSERTIONS = (SKILL_DIR / "references/assertions.md").read_text()
 SRC = ROOT / "src/cad_khana"
 
 WARNING_KIND = re.compile(
@@ -74,8 +82,8 @@ def _records_value(method: str) -> bool:
 
 
 def _value_bullet() -> str:
-    start = SKILL.index("- `assertions` — one entry per declared assertion")
-    return SKILL[start : SKILL.index("\n- `", start + 1)]
+    start = DIAGNOSTICS.index("- `assertions` — one entry per declared assertion")
+    return DIAGNOSTICS[start : DIAGNOSTICS.index("\n- `", start + 1)]
 
 
 def _warning_kinds() -> set[str]:
@@ -94,8 +102,8 @@ def test_every_public_claim_method_is_exercised_here():
 
 
 @pytest.mark.parametrize("method", sorted(CLAIMS))
-def test_skill_documents_every_claim_method(method: str):
-    assert f"{method}(" in SKILL
+def test_assertions_reference_documents_every_claim_method(method: str):
+    assert f"{method}(" in ASSERTIONS
 
 
 @pytest.mark.parametrize("method", sorted(set(CLAIMS) - GROUP_FORMS))
@@ -103,7 +111,7 @@ def test_value_bullet_names_every_claim_kind_on_the_right_side(method: str):
     bullet = _value_bullet()
     boolean_only = bullet.index("`null` for the boolean-only kinds")
     at = bullet.find(f"`{method}`")
-    assert at != -1, f"{method} missing from SKILL.md's `value` bullet"
+    assert at != -1, f"{method} missing from diagnostics.md's `value` bullet"
     assert (at < boolean_only) == _records_value(method), (
         f"{method} is listed on the wrong side of the value/boolean split"
     )
@@ -120,15 +128,19 @@ def test_skill_documents_every_warning_kind(kind: str):
 
 
 @pytest.mark.parametrize("cls", SKIP_CLASSES)
-def test_skill_documents_every_skip_class(cls: str):
-    assert f'`"{cls}"`' in SKILL
+def test_diagnostics_reference_documents_every_skip_class(cls: str):
+    assert f'`"{cls}"`' in DIAGNOSTICS
 
 
 def test_warning_kinds_are_found_at_all():
     assert {"multi_solid", "stale_waiver", "motion_moved_nothing"} <= _warning_kinds()
 
 
-@pytest.mark.parametrize("doc", [CLAUDE, SKILL], ids=["CLAUDE.md", "SKILL.md"])
+@pytest.mark.parametrize(
+    "doc",
+    [CLAUDE, SKILL, DIAGNOSTICS],
+    ids=["CLAUDE.md", "SKILL.md", "diagnostics.md"],
+)
 def test_documented_schema_version_is_current(doc: str):
     stated = set(re.findall(r'"schema_version": "([\d.]+)"', doc)) | set(
         re.findall(r"schemas? \(v([\d.]+)\)", doc)

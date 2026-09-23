@@ -81,10 +81,19 @@ cad-khana/
   pyproject.toml              # uv-managed, entry point: khana = cad_khana.cli:main
   skills/
     cad-khana/
-      SKILL.md                # agent-facing instructions for using the tool
-      references/
+      SKILL.md                # the index: workflow, what a green does not
+                              # mean, every warning kind, reference triggers
+      references/             # loaded on the triggers SKILL.md names
+        cli.md                # targets, output paths, imports, viewer, families
+        style.md              # declaration-module layout, authoring conventions
+        assertions.md         # the claim catalogue, contact claims, during=, groups
+        composition.md        # tree paths, anchors, joints, sub-assembly frames
+        motion.md             # declared motions, sweeps, GLB export
+        printability.md       # inspect() usage + how wall/overhang are measured
+        diagnostics.md        # field meanings for both JSON files
+        drawings.md           # which view answers which question
+        build123d_quickref.md # selectors, algebraic vs Builder
         install.md            # one-shot install steps, linked from SKILL.md
-        printability.md       # design rules baked into printability checks
         standard_parts.md     # bd_warehouse contents and discovery
         examples/
           pin_hinge/          # canonical reference project (clevis-tang-pin)
@@ -116,7 +125,7 @@ cad-khana/
     mechanism/                # per-module tests for mechanism.*
     printability/             # per-module tests for printability.*
     test_cli.py, test_diff.py, test_target.py  # cross-cutting tests
-    test_docs.py              # SKILL.md schema facts derived from code
+    test_docs.py              # skill-doc schema facts derived from code
 ```
 
 **Discipline:** the library modules (`mechanism/*`, `printability/*`) have
@@ -227,13 +236,16 @@ full design, its phases, and what is still owed:
 
 Version these from day one. Agents depend on field stability.
 
-**What each field means is written once, in `skills/cad-khana/SKILL.md`
-§JSON diagnostics essentials** — the surface every consumer reads. This
-section holds only the shapes and the maintainer's delta: the contract,
-and why things are the way they are. `tests/test_docs.py` derives the
-enumerable facts from the code — the schema version, every warning
-kind, every skip class, which claim kinds carry `value` — and fails when
-SKILL.md omits one. **A schema change edits SKILL.md and bumps
+**What each field means is written once, in
+`skills/cad-khana/references/diagnostics.md`** — except the warning
+kinds, which `SKILL.md` names itself: a warning never fails a run, so an
+agent that doesn't already know a kind won't load a reference to find
+it. This section holds only the shapes and the maintainer's delta: the
+contract, and why things are the way they are. `tests/test_docs.py`
+derives the enumerable facts from the code — the schema version, every
+warning kind, every skip class, which claim kinds carry `value` — and
+fails when the fact's home file omits one. **A schema change edits
+`diagnostics.md` (and `SKILL.md` for a warning kind) and bumps
 `SCHEMA_VERSION`**; restating a field meaning here is how the two drifted
 for three bumps.
 
@@ -597,9 +609,11 @@ triaging. What is cad-khana-specific is where a promoted fix lands:
 - `src/cad_khana/cli.py` — flag changes, default `--out` resolution,
   or new subcommands. Keep logic in the library; the CLI stays a thin
   dispatcher.
-- `skills/cad-khana/SKILL.md` body — conventions consumers should
+- `skills/cad-khana/references/*.md` — conventions consumers should
   follow when authoring scripts (parameter layout, naming, coordinate
-  frames, multi-sub-assembly composition).
+  frames, multi-sub-assembly composition), in the file whose trigger
+  covers the task. The `SKILL.md` index only for what a missed load
+  would turn into a silent green.
 - `_notes/NOTES.md` — design rationale (why a default exists, a trade-off
   taken, an open question).
 - `_notes/research/ideas.md` — the prioritized idea backlog distilled from

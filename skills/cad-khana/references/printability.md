@@ -1,13 +1,92 @@
-# Printability diagnostics
+# Printability
 
-How `cad_khana` computes wall thickness and overhangs, and where these
+Load before writing an `inspect()` call, a waiver, or reading a
+`<name>-printability.json`. The first part is how to use it; the rest
+is how wall thickness and overhangs are computed, and where these
 approximations break down. Keep this honest — false confidence from a
 bad diagnostic is worse than no diagnostic.
 
-Entry point: `inspect(part, method=FDM(), out="outputs", name=…)` from
-`cad_khana.printability.inspect`. The `FDM` method object carries the
-wall-thickness floor, overhang threshold, and print `up_axis`; see
-`cad_khana.printability.methods`.
+## Using `inspect(part, method=…)`
+
+The method object carries manufacturing parameters. Today only
+`FDM` exists:
+
+```python
+from cad_khana.printability.methods import FDM
+
+FDM(
+    up_axis=(0, 0, 1),     # part-local "up" direction during printing
+    wall_min_mm=1.5,       # fail if a wall is thinner than this
+    overhang_max_deg=45.0, # fail if a face overhangs past this
+)
+```
+
+**Why these defaults.** Tuned for the common case — 0.4 mm nozzle,
+PLA, default cooling — so a script with no overrides reflects real
+printability constraints rather than placeholders:
+
+- `wall_min_mm=1.5` ≈ three perimeter widths at a 0.4 mm nozzle. Thinner
+  walls slice as one or two perimeters with no infill room, which
+  under-extrude into single-ribbon walls or fail to bond. Bump up for a
+  0.6 mm nozzle (≈ 2.0 mm) or rigid load-bearing parts; bump down only
+  after a printed test wall confirms the slicer/printer combo holds
+  together at the new floor.
+- `overhang_max_deg=45.0` is the long-standing PLA-with-cooling rule of
+  thumb — steeper faces need support or active bridging. Materials with
+  weaker cooling (ABS, PETG without a part fan) want a tighter threshold
+  (35–40°); ASA / a well-cooled PLA / a slicer with aggressive overhang
+  modifiers can go to 50–55°. Adjust intentionally per material, don't
+  default-loosen to silence the check — waive instead (below), so the
+  threshold keeps catching real overhangs.
+
+`inspect(part, method=FDM(), out="outputs", name="bracket")` writes
+`outputs/bracket-printability.json` and fails the run on an unwaived
+failure — under `khana` at the end of the script, standalone
+immediately (see `assertions.md`). Each call is
+independent — pass a different `name=` per printed part.
+
+**`inspect()` calls live in a command script**, conventionally
+`printability.py` beside the unit's `assembly.py`, run with `khana
+run`. They are per-part and per-method, so they are a batch rather
+than a claim on the assembly, and no verb evaluates them. A green
+`khana check` says nothing about printability — which is exactly why
+that script's docstring must say so.
+
+**Waiving a known-benign failure.** When a check fails for a reason
+you've verified is an artifact or an accepted trade-off (a sharp-edge
+sampling artifact, a 90° ceiling you'll print with supports), waive it
+with the rationale inline instead of loosening the threshold or
+wrapping the call in `try/except SystemExit` — under the CLI that
+`except` no longer fires at all, so it silently becomes dead code while
+the failure still counts against the run:
+
+```python
+inspect(
+    rotor(), method=FDM(), out="outputs", name="rotor",
+    waive={
+        "wall_min": "knife-edge runout at the star ridge — min_wall_at "
+                    "(87.2, -42.3, 21.0) with alignment 0.31 puts it at a "
+                    "wedge tip, not between parallel faces",
+        "overhang_max": "accepted 90° ceiling, printed with supports",
+    },
+)
+```
+
+Keys are assertion *kinds* (`"wall_min"`, `"overhang_max"` — no
+threshold suffix). A waived failure keeps `passed: false` in the JSON,
+records your reason in `waived`, adds a `waived_failure` entry to
+`warnings[]`, and doesn't fail the run; unwaived failures still exit 1.
+If the waived check starts passing, a `stale_waiver` warning tells you
+to delete the waiver — don't leave waivers that no longer waive
+anything. Cite evidence in the reason (`min_wall_at` witness,
+`min_wall_alignment`, a print plan), not just an assertion that it's fine.
+
+**"Sampling artifact" is no longer a valid `wall_min` rationale on its
+own.** Wall readings now span material actually traversed, so a thin
+number is real material. Check `min_wall_alignment` before waiving: near
+`1.0` means two near-parallel faces genuinely that close — a sliver in
+the model to fix, not to waive. Only a low alignment supports a
+"geometry is fine, the metric isn't measuring a wall here" waiver.
 
 ## Minimum wall thickness
 

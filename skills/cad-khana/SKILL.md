@@ -1,6 +1,6 @@
 ---
 name: cad-khana
-description: Diagnostics-first CAD wrapper around Build123d: assembly-level interference/clearance assertions plus optional per-part printability checks. Load BEFORE editing an `assembly.py` that uses the wrapper or interpreting its diagnostic JSON — SKILL.md has conventions the scripts rely on but don't restate, including which of three file kinds you are editing. TRIGGER: about to run `khana check`/`export`/`view`/`draw`/`run`, or editing a file that imports `cad_khana` or calls `Assembly()`/`check()`/`inspect()`.
+description: Diagnostics-first CAD wrapper around Build123d: assembly-level interference/clearance assertions plus optional per-part printability checks. Load BEFORE editing an `assembly.py` that uses the wrapper or interpreting its diagnostic JSON — SKILL.md has conventions the scripts rely on but don't restate, including which of three file kinds you are editing, and names the reference file to load for each task. TRIGGER: about to run `khana check`/`export`/`view`/`draw`/`run`, or editing a file that imports `cad_khana` or calls `Assembly()`/`check()`/`inspect()`.
 ---
 
 # cad-khana
@@ -71,110 +71,14 @@ from `khana export`, and the two read the *same* file, so there is no
 toggle to get wrong and no way for check-only geometry to reach an
 export.
 
-### Targets: `<module-path>[:<factory>]`
-
-```
-khana check unit/assembly.py                 # the `assembly` member
-khana check unit/assembly.py:build_rotor     # a named factory, called with defaults
-```
-
-Member resolution, in order:
-
-1. `:factory` given → that name, which must be callable, called with
-   **no arguments** — so a factory's defaults are the master design.
-2. No `:factory` → the name `assembly`: a callable is called; a bare
-   `Assembly` value is accepted as the **degenerate** form.
-3. Neither → a usage error (exit 2) that **lists the module's public
-   `-> Assembly` factories**. Read that message rather than grepping —
-   it is the discovery mechanism, which is why the `-> Assembly` return
-   annotation is load-bearing.
-
-Binding arguments from the CLI is not supported: a factory is called
-with its defaults or not at all. A family with several members (three
-floor roles, twelve animation frames) is a command script today — see
-**Parametrized families**.
-
-### Where output lands
-
-**The target owns its default out**, so co-located targets never
-overwrite each other's `mechanism.json`:
-
-| target | writes to |
-|---|---|
-| `unit/assembly.py` | `unit/outputs/` |
-| `unit/check_cones.py` | `unit/outputs/check_cones/` |
-| `unit/assembly.py:build_lid` | `unit/outputs/assembly-build_lid/` |
-
-**`assembly` is a privileged *stem*, not "the unit's main file".** A
-plain unit check whose file happens to be called `single_floor.py`
-lands in `outputs/single_floor/`, not `outputs/`. If you are comparing
-against a baseline by path, look in the subdirectory before reading a
-missing file as a regression.
-
-An explicit `--out <dir>` overrides and is taken **cwd-relative**
-(you typed it). Inside a script under `khana run`, a relative `out=`
-passed to `check()` / `inspect()` anchors to the *script's* directory,
-so `out="outputs"` lands next to the script regardless of cwd.
-
 JSON diagnostics are always written, even on failure — read them to
 diagnose errors. Exit codes: **2** for a usage error (unresolvable
 target, unknown `--view`), **1** for a failed run.
 
-### Imports resolve as if you had run the file directly
-
-A **package member** (its directory and every ancestor up to the
-package root carry an `__init__.py`) loads with `python -m` semantics:
-the package root's parent goes on `sys.path` and relative imports
-(`from .params import …`, `from ..shared import …`) resolve. A
-**standalone** file gets its own directory on `sys.path`, so
-`from assembly import clevis` finds the sibling. Both hold for import
-verbs and for `khana run` alike, so a sub-assembly file can be both
-imported by its composing parent and addressed standalone with no
-`sys.path` bootstrapping of its own.
-
-One caveat for standalone files: they are cached in `sys.modules`
-under the **file stem**, so two different `assembly.py` files in one
-process resolve to whichever loaded first. Inside a package tree this
-cannot happen — another reason to use packages for anything with more
-than one unit.
-
-### Viewer: no editor required
-
-`khana view` calls `ocp_vscode.show(...)`, which pushes geometry over
-a local socket (default port 3939). The listener can be either the
-**OCP CAD Viewer** VS Code extension *or* the **standalone viewer
-server**, the separate `ocp-viewer` package:
-
-```
-uv run --with ocp-viewer python -m ocp_viewer   # listens on 3939; open http://localhost:3939/viewer
-uv run khana view assembly.py                   # pushes geometry to whichever listener is up
-```
-
-(`ocp-vscode` 4.1 moved the standalone viewer out into `ocp-viewer`;
-on 4.1+, `python -m ocp_vscode` only prints a "moved" notice. In an
-environment locked to `ocp-vscode` < 4.1, `uv run python -m
-ocp_vscode` is still the command.)
-
-So you can drive the full `view` loop from any editor (or none at
-all). For **Zed**, the pattern that matches the VS Code UX is a pair
-of workspace tasks in `.zed/tasks.json` — one to start the viewer
-server, one to push the current file to it:
-
-```json
-[
-  {
-    "label": "OCP viewer: start",
-    "command": "uv",
-    "args": ["run", "--with", "ocp-viewer", "python", "-m", "ocp_viewer"],
-    "cwd": "$ZED_WORKTREE_ROOT",
-    "allow_concurrent_runs": false
-  },
-  {
-    "label": "khana view (current file)",
-    "command": "cd \"$ZED_DIRNAME\" && uv run khana view \"$ZED_FILE\""
-  }
-]
-```
+A target is `<module-path>[:<factory>]`; with no `:factory` the verb
+uses the module's `assembly` member. How members resolve, where output
+lands, how imports resolve and how to run the viewer without VS Code:
+`references/cli.md`.
 
 ## The three file kinds
 
@@ -188,35 +92,10 @@ orchestrates.
 | **check module** | `check_*.py` | `khana check` | **never** |
 | **command script** | a descriptive noun — `printability.py`, `role_sweep.py` | `khana run` | never |
 
-### Declaration module
-
-Parameters, pure part functions, and **parameterized factories**
-returning `Assembly` with their claims attached. Calls nothing
-effectful. Four sections, in order:
-
-1. **Parameters + derived** — named constants at the top, so one change
-   propagates through everything.
-2. **Pure part functions** — each returns a `Part`. Take parameters with
-   defaults; no hidden globals, no mutation.
-3. **Factories** — `build_<name>(...) -> Assembly`, chaining
-   `.with_part()` / `.with_subassembly()` and `.assert_*()` calls.
-   Defaults are the master design.
-4. Optionally `assembly = build_<name>()` — the degenerate memoized
-   master, so `khana check <file>` resolves without a `:factory`.
-
-**The standalone composition is a factory too.** A unit usually has a
-composition that exists only *outside* a parent — the product subtree
-plus the stubs, press fits and group asserts that a parent would
-otherwise supply. Nothing imports it, so nothing pressures it into a
-name, and it silently becomes a run of module-level rebinds with
-real import-time effects. Give it one: `build_<unit>_standalone()`.
-
-**A declaration module binds `assembly` exactly once.** That is the
-invariant — not "avoid rebinding", which sounds like style. Sequential
-module-level bindings and a `for` loop appending asserts both defeat a
-`grep` for `x = x.`, and both mean the module's meaning depends on
-import-time statement order rather than on a factory you can call
-twice and get the same answer from.
+What goes in a declaration module, in order, is in
+`references/style.md`; a family of members the CLI can't address one
+by one (roles, frames) is a command script — `references/cli.md`
+§Parametrized families.
 
 ### Check module
 
@@ -226,7 +105,8 @@ interaction, and exposes the result as a factory. Prefix `check_`.
 
 **The never-imported rule: product modules never import check
 modules** — the same rule that keeps test files out of shipped code.
-That is what makes assertion-only geometry free (below).
+That is what makes assertion-only geometry free
+(`references/composition.md`).
 
 ### Command script
 
@@ -260,42 +140,6 @@ them — a reader who sees `animated_exhibit_assembly.py` go green
 should already know that means nothing. Check `assertions` is
 non-empty before believing a green run on an unfamiliar file.
 
-### Parametrized families
-
-The CLI addresses **one member per invocation**, and a factory is
-called with its defaults. So a family — three floor roles, twelve
-animation frames — is a command script:
-
-```python
-"""Check all three floor roles.
-
-    khana run m05_diverter/ramp_mechanism/role_sweep.py
-
-`khana check` on the sibling `assembly.py` covers the `middle` role
-only (the factory default). `base` and `top` are checked here.
-"""
-from cad_khana.mechanism.check import check
-
-from assembly import FLOOR_ROLES, make_assembly
-
-for role in FLOOR_ROLES:
-    check(make_assembly(role), out=f"outputs/{role}")
-```
-
-Two things make this safe rather than a workaround:
-
-- **`khana run` defers failures.** Every iteration runs, every JSON on
-  disk is current, and the run exits nonzero once at the end. Don't
-  hand-roll failure accumulation or `raise SystemExit` — that
-  duplicates the boundary and aborts the loop early.
-- **Give each member its own `out=`.** A relative path anchors to the
-  script's directory, and a per-member subdirectory is what keeps the
-  twelfth frame from overwriting the first.
-
-Name these `<family>_sweep.py`. The docstring's coverage sentence
-matters most here: `khana check` on the sibling covers exactly one
-member, and nothing signals that but the sentence.
-
 ## Designing a new mechanism
 
 When starting from a blank file, do these steps **in this order**.
@@ -328,8 +172,8 @@ free.
    to revisit.
 5. **Run `khana check` and iterate until all scalars are green.**
    Reading `mechanism.json` is the primary loop; do not draw yet.
-6. **Then** `khana draw` for shape-level verification. See
-   **Reading drawings** for which view answers which kind of question.
+6. **Then** `khana draw` for shape-level verification.
+   `references/drawings.md` says which view answers which question.
 
 The first pass at a new mechanism is the moment to be liberal with
 assertions; pruning later (because one is provably redundant) is
@@ -394,1080 +238,8 @@ inspect(bracket(), method=FDM(), out="outputs", name="bracket")
 
 A two-part mechanism with no relocatable unit and no joint is the
 degenerate flat case — anything with either composes sub-assemblies
-(see **Designing a new mechanism** step 2 and **Animation**).
-
-## Recommended style
-
-These conventions make a script **re-editable** — the next session can
-bump a parameter and the design updates consistently.
-
-For build123d's selector operators (`>`, `<`, `>>`, `<<`, `|`, `@`, `%`,
-`^`), algebraic-vs-Builder choice, and the implicit type conversions
-(tuples for `VectorLike` / `RotationLike`), load
-`references/build123d_quickref.md`.
-
-- **Parameters at the top, derived just below.** One logical source of
-  truth. Never inline a dimension inside a part function when a named
-  constant would do.
-- **Pure part functions.** Each function takes everything it needs as
-  parameters (with defaults), returns a `Part`, and doesn't touch
-  globals or mutate anything.
-- **Default arguments = the intended top-level parameter.** `housing()`
-  with no args should return the current design's housing. Callers who
-  want to override a single dimension pass it by keyword.
-- **Assembly factories are parameterized like part functions.** The
-  defaults are the master design; a variant is an alternate call, not a
-  second module. This covers the case where *instances of one unit
-  differ*: a motor's azimuth around its axis, a floor's role in a
-  stack. Thread it as a factory argument — the unit's own claims hold
-  at any value, `@cache` keys on it, and the parent passes it per
-  placement. Do **not** reach for a `with_detailed_geometry` override
-  here: the mesh moves with this parameter, so it is not detail. The
-  converse is the trap — a design choice fixed in a module-level
-  constant is computed at import and unreachable from a command
-  script, so sweeping it needs `sed` rather than a loop.
-- **In a multi-unit project, constants have a hierarchy.** A
-  project-root `params.py` holds the constants that cross unit
-  boundaries (shared interfaces, datums, stock sizes); each unit's own
-  `assembly.py` holds the rest. A constant that only one unit reads
-  does not belong at the root, and a constant two units must agree on
-  does not belong in either of them. (Where the shared value is a
-  *place* rather than a number, prefer an anchor — see **Named
-  interface anchors**.)
-- **Use `Location` on `.with_part()` for placement, not inside the part.**
-  Part functions build geometry at a canonical pose (typically centered
-  on origin); the assembly places each part in world coordinates.
-- **Colors are a viewer/render aid, set at the placement.**
-  `.with_part()` takes an optional `color=Color(...)` that `khana view` honors. Set it
-  at the placement when the same part function is reused multiple times
-  with different colors (e.g. four identical brackets, one red per
-  corner); set `part.color` inside the part function only when the
-  geometry has one intrinsic color everywhere it's used. Colors do not
-  affect diagnostics and are ignored by `khana draw`'s hidden-line
-  drawings and by STEP export.
-- **Material is a first-class field on `PlacedPart`, parallel to
-  color.** `.with_part()` takes an optional `material="<token>"` string that
-  downstream consumers (chitra-cad's photo-real renderer; future FEA /
-  kinematics) resolve against their own catalogs. Same intrinsic-vs-
-  placement rule as color: set it at the `.with_part()` site when the same
-  part body gets placed with different materials (or when the parent
-  is the natural place to bind it); push it inside the part-builder
-  only if the part has one intrinsic material everywhere it's used;
-  leave unset (`None`) when the answer is genuinely open and let the
-  consumer's override layer supply the current best guess. For
-  cross-consumer experiments (render + FEA both reading from the same
-  assembly), use `Assembly.with_materials({path: token})` — keys are
-  the qualified tree paths the `placed_parts` **property** reports
-  (a property, not a method — `top.placed_parts()` raises
-  `TypeError: 'tuple' object is not callable`). For
-  render-only sweeps, use the consumer's own override (e.g.
-  chitra-cad's `Scene.with_materials({...})`).
-- **Two fidelity tiers — keep cheap geometry in the assembly,
-  apply detail as an override layer.** The geometric-iteration
-  loop (interference, clearance, printability) runs on cheap
-  primitives — `Box(20, 20, L)` for a 2020 extrusion, no
-  fasteners. That's the right model for assertions: it's fast to
-  tessellate, and a real V-slot profile is a strict subset of a
-  solid 20×20 so any clearance the cheap model passes the detailed
-  one passes too. **That guarantee has a precondition: the cheap
-  proxy must be an *outer envelope* of the detailed part.** It holds
-  for an extrusion (the real profile only removes material) and
-  inverts the moment the detail sticks *out* — a gear modeled by its
-  pitch cylinder, a thread by its minor diameter, a knurl or spline
-  by its root. There the cheap clearance is optimistic, which is the
-  one failure this tool must never produce: model the proxy at the
-  tip circle / major diameter, or grow it at the claim with
-  `assert_distance(..., grow_a_mm=…)`. Detailed geometry (real `bd_warehouse` profiles,
-  fasteners, finished shapes) lives in a `<module>/detail_variations.py`
-  module as named bundles and applies via
-  `Assembly.with_detailed_geometry(BUNDLE)` before the consumer
-  (render / FEA / kinematics) reads the assembly. The override map
-  handles **both swaps and additions**: a key matching an existing
-  part's qualified path swaps the part shape (placement / material /
-  color preserved); a key with no match appends a new `PlacedPart`
-  from a `DetailOverride(part=…, location=…, material=…)` **at the
-  level the key names, in that level's frame** —
-  `"turret.drive.foot_bolt"` adds `foot_bolt` to the `drive` unit, a
-  bare name adds a root-level part, and a prefix naming no
-  sub-assembly raises `KeyError`.
-  Fasteners that the cheap model never created enter via additions
-  — and each new fastener earns its own clearance assertion at the
-  sub-assembly that owns the joint. **Key the addition with that
-  unit's path from the root being detailed** (bare only when the unit
-  itself is the root), not a bare name everywhere: the unit's claim
-  qualifies to
-  `<unit path>.<part>` at every composed root, so a bare-keyed
-  addition lands at the root and leaves the claim skipped forever,
-  while a path-keyed one evaluates at any root and rides the unit's
-  joints. Its `location` is then the unit-local one. Declare those
-  assertions freely:
-  in a run without the detail applied they skip (`passed: null` in
-  the JSON, with the missing part named) instead of crashing, and
-  evaluate normally once the override adds the part. Same intrinsic-vs-placement
-  rule as materials: stable detail facts can move into the
-  part-builder when they earn it; live as override entries until
-  then. The two override layers (`with_materials`,
-  `with_detailed_geometry`) compose — call them in either order
-  before handing the assembly to the consumer.
-- **Algebraic mode operators (`+`, `-`, `*`, `Pos`, `Rot`) read more
-  cleanly than `BuildPart` for short shapes** — prefer them unless the
-  BuildPart context buys something (sketches, workplanes, patterns).
-- **Name parts with stable identifiers** when you place them — assertions
-  reference these names, and the JSON diagnostics report per-name data.
-  **Identity is the tree path**: a part nested in sub-assemblies is
-  addressed everywhere by its dotted path (`"turret.rotor.arm.spider"`;
-  root-level parts keep their bare name). The local name is just the
-  last segment, so don't bake hierarchy into it — `"frame"` inside
-  `platform_image` beats `"platform_image_frame"`; two instances of one
-  builder are distinguished by their subtree, not by name prefixes.
-  A single-part sub-assembly yields a stuttered path (`rotor.rotor`) —
-  accept it; renaming the leaf to something generic (`body`) buys no
-  information and costs the searchable name.
-  Sibling names must be unique within a level (`with_part` /
-  `with_subassembly` enforce this) and sub-assembly names cannot
-  contain `.`.
-- **Inspect only the parts you will actually print.** Stand-ins
-  (extrusion stubs, shafts, fixed hardware) don't need `inspect()`;
-  they are bought, not printed.
-- **Document the coordinate frame in the module docstring** whenever
-  the axes carry non-trivial meaning (radial vs tangential, hinge
-  axis, floor datum, etc.). Without this, the next reader has to
-  reverse-engineer axis conventions from the part math, and will
-  often guess wrong. A 3-to-5-line block is enough:
-
-  ```text
-  Coordinate frame:
-      origin = column axis ∩ floor datum
-      +X     = radial outward toward the exit opening
-      +Y     = tangent at the opening (hinge axis)
-      +Z     = up
-      z=0    = bearing/spider base
-  ```
-
-## Parametric standard parts: bd_warehouse
-
-`bd_warehouse` is a Build123d-native companion library bundled as a
-default dependency — fasteners, bearings, modeled threads, gears,
-sprockets, pipes, flanges, and OpenBuilds extrusions. Reach for it
-before hand-rolling any standard hardware. Each class subclasses
-`BasePartObject`, so an instance *is* a `Part`. Wrap it in a thin pure
-part function to keep script style consistent:
-
-```python
-from bd_warehouse.fastener import HexNut
-
-def lock_nut(size: str = "M8-1.25") -> Part:
-    return HexNut(size=size, fastener_type="iso4032")
-```
-
-Don't `inspect()` parts that come from `bd_warehouse` — they're bought,
-not printed.
-
-For what's in the library and how to discover available classes,
-parameters, and valid type/size strings, load
-`references/standard_parts.md`.
-
-## Available mechanism assertions
-
-Every assertion records a result in `mechanism.json`. If any fail,
-`check()` prints one line per failure (name + detail) to stderr — the
-terminal output alone names every failing assertion; the JSON has the
-full context. All failures are collected — you get every problem in one
-pass, not just the first. `inspect()` failures print the same way,
-prefixed with the part name.
-
-**Under the `khana` CLI the whole script runs, then it exits nonzero
-once.** A red part no longer aborts the run, so a script that checks or
-inspects many parts leaves *every* diagnostics JSON current in one pass,
-and the CLI ends with a roll-up naming each failure and its JSON path.
-Run the same script with a bare interpreter and the old behaviour
-applies — the first failure raises `SystemExit(1)` — because nothing
-there can exit nonzero after the fact. **Prefer `khana check` for
-multi-part scripts**; a bare run stops early and leaves the later parts'
-JSON stale from a previous run while it still reads as current.
-
-| Assertion | Checks |
-|---|---|
-| `.assert_no_interference(a, b)` | Parts `a` and `b` don't overlap (intersection volume ≤ 0.001 mm³). |
-| `.assert_distance(a, b, min_mm=…, max_mm=…)` | Bounded distance from part `a` to part `b` **or a datum `Plane`**. Either bound alone, or both for "close but not touching" (a gear mesh). See below for `along=` and `grow_*_mm`. |
-| `.assert_scalar(name, value, ge=…, le=…)` | A named claim about a non-geometric scalar (friction budget, torque margin). No bounds = pure recorder. |
-| `.assert_tangent_contact(a, b, tol_mm=…)` | Parts `a` and `b` **touch**: surface gap ≤ `tol_mm` (default 1e-3, noise allowance — not a design gap) and no real overlap. A gap fails, an overlap fails. See below. |
-| `.assert_allowed_contact(a, b, max_overlap_mm3=…, min_overlap_mm3=…)` | Design-intended overlap stays within bounds (a press-fit modeled at its true interference). A gap passes unless `min_overlap_mm3` makes engagement itself the claim. See below. |
-| `.assert_solid_count(part, eq=1)` | `part` is exactly `eq` solids. The only claim about **connectivity** — a cut that severs a part leaves its volume, bbox, clearances and every drawn view plausible. `eq=N` declares a part that is several solids on purpose. See below. |
-| `.assert_interference(a, b, reason=…)` | Parts `a` and `b` **do** overlap (intersection volume > 0.001 mm³). Regression alarm for a documented, accepted overlap — fails if the overlap disappears, forcing the assertion to be removed when the design gap gets fixed. |
-
-Give assertions a `name=` when you'd benefit from a specific label in
-the diagnostics; otherwise they get an auto-generated one.
-
-### One piece, or several on purpose
-
-Every part reports `solid_count`, and `khana check` **warns**
-(`multi_solid`, never a failure) about any part that is more than one
-solid and that no claim speaks for. Nothing else sees this: a pocket
-cut one millimetre too deep can detach a lip into a free ring with every
-scalar green and every `khana draw` view unchanged. Answer the warning
-one of two ways:
-
-```python
-a = a.assert_solid_count("body",             # must be one piece — red if severed
-                         detail="above 1 the glow band has cut the lip off — "
-                                "check the five bridges")
-a = a.assert_solid_count("glow_band", eq=5)  # five segments by design; warning goes
-```
-
-`detail=` is appended to the count **when the claim fails**, and only
-then. Use it: this is the one failure whose cause no drawing shows, so
-write it as the failure hypothesis, in the imperative — what would have
-severed the part and where to look. It stays out of a passing result
-on purpose: on a green `eq=2` the same sentence would read as a report
-of the failure. (`assert_scalar`'s `detail` is different — it labels a
-value, so it shows either way.)
-
-Derive `eq` from the **design intent the count expresses** (a spoke
-count, which sector carries the opening) rather than typing the
-number — and **never from the feature whose removal is the red
-test**. `eq=len(BRIDGE_DEGS)` tracks the injection: empty the list and
-the claim moves with it and stays green, a rubber stamp that looks
-identical to a real claim before and after. Where the count has no
-source independent of the geometry under test, state the number and
-say why in a comment.
-
-`inspect()` answers the same warning in the printability file:
-
-```python
-inspect(glow_band(), method=FDM(), name="glow_band", solid_count=5)
-```
-
-Declared, the count is a claim like `wall_min` — a `solid_count:5`
-entry in `assertions[]` with the count in `value`, a mismatch fails the
-run (waivable under kind `solid_count`), and the warning is gone.
-Undeclared, a part above one solid keeps warning. There is no way to
-silence it without stating the number.
-
-The assembly claim and the `inspect()` claim state one fact twice, so
-give them **one derivation**: a constant or a small function in the
-declaration module (`sector_solid_count(k, height)`), imported by the
-printability script — not the expression copied, which leaves the two
-free to drift.
-
-Bodies that touch only along an edge or at a point count as separate
-solids — they share no material, and will not print as one part.
-**Red-test the claim by removing the bridge, not by shrinking it:** a
-0.001 mm bridge is still a bridge, so an epsilon injection leaves it
-green. (A bridge that thin is `min_wall`'s to catch, not this claim's.)
-It takes no `during=` — the count is the same at every pose.
-
-`assert_interference` is the exception, not the rule. Use it only when
-a real design constraint leaves an overlap that hasn't been resolved
-yet (e.g., a junction whose bracket hasn't been designed). The
-`reason=` string is recorded in `detail` on every run — after the
-failure when the overlap goes away — so a reader of a green file sees
-why the overlap is there. The same holds for `assert_allowed_contact`
-and group `known_overlaps`. Default to `assert_no_interference`
-everywhere else.
-
-### Distance and scalar claims
-
-Don't hand-derive from constants what the geometry already knows: a
-bare Python `assert` crashes the script (`status: "error"`) instead of
-recording a named, diffable result. `assert_distance` /
-`assert_scalar` turn those claims into first-class assertions, and
-both record their **measured value** in the JSON even on pass, so
-`khana diff` reports drift the pass/fail boolean can't see.
-
-Promoting a bare assert is not free, though: it **widens the claim's
-scope** from the one pose its constants came from to every pose a
-motion builds. See **What a green check does not mean**.
-
-```python
-# gear mesh: close but not touching (min AND max bound)
-a = a.assert_distance("ring_gear", "pinion",
-                      min_mm=BACKLASH, max_mm=BACKLASH + 0.1)
-
-# directed gap: how far `a` travels along the axis before touching `b`
-# (negative once the projections overlap) — axis name or vector,
-# read as the direction FROM a TOWARD b, in this assembly's frame (it
-# turns with the unit when a parent places it rotated)
-a = a.assert_distance("pulley", "housing", along="Z", min_mm=1.0)
-
-# datum plane target (declared in this assembly's frame; `along` must
-# be parallel to the plane normal). Z-invariant claims need no sweep.
-a = a.assert_distance("ramp", Plane.XY.offset(RIM_Z), along="-Z", min_mm=5.0)
-
-# measure from an outward offset: tip circle over a modeled pitch
-# cylinder (conservative — never reports more distance than the true
-# offset body has)
-a = a.assert_distance("pinion", "rails", min_mm=1.0, grow_a_mm=ADDENDUM)
-
-# non-geometric scalar: recorded, diffable, optionally bounded
-a = a.assert_scalar("ramp_slide_margin", tan(radians(RAMP_DEG)),
-                    ge=MU_STATIC_BUDGET, detail="µ_s budget, ABS on PLA")
-```
-
-Bound comparisons carry a 1e-6 absolute tolerance, so placing or
-sizing geometry *from* the same constant you bound against (gap ==
-`MESH_BACKLASH` exactly) passes despite solver noise — no need to
-hand-pad bounds with `- 0.01` margins.
-
-Parameter-sanity checks with no geometric content (a deliberately
-loose upper bound on a width) legitimately stay bare Python asserts.
-
-### Contact claims
-
-Two contact assertions, split by what the design intends:
-
-- **Required contact** — a tangent rest (foot-on-rail, plate-on-flange,
-  gear-on-collar) where the parts must touch. `assert_no_interference`
-  alone is a trap here: it also passes with the parts floating 3 mm
-  apart, so nothing asserts the contact *exists*. Use
-  `assert_tangent_contact` — a gap beyond `tol_mm` fails and a real
-  overlap fails. When a part must rest against a specific surface,
-  assert the tangent contact against the surface it must face; that
-  pins the orientation too.
-- **Allowed contact** — a press-fit or interference fit. Model the
-  **true** interference (don't oversize a bore to appease
-  `assert_no_interference` — the model then lies about the fit) and
-  declare it with `assert_allowed_contact`. `min_overlap_mm3` makes
-  the engagement itself the claim, so the fit drifting back to a
-  clearance fit fails loudly.
-
-```python
-# tangent rest: must touch, must not overlap (tol is noise allowance)
-a = a.assert_tangent_contact("foot", "rail")
-
-# press-fit modeled at true interference. The band comes from one
-# honest run, not from arithmetic: overlap volume is interference ×
-# diameter × engagement length, so a realistic fit is single-digit mm³
-# and a guessed band is wrong by an order of magnitude.
-a = a.assert_allowed_contact("drive_pulley_shaft", "hub_shaft_stub",
-                             min_overlap_mm3=1.5, max_overlap_mm3=2.6,
-                             reason="press fit, 0.02 mm diametral on Ø8")
-```
-
-Both record a measured value in the JSON even on pass (`tangent`: the
-gap in mm; `allowed`: the overlap volume in mm³), so `khana diff` sees
-drift. A tangent pair has no overlap, so it coexists with group
-`assert_no_interference_*` checks; an allowed-contact pair genuinely
-overlaps, and group checks skip it automatically — the declaration is
-the whole of it, with no `suppressed=` entry to keep in step (see
-[Group assertions](#group-assertions)).
-
-**Contact that only happens in one phase of a motion** — a lifter pad
-against the platform it lifts, a cam against its follower — takes a
-`during=` window instead of being suppressed at every frame:
-
-```python
-from cad_khana.mechanism.assertions import JointWindow
-
-a = a.assert_allowed_contact(
-    "platform.frame", "servo_arm.arm", max_overlap_mm3=20,
-    during=JointWindow("rotor.platform", 5.4, 22.5),
-    reason="servo pad lifts the platform's drop block",
-)
-```
-
-Inside the window the overlap band applies; **outside it the pair is
-held to plain no-interference**, so the same contact appearing at rest
-fails instead of passing unnoticed. That is the whole difference
-between declaring a contact and suppressing a pair: a suppressed pair
-is blind at every frame.
-
-Window the **joint angle, not `t`**. The joint is the physical DOF, so
-re-timing the animation can't invalidate the claim — and a contact that
-recurs at several parameters (a pad touched on the way up and again on
-the way down) is usually *one* angle window even though it is two
-disjoint `t` intervals. Derive the window from geometry with
-`classify` (below) rather than guessing it; if the joint is absent from
-a run, the assertion skips like an absent part.
-
-**`during=` works on every part-referencing assertion** — the
-single-pair forms and both group forms — and takes one `JointWindow` or
-a tuple that must *all* hold (a claim true only "with the platform
-level **and** the arm down" is two joints). What "outside the window"
-means follows from the kind of claim:
-
-- A **requirement** (`assert_no_interference`, `assert_distance`,
-  `assert_tangent_contact`, `assert_interference`)
-  **lapses**: `passed: null`, `skipped: "out_of_phase"`. Use it for a
-  claim that is only meant at rest — without `during=`, a claim held
-  over a motion is a claim about *every* pose of it.
-- A **permission** (`assert_allowed_contact`) lapses to the default it
-  was an exception to — no contact — **unless another contact claim on
-  the same pair is in phase there**, which then governs. Phased contact
-  claims on one pair partition the motion:
-
-```python
-a = (
-    a.assert_allowed_contact(pad, block, max_overlap_mm3=20,
-                             during=JointWindow("rotor.platform", 5.4, 22.5))
-    .assert_allowed_contact(pad, block, min_overlap_mm3=4, max_overlap_mm3=20,
-                            during=JointWindow("rotor.platform", 12.0, 18.0))
-)   # may touch in the wide window, MUST engage in the narrow one
-```
-
-The phase is part of an auto-generated name (`…@rotor.platform
-[5.4, 22.5]deg`), so claims on one pair in different phases don't
-collide.
-
-### Declare assertions where the knowledge lives
-
-Sub-assembly assertions **propagate**: a composed parent evaluates
-every nested assertion with part/anchor paths, names, and datum-plane
-targets qualified into its frame (a plane declared in a unit's local
-frame moves with the unit's placement and joint). Declare each claim
-once, at the sub-assembly that owns it — standalone runs evaluate it
-directly, composed runs evaluate the qualified form (`u.distance:a/b>=5`),
-and assertions against detail-only parts skip (`passed: null`) in runs
-that lack them. Don't mirror an assertion at both levels; that just
-evaluates it twice under two names.
-
-**Claims about the *interaction* of units belong in a check module.**
-A claim owned by no single model — probe cones against sightlines, a
-merged fixture, two units' beliefs about a shared datum — has the
-fixture as its owning level, so give the fixture a file. It imports
-the product factories, composes them, declares the claims, and exposes
-the result as a factory:
-
-```
-m03_scanner/
-  assembly.py        # product factories (+ degenerate `assembly`)
-  check_cones.py     # composes both, asserts, exposes a factory
-```
-
-`khana check` evaluates both kinds — the distinction is in how a claim
-is *expressed*, not how it is run. (pytest is the proof: fixture-heavy
-and three-line tests share one runner.)
-
-**Geometry that exists only to be asserted against** — a sightline
-cone, a tool-access envelope — is an ordinary `with_part`; nothing in
-the library marks it un-manufacturable. It needs no special handling,
-because **no exporter ever imports a check module**: `khana export
-assembly.py` cannot see `check_cones.py`'s probes, and `khana check
-check_cones.py` never exports. The probe lands in that file's `parts[]`,
-which is honest — that file is a fixture run's output.
-
-Verify a cone-free export by **solid count**, not by grepping part
-names: the STEP exporter writes no names.
-
-### Group assertions
-
-When "assert every pair" is the intent, say so — don't hand-write the
-double loop:
-
-| Assertion | Expands to |
-|---|---|
-| `.assert_no_interference_between(group_a, group_b, …)` | One `assert_no_interference` per cross pair `(a, b)`. |
-| `.assert_no_interference_within(group, …)` | One per unordered pair inside `group` (`i < j` in group order). |
-
-A group is an iterable of part paths, or a **dotted sub-assembly path**
-(`"turret.rotor"`) selecting every part under that subtree — expanded
-to full paths from the asserting assembly's root
-(`"turret.rotor.arm.spider"`), sorted. The two mix: a sub-assembly
-path inside the iterable expands in place. Expansion is a macro over the
-current contents — parts added afterwards aren't covered, so declare
-group assertions after composition.
-
-Both take two keyword options:
-
-- `known_overlaps=[(a, b, reason), …]` — downgrades those pairs
-  (order-independent) to `assert_interference(reason=…)` regression
-  alarms.
-- `suppressed=[(a, b), …]` — skips those pairs entirely (e.g. a
-  design-intended contact during motion with no clean per-frame
-  predicate).
-
-Pairs carrying an `assert_allowed_contact` are skipped **without being
-listed** — the contact assertion already holds the pair at every frame
-(inside its window to the overlap band, outside it to plain
-no-interference), so re-emitting `no_interference` there could only
-contradict it. Don't restate them in `suppressed=`: that is
-bookkeeping to keep in step, and it goes *wider* than the claim — a
-suppression is blind at every frame where a phased claim is not.
-Naming the pair in `known_overlaps=` overrides the skip, if you want
-the regression alarm too.
-
-The skip is resolved over the whole assembled assertion set, so the
-contact may be declared anywhere — before or after the group call, at
-this level or a nested one. Unlike group *membership*, it is not a
-macro over the state at the call, and adds no ordering rule beyond
-"after composition". A hand-written `assert_no_interference` on a
-contact pair is never skipped: that contradiction is yours to see.
-
-Expanded assertions are the plain single-pair forms with their usual
-auto-names, so migrating a hand-written loop to a group call leaves
-`mechanism.json` unchanged — provided the loop wrote each pair in the
-order the group emits it (`_between`: `group_a` side first; `_within`:
-list order; a subtree path: sorted). A name is `no_interference:a/b`, so
-a reversed pair renames the claim and `khana diff` reports it.
-
-### Named interface anchors
-
-When two units share a physical interface (a deck a frame rests on, a
-column a bracket mates to, a delivery point), don't mirror the numbers
-across unit boundaries — export the datum as an **anchor** and let the
-composing parent derive placements and assert the interface:
-
-```python
-# each unit declares its interface points in its OWN frame
-m05 = m05.with_anchor("deck_top", Pos(0, 0, DECK_TOP_Z))
-chain = chain.with_anchor("deck_top", Pos(0, 0, DECK_TOP_Z_LOCAL))
-
-# the parent resolves anchors to derive placement …
-deck = m05_assy.anchor("deck_top").position
-pose = Pos(0, 250, deck.Z - floor_bottom.Z)
-
-# … and, after composition, asserts the units' beliefs coincide
-top = top.assert_anchors_coincident("chain.deck_top", "m05.deck_top")
-```
-
-`with_anchor(name, location)` declares a named `Location` in the
-assembly's local frame (own namespace — no collision with part names;
-no `.` in the name). `anchor(path)` resolves a dotted path
-(`"m05.deck_top"`) through the tree, composing each sub-assembly's
-placement and joint like part locations — an anchor under a jointed
-subtree moves with the joint. `assert_anchors_coincident(a, b,
-tol_mm=1e-6)` compares resolved **positions** (orientation ignored);
-paths are checked at declaration (fail-fast on typos) and re-resolved
-at `check()` time.
-
-The pattern replaces mirror-constant + drift-assert pairs: a unit that
-must build standalone keeps its local numbers, but *exports where it
-believes the shared datum is* — if a mirror drifts, the two beliefs
-stop coinciding and the parent's `check()` fails loudly, instead of
-the drift silently desyncing the machine. Anchors carry no geometry;
-exports and interference checks ignore them.
-
-`part(path)` is the same resolution for a part: the `PlacedPart` at a
-dotted path, in the frame of the assembly you call it on —
-`top.part("turret.drive.bracket")` is the world placement,
-`drive.part("bracket")` the unit-local one. Reach for it instead of
-filtering the `placed_parts` property by name or re-typing a part's
-constructor:
-`inspect(build_chain().part("brace_head").part, …)` inspects the body
-that is actually placed, and a detail addition keyed by its unit's
-path takes its `location` from that unit's own `part(...)`.
-
-## Animation: joints + time-parameterized assembly
-
-Beyond static assertions, `Assembly` can express **motion**: a
-`RevoluteJoint` on a `with_subassembly(...)` exposes a single
-animatable DOF, and a `t → Assembly` factory function (the project's
-animation primitive) drives the joints from a time parameter.
-
-Use this when:
-
-- A mechanism's clearance / interference depends on a joint angle —
-  not just the rest pose. Sample `factory(t)` at several `t` and
-  call `check()` on each to catch mid-motion overlaps.
-- You're producing a multi-frame artifact (GLB exhibit, animated
-  preview). `export_animated_glb` consumes the same factory.
-
-Skip when the assembly's motion isn't relevant to the question
-you're answering: pure static fit / printability runs faster on a
-plain flat `Assembly`.
-
-### Joint primitives
-
-Today the library exposes one joint type:
-
-```python
-from build123d import Axis
-from cad_khana.mechanism.assembly import RevoluteJoint
-
-joint = RevoluteJoint(
-    axis=Axis((px, py, pz), (dx, dy, dz)),   # in the SUB-ASSEMBLY'S frame
-    angle_deg=0.0,                            # animatable DOF
-    frame="local",
-)
-```
-
-**Prefer `frame="local"`** — the axis is written in the jointed
-sub-assembly's own frame (build123d's joint-on-the-part convention),
-and the `location=` placement carries it to the parent. Identical
-sub-assemblies placed at different poses (four platforms around a
-hub) then share one joint declaration instead of a hand-computed
-per-instance axis table.
-
-The default is `frame="parent"` (compatibility): the axis is
-interpreted in the owning parent `Assembly`'s frame, and each
-differently-posed instance needs its own axis. The two are
-interchangeable — a local axis `A` ≡ the parent-frame axis
-`location * A`. `angle_deg` is the value the animation factory
-updates per frame.
-
-### Composing animated assemblies
-
-A jointed sub-assembly is added with
-`with_subassembly(name, sub, location=..., joint=...)`. The
-sub-assembly is itself a full `Assembly` (it can contain parts,
-sub-sub-assemblies, joints) — nest as deeply as the mechanism needs.
-Reach into the tree with dotted paths:
-
-```python
-turret = (
-    Assembly()
-    .with_subassembly(
-        "rotor",
-        rotor_internals,                              # an Assembly
-        location=Pos(0, 0, 0),
-        joint=RevoluteJoint(axis=Axis.Z, frame="local"),   # rotor's own Z
-    )
-    .with_subassembly(
-        "kicker_lever",
-        lever_internals,
-        joint=RevoluteJoint(
-            axis=Axis((px, 0, pz), (0, -1, 0)),       # in lever-local
-            frame="local",
-        ),
-    )
-)
-# later — animation hook:
-turret = turret.with_joint_angle("rotor", 45.0)
-turret = turret.with_joint_angle("rotor.platform_dump", 12.5)  # nested
-```
-
-`with_joint(path, joint)` is the alternative shape: attach (or
-replace) the joint on an already-composed sub-assembly instead of
-passing `joint=` at `with_subassembly` time. Same dotted-path form
-as `with_joint_angle`; raises `KeyError` if any segment is missing.
-
-`with_joint_angle` raises if the path doesn't reach a jointed
-sub-assembly.
-
-### The `t → Assembly` factory
-
-A function `factory(t: float) -> Assembly` that returns the static
-assembly at parameter `t` is the project's animation primitive.
-Motion is expressed *in user code* as math (`angle = f(t)`); the
-library samples `factory(t)` and emits glTF or runs per-frame
-checks.
-
-```python
-def build_at(t: float) -> Assembly:
-    a = build_static()
-    a = a.with_joint_angle("rotor", 360.0 * t)
-    a = a.with_joint_angle("kicker_lever", lift_schedule(t))
-    return a
-```
-
-`cad_khana.export.export_animated_glb(factory, ts, out, ...)`
-sweeps the factory over a sequence of `t` values, tessellates
-geometry once from `factory(ts[0])`, and injects animation samplers
-per jointed sub-assembly. Each jointed `with_subassembly(...)`
-becomes one `animgroup_N` node in the GLB scene graph whose
-children are the group's parts — the parent carries a slerp'd
-rotation that traces the true arc between keyframes (per-channel
-TRS lerp would chord through curved paths). The node sits on its
-joint's axis and nests under its parent joint's node, so the arc is
-true wherever the axis is and however many joints move at once. Any
-motion the joint *doesn't* account for (a jointed sub whose
-`location=` also changes with `t`) is exact at keyframes and lerped
-between them.
-
-### Conventions that matter
-
-- **Parts in canonical local frame.** Inside an animated
-  sub-assembly, a `Part` returned by your part function must have
-  identity `part.location` — orientation and translation belong at
-  the `with_part(name, part, location=...)` site, not baked into
-  the geometry. `export_animated_glb` enforces this on dynamic
-  parts and raises with the offender's name. Reason: the per-frame
-  TRS sampler only reads `PlacedPart.location`, so a non-identity
-  intrinsic `Location` renders correctly at frame 0 then gets
-  silently dropped from frame 1 onward.
-
-- **Placement is parent-local for parts inside a sub-assembly.**
-  When a part lives inside a sub-assembly, the `location=` passed
-  to `with_part(...)` is in the sub-assembly's local frame, not
-  world. The composition through the joint and the outer
-  `with_subassembly` placement brings it to world automatically.
-
-- **One-frame static first.** A bad joint axis costs the same at
-  1 frame as at 97, and a 97-frame sweep is minutes of wall time.
-  Validate any geometry or joint-wiring change via `factory(0.0)` +
-  `khana check` (or a single `export_glb`) before fanning out to
-  the full animated sweep.
-
-### Declared motions: claims held over the motion, on every check
-
-A claim checked at one pose says nothing about the poses between. A
-turning ramp that clears its columns as built and ploughs through them
-14° later is a green `mechanism.json` — unless the assembly **declares
-the motion**, in which case `khana check` holds every assertion over it:
-
-```python
-from cad_khana.mechanism.motion import Motion
-
-def build_floor() -> Assembly:
-    return (
-        Assembly()
-        ...
-        .with_subassembly("rotating", rotating(), joint=RevoluteJoint(axis=Axis.Z))
-        .assert_no_interference_between("rotating", "columns")
-        .with_motion(Motion.over_joint("stack_turn", "rotating", 0, 358, step=2))
-    )
-```
-
-`Motion.over_joint(name, joint_path, lo, hi, step)` samples both ends
-and never steps wider than `step`. Motion that drives several joints
-from a schedule is the general form — a function `t -> {joint path:
-value}` plus the `t` values to sample; joints a pose leaves out stay as
-built:
-
-```python
-Motion("dump_cycle", lambda t: {"rotor": rotor_deg(t), "rotor.platform": tilt_deg(t)},
-       ts=tuple(i / 160 for i in range(161)))
-```
-
-What `check()` then does, and what it costs:
-
-- Every assertion is evaluated at the as-built pose **and at each
-  sample of each motion** (each motion on its own, the rest of the tree
-  as built). One result per assertion: failed if *any* pose failed,
-  `value` / `detail` from the worst pose, `worst_at` naming it.
-- Poses that place a claim's parts identically share one evaluation, so
-  only the claims that span a driven joint multiply. A unit check stays
-  fast; a whole-machine root holding a 180-sample motion is minutes.
-- **A unit's motion is held at every root that composes the unit**,
-  like its assertions. If that is too slow at a large root, declare the
-  motion on the unit's own check target rather than inside the factory
-  the root composes.
-- **Once a motion is declared, every unphased claim is a claim about
-  the whole motion.** A distance that is only true at rest will redden —
-  give it a `during=` window (above). This is the point, not a side
-  effect: it is what was silently unchecked before.
-- `interferences[]` and part diagnostics still describe the as-built
-  pose only (`warnings` says so). A pair nobody asserted is not held.
-- It is **sampled**: a claim green at every sample can still fail
-  between two of them. `motions[].joints_deg.<joint>.max_step` is the
-  resolution you looked at; choose `step` against the smallest feature
-  that could slip through.
-
-Use one declaration for both jobs — derive a window with
-`sweep(over_motion(assembly, motion), motion.ts)`, then hold it with
-`during=` under the same `Motion`.
-
-### Sweep diagnostics: what touches what, and when
-
-`cad_khana.mechanism.sweep` answers questions about a *motion* rather
-than a pose. All three take the same `factory(t) -> Assembly`:
-
-```python
-from cad_khana.mechanism.sweep import classify, onset, sweep
-
-result = sweep(build_at, ts)                    # every pair, bbox-prefiltered
-result = sweep(build_at, ts, pairs=[(a, b)])    # just these pairs
-
-for phase in classify(result):
-    print(phase.kind, phase.t_intervals, phase.angles_bracketing)
-
-o = onset(build_at, ("pad", "block"), over=ts)  # first contact, bisected
-```
-
-`classify` labels each pair `always` / `never` / `transient` and reports
-the `t` intervals and joint-angle spans it was in contact over. Use it
-to **replace a hand-curated suppression list**: the list of pairs
-becomes a property of the geometry, while the kinematic reason each
-pair is there stays human-written — that's a design statement, not
-something a sweep can derive. Feed `angles_bracketing` straight into a
-`during=` window.
-
-`onset` finds where contact begins. It scans for the first
-clear→contact interval and bisects inside it — bisection alone would
-assume contact only ever starts once, and `Onset.brackets` tells you
-how many transitions the samples actually showed.
-
-**A sweep is never a substitute for holding the claims.** The two look
-alike from outside — both are "the mechanism at N poses" — and are
-opposite in kind: `sweep` measures raw pairwise overlap volumes and
-`classify` labels phases, but **neither evaluates a single assertion**,
-and neither writes a `mechanism.json` you can diff. To have the
-declared claims re-checked at every pose, declare the motion
-(`with_motion`, above) and `khana check` does it on every run. A
-command script looping `check(factory(t), out=...)` is only for motion
-a schedule of joint values can't express (geometry that changes, a part
-that moves without a joint). Swapping either for `sweep` deletes the
-regression net.
-
-**All of this is sampled, and sampling a motion is an inner
-approximation.** `never` means "at none of the sampled parameters",
-which is not the same as never — a real m03 sweep at 9 frames saw one
-contact frame where 37 frames show two whole contact phases. So:
-sweeps are for *deriving* a claim, assertions are for *holding* it.
-Once you know the window, declare it with
-`assert_allowed_contact(..., during=...)`, which re-derives from
-geometry on every `khana check` instead of depending on which `t`
-values someone sampled. Use `angles_bracketing` (the outer bound), not
-`angles_at_contact` (the inner one): too wide only weakens the claim,
-too narrow reddens runs that were always fine.
-
-Before feeding a bracket into a `during=`, **read the per-frame
-overlaps and check the profile rises and falls once** across the span.
-That is what makes the bracket safe: finer sampling can then only find
-contact *inside* it. Overlap that dips back to zero mid-span means the
-samples straddle more than one contact event, and the bracket edges say
-nothing about where the second one really starts — re-sample denser, or
-window each event separately. The field can't signal this; only the
-table can.
-
-### glTF / GLB export
-
-`cad_khana.export.export_glb(assembly, out, ...)` writes a static
-GLB; each `PlacedPart` becomes a named scene node with its
-build123d `Color` baked as the glTF baseColor. No PBR, no lighting
-— the geometry-truth artifact. For PBR materials baked from
-`chitra-cad`'s catalog use `chitra_cad.export.export_glb` instead.
-
-```python
-from pathlib import Path
-
-from cad_khana.export import export_glb
-
-from assembly import assembly  # the top-level Assembly
-
-export_glb(assembly, out=Path("subsite/assets"), name="rig.glb")
-```
-
-`cad_khana.export.export_animated_glb(factory, ts, out, ...)`
-sweeps a `t → Assembly` factory and emits an animation block on top
-of the static geometry path. One `animgroup_N` node per jointed
-sub-assembly; per-channel TRS samplers fall through for any
-top-level motion. See the factory + conventions sections above for
-how to shape the assembly.
-
-```python
-from pathlib import Path
-
-from cad_khana.export import export_animated_glb
-
-from animated_assembly import build_at  # def build_at(t: float) -> Assembly
-
-N_FRAMES = 61
-ts = [i / (N_FRAMES - 1) for i in range(N_FRAMES)]
-export_animated_glb(
-    build_at,
-    ts=ts,
-    out=Path("subsite/assets"),
-    name="rig-animated.glb",
-    duration_s=8.0,
-)
-```
-
-Tessellation runs once on `factory(ts[0])`; subsequent frames only
-sample `PlacedPart.location` per part. `ts` closing the loop
-(`ts[-1]` reproduces `ts[0]`'s pose) lets `<model-viewer autoplay>`
-loop the animation in `duration_s` seconds without a visible cut.
-
-**Color-space convention.** `PlacedPart.color` is treated as
-sRGB-encoded throughout the cad-khana export path (OCP labels it
-`Quantity_TOC_sRGB` and converts to linear before writing
-glTF). Pass colors authored the way humans pick them (CSS hex,
-design tokens). Pre-linearizing (`r ** 2.2`) double-converts and
-crushes the rendered output to near-black. Downstream consumers
-that need linear (e.g. chitra-cad → Blender Cycles) linearize at
-their own input boundary.
-
-Both pipelines require `gltf-transform` on `PATH`:
-`bun install -g @gltf-transform/cli`.
-
-## Printability: `inspect(part, method=…)`
-
-The method object carries manufacturing parameters. Today only
-`FDM` exists:
-
-```python
-from cad_khana.printability.methods import FDM
-
-FDM(
-    up_axis=(0, 0, 1),     # part-local "up" direction during printing
-    wall_min_mm=1.5,       # fail if a wall is thinner than this
-    overhang_max_deg=45.0, # fail if a face overhangs past this
-)
-```
-
-**Why these defaults.** Tuned for the common case — 0.4 mm nozzle,
-PLA, default cooling — so a script with no overrides reflects real
-printability constraints rather than placeholders:
-
-- `wall_min_mm=1.5` ≈ three perimeter widths at a 0.4 mm nozzle. Thinner
-  walls slice as one or two perimeters with no infill room, which
-  under-extrude into single-ribbon walls or fail to bond. Bump up for a
-  0.6 mm nozzle (≈ 2.0 mm) or rigid load-bearing parts; bump down only
-  after a printed test wall confirms the slicer/printer combo holds
-  together at the new floor.
-- `overhang_max_deg=45.0` is the long-standing PLA-with-cooling rule of
-  thumb — steeper faces need support or active bridging. Materials with
-  weaker cooling (ABS, PETG without a part fan) want a tighter threshold
-  (35–40°); ASA / a well-cooled PLA / a slicer with aggressive overhang
-  modifiers can go to 50–55°. Adjust intentionally per material, don't
-  default-loosen to silence the check — waive instead (below), so the
-  threshold keeps catching real overhangs.
-
-`inspect(part, method=FDM(), out="outputs", name="bracket")` writes
-`outputs/bracket-printability.json` and fails the run on an unwaived
-failure — under `khana` at the end of the script, standalone
-immediately (see "Available mechanism assertions"). Each call is
-independent — pass a different `name=` per printed part.
-
-**`inspect()` calls live in a command script**, conventionally
-`printability.py` beside the unit's `assembly.py`, run with `khana
-run`. They are per-part and per-method, so they are a batch rather
-than a claim on the assembly, and no verb evaluates them. A green
-`khana check` says nothing about printability — which is exactly why
-that script's docstring must say so.
-
-**Waiving a known-benign failure.** When a check fails for a reason
-you've verified is an artifact or an accepted trade-off (a sharp-edge
-sampling artifact, a 90° ceiling you'll print with supports), waive it
-with the rationale inline instead of loosening the threshold or
-wrapping the call in `try/except SystemExit` — under the CLI that
-`except` no longer fires at all, so it silently becomes dead code while
-the failure still counts against the run:
-
-```python
-inspect(
-    rotor(), method=FDM(), out="outputs", name="rotor",
-    waive={
-        "wall_min": "knife-edge runout at the star ridge — min_wall_at "
-                    "(87.2, -42.3, 21.0) with alignment 0.31 puts it at a "
-                    "wedge tip, not between parallel faces",
-        "overhang_max": "accepted 90° ceiling, printed with supports",
-    },
-)
-```
-
-Keys are assertion *kinds* (`"wall_min"`, `"overhang_max"` — no
-threshold suffix). A waived failure keeps `passed: false` in the JSON,
-records your reason in `waived`, adds a `waived_failure` entry to
-`warnings[]`, and doesn't fail the run; unwaived failures still exit 1.
-If the waived check starts passing, a `stale_waiver` warning tells you
-to delete the waiver — don't leave waivers that no longer waive
-anything. Cite evidence in the reason (`min_wall_at` witness,
-`min_wall_alignment`, a print plan), not just an assertion that it's fine.
-
-**"Sampling artifact" is no longer a valid `wall_min` rationale on its
-own.** Wall readings now span material actually traversed, so a thin
-number is real material. Check `min_wall_alignment` before waiving: near
-`1.0` means two near-parallel faces genuinely that close — a sliver in
-the model to fix, not to waive. Only a low alignment supports a
-"geometry is fine, the metric isn't measuring a wall here" waiver.
-
-## JSON diagnostics essentials
-
-`mechanism.json` after every `check()`:
-
-- `status` — `"ok"`, `"error"`, or `"assertion_failed"`.
-- `error` — traceback string if the script itself crashed.
-- `hint` — short pattern-matched repair suggestion when `status` is
-  `"error"`; `null` otherwise. Read this first before parsing the
-  traceback — it resolves the most common errors in one line.
-- `parts[name].volume_mm3` — sanity-check a part is not empty.
-- `parts[name].bbox` — sanity-check on size and placement.
-- `parts[name].face_count` / `edge_count` / `vertex_count` — cheapest
-  way to verify a boolean operation changed geometry: counts shift on
-  success, stay the same on a silent no-op or OCCT failure.
-- `parts[name].solid_count` — `1` for a part in one piece. Above `1`
-  something is detached (or touches only along an edge); see
-  `multi_solid` under `warnings`.
-- `interferences` — list of overlapping part pairs with volume +
-  centroid, **at the as-built pose only**, motion or no motion.
-- `motions` — one entry per declared motion: `samples`, and per driven
-  joint the range covered and `max_step`, the widest gap between
-  adjacent samples. Empty means every green below is a one-pose green.
-- `skipped_counts` — how many assertions were skipped, per class, every
-  class always listed. **Read it on every green run**: a nonzero count
-  is a claim that did not look. It should drop to zero at the root
-  where the detail is applied; one that never does is a typo or an
-  addition keyed to the wrong level.
-- `assertions` — one entry per declared assertion; `passed` + `detail`
-  + `value`. `passed` is `true`/`false`/`null`: `null` means the
-  assertion was skipped because a part it references is absent from
-  this run (`detail` names the missing parts) — normal for assertions
-  against override-added detail parts in a standalone run. `skipped`
-  classes the reason (`"absent_part"` | `"absent_joint"` |
-  `"out_of_phase"` — a phased claim in phase at no pose looked at;
-  `null` when the assertion was evaluated). Skips never fail the run; watch for an
-  assertion that is *always* skipped, which usually means a typo'd
-  part name. `value` is the measured/claimed scalar, recorded **even on
-  pass** so `khana diff` reports its drift: the distance for
-  `assert_distance`, the claimed number for `assert_scalar`, the gap in
-  mm for `assert_tangent_contact`, the overlap in mm³ for
-  `assert_allowed_contact`, the count for `assert_solid_count`. It is
-  `null` for the boolean-only kinds — `assert_no_interference`,
-  `assert_interference` and `assert_anchors_coincident` record **no
-  measurement**, only a verdict.
-  Held over a motion, `value` and `detail` are the **worst pose's**
-  (least slack to the claim's own bound; for a kind with no measured
-  value, the first failing pose — the onset).
-- `assertions[].poses` — `evaluated` (poses the verdict covers: `1`
-  means it looked once), `distinct` (evaluations actually run — `1`
-  under a motion means **the motion never moves this claim**, so it
-  tests nothing about it), `in_phase`, `failed`. Two kinds read
-  `distinct: 1` under every motion and are right to: `assert_scalar`
-  and `assert_solid_count` claim nothing a pose can change. You no
-  longer have to audit this field by hand — `motions[].moved` /
-  `.movable` roll it up per motion and exclude those two kinds.
-  `moved` counts a claim the motion moved **or carried across a
-  `during=` phase boundary**, so it can exceed the number of claims
-  reading `distinct > 1`: a phased claim in phase at a single pose was
-  exercised by the motion and is counted, though it was evaluated once.
-  Don't reconcile a hand-audited count from before 0.13 against it.
-- `assertions[].worst_at` — `{motion, t, joints_deg}` of the worst
-  pose; `null` when that is the as-built pose. Re-create it with
-  `assembly.posed(joints_deg)` to draw or inspect it.
-- `warnings` — never fail the run, always worth reading:
-  `joint_never_driven` (a joint no motion moves — everything about it
-  is a rest-pose green), `never_in_phase` (a phased claim whose window
-  no pose entered: widen the motion or fix the window),
-  `interferences_rest_pose_only` (a motion is declared, and
-  `interferences[]` did not follow it), `motion_moved_nothing`
-  (`motion`, `moved`, `movable` — a declared motion that moved **no**
-  claim: the sweep is vacuous and the green means nothing, so check the
-  joint path drives something a claim references; with `movable: 0` no
-  claim in the tree could have moved), and `multi_solid` (`part`,
-  `solid_count` — a part in several pieces that no
-  `assert_solid_count` speaks for: bound it or declare it).
-
-`<name>-printability.json` after every `inspect()`:
-
-- `kind: "printability"` — identifies the file.
-- `name`, `method` — for disambiguation when scripts inspect many parts.
-- `volume_mm3`, `bbox` — basic part metrics.
-- `solid_count` — `1` for a part in one piece; above `1` the file also
-  carries a `multi_solid` warning unless `inspect(..., solid_count=N)`
-  declared the count, in which case `assertions` carries
-  `solid_count:N` instead.
-- `min_wall_mm` — thinnest wall found by ray sampling; `null` if
-  unmeasurable.
-- `min_wall_at` — `[x, y, z]` surface point where the thinnest wall was
-  measured (`null` when `min_wall_mm` is); use it to attribute a thin
-  reading to a concrete feature instead of bisecting parameters. The
-  failing `wall_min:…` assertion repeats it in its `detail`.
-- `min_wall_alignment` — how parallel the two surfaces bounding the
-  measurement are: `1.0` is a slab with parallel faces, falling toward
-  `0` as they splay apart. Read it before writing a waiver. A low value
-  (below ~0.7) means the minimum sits at the **tip of a wedge feature**
-  — a knife edge, a V-groove root, a rib runout — where the material
-  really is that thin but the number isn't a wall thickness. A value
-  near `1.0` means two near-parallel faces genuinely are that far
-  apart, so a tiny reading is a **real sliver in the model**, not a
-  measurement artifact — investigate the geometry rather than waiving it.
-  This one number decides the question because every reading is taken
-  perpendicular to the face it starts from (see the limitation below),
-  so only the far side's angle is ever in doubt.
-- `overhang` — `{area_mm2, max_angle_deg}`, or `null` when no face
-  (off the build plate) points down at all. `max_angle_deg` is the
-  steepest downward face **whatever the threshold**; `area_mm2` counts
-  only faces past `overhang_max_deg`, so it is `0.0` when none are.
-  Raising the threshold stops the failure, never the reading.
-- `assertions` — `wall_min:…` and `overhang_max:…` entries, plus
-  `solid_count:N` when the count was declared; `passed` + `detail`,
-  plus `waived` (the rationale) when a failure was waived.
-- `warnings` — non-fatal notices: `waived_failure` (a failed check that
-  was waived; carries the reason and the failure detail),
-  `stale_waiver` (a waiver whose check now passes — remove it), and
-  `multi_solid` (`part`, `solid_count` — the part is in several
-  pieces).
+(see **Designing a new mechanism** step 2 and
+`references/composition.md`).
 
 ## What a green check does not mean
 
@@ -1507,14 +279,43 @@ them, the check is not your evidence — find the one that is.
 - **Cross-unit physical reality.** Two independently floor-standing
   units pass every cross-unit check while being unbuildable — they
   share one bench, and nothing infers that. Export the shared datum as
-  an anchor and `assert_anchors_coincident` at the top (see **Named
-  interface anchors**).
+  an anchor and `assert_anchors_coincident` at the top
+  (`references/composition.md` §Named interface anchors).
 
 One habit that keeps the rest honest: **turn every fixed interference
 into a named regression assert**, and write a known-bad overlap as
 `assert_interference(reason=…)` rather than deleting the claim. A
 positive assertion self-fails the moment the redesign lands, so it
 cannot rot into folklore.
+
+### Read `warnings` on every run
+
+Both files carry a `warnings[]` that **never fails a run** — which is
+exactly why it is where a green says what it did not look at. Read it
+before believing an exit 0. Every kind:
+
+- `joint_never_driven` — a joint no declared motion moves; everything
+  about it is a rest-pose green.
+- `never_in_phase` — a phased claim whose `during=` window no pose
+  entered: widen the motion or fix the window.
+- `motion_moved_nothing` (`motion`, `moved`, `movable`) — a declared
+  motion that moved **no** claim: the sweep is vacuous and the green
+  means nothing, so check the joint path drives something a claim
+  references; with `movable: 0` no claim in the tree could have moved.
+- `interferences_rest_pose_only` — a motion is declared, and
+  `interferences[]` did not follow it: unasserted pairs are checked at
+  the as-built pose only.
+- `multi_solid` (`part`, `solid_count`) — a part in several pieces that
+  no `assert_solid_count` / `inspect(..., solid_count=N)` speaks for:
+  bound it or declare it. Nothing else sees a severed part.
+- `waived_failure` (printability) — a failed check you waived; carries
+  the reason and the failure detail. The reading is still a failure.
+- `stale_waiver` (printability) — a waiver whose check now passes:
+  delete it.
+
+Next to `warnings`, read `skipped_counts` (a claim that did not look)
+and each assertion's `poses.evaluated` (`1` means it looked once). The
+rest of both files' fields: `references/diagnostics.md`.
 
 ## Known limitations
 
@@ -1524,7 +325,7 @@ cannot rot into folklore.
   the reading is a thickness of *that* wall. It can still miss diagonal
   pinch points. Readings at sharp features are *real* short material
   paths rather than noise — check `min_wall_alignment` to tell a wedge
-  tip from a wall. See `references/printability.md` for details.
+  tip from a wall. See `references/printability.md`.
 - **Overhang detection excludes the build-plate face.** Faces coplanar
   with the min-`up_axis` plane aren't flagged. Faces that face downward
   but sit above the build plate (ledge undersides, cavity ceilings) are
@@ -1558,15 +359,7 @@ cannot rot into folklore.
 5. When a question is shape-level rather than scalar ("is the tang
    pointing the right way", "did that cut land where I expected"), run
    `khana draw path/to/assembly.py` and read the views under
-   `outputs/views/`. See **Reading drawings** below for which view
-   answers which kind of question. Default format is PNG; pass
-   `--format svg` for lossless vector output (diffable, inspectable
-   as text), or `--format both` to get both. Pass `--themeable` with
-   `svg`/`both` to additionally tag polylines with
-   `class="cad-visible"` / `class="cad-hidden"`; the default inline
-   stroke stays as a fallback, so non-CSS renderers see the same
-   drawing while a CSS consumer (e.g. a website embedding the SVG
-   inline) can restyle the two classes for dark-mode or brand colors.
+   `outputs/views/` — load `references/drawings.md` first.
 6. When diagnostics are clean, ask the human to view it via
    `khana view path/to/assembly.py` (which pushes to the OCP VS Code
    viewer).
@@ -1606,49 +399,24 @@ turnaround time and produces a worse handoff than a clean
 Escalation is a feature, not a failure mode. A clean stop with
 context beats a long thrash every time.
 
-## Reading drawings
-
-`khana draw <path>` writes ten views to `outputs/views/`: six
-orthographic (`top`, `bottom`, `front`, `back`, `left`, `right`) and
-four isometric (`iso_ne`, `iso_nw`, `iso_se`, `iso_sw`, named by the
-camera octant in +Z-up / +Y-forward space). They're hidden-line
-engineering drawings: visible edges in black, hidden in light grey.
-
-The files cost only disk; the token cost is paid when you `Read` one
-into context. So load only the view that answers your question:
-
-- "Is this aligned along Z?" → `top` (or `bottom`).
-- "Did the cut land where I expected?" → the orthographic view
-  perpendicular to the cut axis.
-- "Does the shape look right at a glance?" → one isometric is enough;
-  `iso_ne` is a good default.
-- "Is the underside clean?" → `bottom`, then the relevant side view if
-  something looks off.
-
-Don't load all ten by default. If one view doesn't answer, ask for a
-second — not the whole set.
-
-Two flags trim what gets written when you already know the answer
-won't need ten views:
-
-- `--view <names>` — comma-separated subset, e.g. `--view top,iso_ne`.
-  Generation cost drops linearly; consumption cost only changes if
-  you `Read` fewer files.
-- `--part <name>` — frame and render only that one named part from
-  the assembly (in its assembled position). Useful when one part is
-  small and far from the others and the default whole-assembly framing
-  shrinks it to a few pixels.
-
 ## Reference files
 
-- `references/examples/pin_hinge/assembly.py` — canonical three-part
-  mechanism with mechanism assertions and per-part `inspect()` calls.
-- `references/printability.md` — how wall thickness and overhang
-  detection work, and where they're unreliable.
-- `references/standard_parts.md` — bd_warehouse contents and how to
-  discover available classes, parameters, and valid type/size strings.
-- `references/build123d_quickref.md` — selector operators, algebraic
-  vs Builder mode, type-conversion shortcuts.
+Load each when its trigger applies — they are not optional reading
+for the task they cover.
+
+| Load | before |
+|---|---|
+| `references/cli.md` | addressing a `:factory`, looking for an output file, an import failing under `khana`, the viewer, or checking several members of a family |
+| `references/style.md` | writing a new part function or declaration module |
+| `references/assertions.md` | writing or changing any `assert_*` — the catalogue, solid count, distance/scalar, contact claims and `during=`, group assertions |
+| `references/composition.md` | adding a sub-assembly, joint or anchor, or a claim about two units |
+| `references/motion.md` | anything that moves or animates — declared motions, sweeps, GLB export |
+| `references/printability.md` | an `inspect()` call, a waiver, or a printability JSON |
+| `references/diagnostics.md` | reading any JSON field beyond `status`, `passed`, `skipped_counts` and `warnings` |
+| `references/drawings.md` | `khana draw` — which view answers which question |
+| `references/build123d_quickref.md` | selector operators, algebraic vs Builder mode, type-conversion shortcuts |
+| `references/standard_parts.md` | any standard hardware (bd_warehouse) |
+| `references/examples/pin_hinge/` | a worked three-part mechanism with assertions and `inspect()` calls |
 
 ## Feedback
 
