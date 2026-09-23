@@ -23,7 +23,11 @@ a module and does one thing to it — check it, export STL/STEP, draw
 it, or push it to a viewer. `khana check` writes a structured
 `mechanism.json` reporting interferences, clearances, and every
 assertion's result. A violated assertion fails the run, so geometric
-constraints are enforced, not hoped for.
+constraints are enforced, not hoped for. Declare a joint's motion and
+`khana check` holds every claim at each sampled pose of it, not just
+the one you built. Per-part printability — minimum wall thickness and
+overhangs for FDM — is checked by `inspect()` calls in a script run
+with `khana run`, each writing its own JSON.
 
 The tool is designed to close a specific gap: LLMs can reason about
 CAD geometry from code but need explicit feedback on the things a
@@ -189,9 +193,10 @@ khana export assembly.py                  # → outputs/assembly.{stl,step}
 ```
 
 `skills/cad-khana/references/examples/pin_hinge/` is a complete worked
-example. The conventions an agent needs — file kinds, claim taxonomy,
-assertion reference, printability — are in
-`skills/cad-khana/SKILL.md`; this README stays deliberately thin.
+example. The conventions an agent needs start at
+`skills/cad-khana/SKILL.md`, which names the reference file to load
+for each task (assertions, composition, motion, printability,
+diagnostics); this README stays deliberately thin.
 
 ## Related work
 
@@ -208,7 +213,10 @@ an LLM iterate without human review.
 
 - `CLAUDE.md` — operational instructions for agents working on this
   repo.
-- `skills/cad-khana/SKILL.md` — agent-facing guide to using the tool.
+- `skills/cad-khana/SKILL.md` — agent-facing guide to using the tool:
+  the workflow, what a green check does not mean, and which reference
+  to load when.
+- `skills/cad-khana/references/` — the detail, loaded on demand.
 - `skills/cad-khana/references/install.md` — one-shot install steps the skill follows on first use.
 
 ## License
