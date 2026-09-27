@@ -108,6 +108,10 @@ modules** — the same rule that keeps test files out of shipped code.
 That is what makes assertion-only geometry free
 (`references/composition.md`).
 
+A claim belongs in the builder, a check module, or a check module for
+one assembly step, depending on when it has to hold
+(`references/composition.md` §Where a claim lives).
+
 ### Command script
 
 Orchestration only: loops, batches, and the effectful calls the verbs
