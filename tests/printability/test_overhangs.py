@@ -1,4 +1,4 @@
-from math import atan, degrees, sqrt
+from math import atan, cos, degrees, radians, sin, sqrt
 
 from build123d import (
     Box,
@@ -60,6 +60,31 @@ def test_up_axis_rotates_what_counts_as_down():
     # With up_axis along +X, the cube's -X face becomes the build-plate
     # face and should not be flagged.
     assert detect_overhang(_cube(10), up_axis=(1, 0, 0)) is None
+
+
+def test_an_oblique_up_axis_still_excludes_the_face_on_the_plate():
+    # Tilted 30° about Y, up = the box's top-face normal: the 40 x 20
+    # bottom face rests on the plate. The axis-aligned bbox's lowest
+    # corner sits below every point of the part along this up, so the
+    # plate face used to read as an 800 mm² ceiling at 90°.
+    tilt = radians(30)
+    up = (sin(tilt), 0, cos(tilt))
+    assert detect_overhang(Rot(0, 30, 0) * Box(40, 20, 10), up_axis=up) is None
+    # sorted-studs: a 20 x 10 face down under an up in the XY plane.
+    up = (-0.5, sqrt(3) / 2, 0)
+    assert detect_overhang(Rot(0, 0, 30) * Box(20, 6, 10), up_axis=up) is None
+
+
+def test_an_oblique_up_axis_reads_only_the_genuine_overhang():
+    # The 10 x 20 ledge underside is the only overhang, whatever the
+    # rotation — the 20 x 20 bed face must not add to it.
+    turn = Rot(20, 30, 40)
+    up = tuple(Plane(turn).z_dir)
+    part = turn * (_box(20, 20, 20) + Pos(15, 0, 5) * Box(10, 20, 4))
+    overhang = detect_overhang(part, up_axis=up)
+    assert overhang.area_mm2 == approx(200.0, rel=1e-6)
+    assert overhang.max_angle_deg == approx(90.0, abs=0.01)
+    assert len(overhang.regions) == 1
 
 
 def test_threshold_does_not_erase_the_measurement():

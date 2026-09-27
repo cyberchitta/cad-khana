@@ -309,9 +309,9 @@ triangle faces down at all.
   cavity printed last) is still flagged. Most slicers also flag these
   for safety, so the false positive is usually harmless.
 - **Build-plate test is centroid-based.** Tessellated triangles of a
-  curved bottom face have centroids slightly above the minimum of the
-  bounding box; those triangles are still flagged. Truly flat bottoms
-  (axis-aligned with `up_axis`) are handled cleanly.
+  curved bottom face have centroids slightly above the part's lowest
+  point along `up_axis`; those triangles are still flagged. Flat bottoms
+  square to `up_axis` are handled cleanly, oblique `up_axis` included.
 - **Threshold is per-part, not global.** Set via
   `FDM(overhang_max_deg=…)`. 45° is a common default but printer- and
   material-specific.

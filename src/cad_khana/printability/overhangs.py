@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import asin, degrees
 
-from build123d import Part, Vector
+from build123d import Part, Plane, Vector
 
 from cad_khana.core.tessellation import Triangle, _tessellate_faces
 from cad_khana.mechanism.diagnostics import BBox
@@ -45,18 +45,11 @@ def _overhang_angle_deg(normal: Vector, up: Vector) -> float:
 
 
 def _build_plate_level(part: Part, up: Vector) -> float:
-    bb = part.bounding_box()
-    corners = (
-        Vector(bb.min.X, bb.min.Y, bb.min.Z),
-        Vector(bb.max.X, bb.min.Y, bb.min.Z),
-        Vector(bb.min.X, bb.max.Y, bb.min.Z),
-        Vector(bb.max.X, bb.max.Y, bb.min.Z),
-        Vector(bb.min.X, bb.min.Y, bb.max.Z),
-        Vector(bb.max.X, bb.min.Y, bb.max.Z),
-        Vector(bb.min.X, bb.max.Y, bb.max.Z),
-        Vector(bb.max.X, bb.max.Y, bb.max.Z),
-    )
-    return min(c.dot(up) for c in corners)
+    """The part's lowest point along ``up``: its bbox in a frame whose Z
+    is ``up``. The world bbox's lowest corner lies below every point of
+    the part once ``up`` is oblique, so nothing matched the plate."""
+    frame = Plane(origin=(0, 0, 0), z_dir=up)
+    return frame.to_local_coords(part).bounding_box().min.Z
 
 
 def _on_build_plate(triangle: Triangle, up: Vector, min_up: float) -> bool:
