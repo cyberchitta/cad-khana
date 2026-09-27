@@ -120,8 +120,15 @@ motion builds. See `SKILL.md` §What a green check does not mean.
 a = a.assert_distance("ring_gear", "pinion",
                       min_mm=BACKLASH, max_mm=BACKLASH + 0.1)
 
-# directed gap: how far `a` travels along the axis before touching `b`
-# (negative once the projections overlap) — axis name or vector,
+# directed gap between the projections: a's far extent to b's near
+# extent along the axis (negative once they overlap), footprints ignored.
+# It is the travel before contact when a's leading point lines up with
+# b's nearest point along the axis; otherwise that travel is longer (or
+# never ends) and the gap is a lower bound. So min_mm is safe; max_mm
+# cannot say "rests on": a saddle whose side walls hang 7 mm past a
+# rail's top reads -7 resting on it and 0 lifted 7 mm off it, so
+# min_mm=0, max_mm=0 passes the floating pose. A datum-plane target has
+# no footprint, so there the gap is the travel. Axis name or vector,
 # read as the direction FROM a TOWARD b, in this assembly's frame (it
 # turns with the unit when a parent places it rotated)
 a = a.assert_distance("pulley", "housing", along="Z", min_mm=1.0)

@@ -270,8 +270,14 @@ class Distance:
     Without ``along``: the minimum surface-to-surface distance (0 when
     touching or overlapping). With ``along`` (a unit direction from
     ``a`` toward ``b``): the directed gap between the projection
-    intervals — how far ``a`` travels along ``along`` before first
-    touching ``b``; negative when the projections already overlap.
+    intervals — ``a``'s far extent to ``b``'s near extent, whatever
+    their footprints across ``along``; negative when the projections
+    already overlap. It is how far ``a`` travels before touching ``b``
+    when ``a``'s leading point lines up with ``b``'s nearest point along
+    ``along``; otherwise that travel is longer (or never ends) and the
+    gap is a lower bound on it. A ``min_mm`` is therefore safe; a
+    ``max_mm`` reads an extreme point ``b`` may not be under, so it
+    cannot say "rests on".
 
     ``grow_a_mm`` / ``grow_b_mm`` shrink the measured distance by an
     outward offset of the named side — measuring from a tip circle
