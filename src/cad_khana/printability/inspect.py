@@ -18,6 +18,7 @@ from cad_khana.mechanism.diagnostics import (
 )
 from cad_khana.printability.methods import FDM
 from cad_khana.printability.overhangs import Overhang, detect_overhang
+from cad_khana.printability.waiver import Waiver
 from cad_khana.printability.wall import WEDGE_ALIGNMENT, WallSample, min_wall
 
 
@@ -133,12 +134,17 @@ def _assertion_kind(name: str) -> str:
 
 
 def _apply_waivers(
-    assertions: tuple[AssertionResult, ...], waive: dict[str, str]
+    assertions: tuple[AssertionResult, ...],
+    waive: dict[str, Waiver],
+    readings: dict[str, float | None],
 ) -> tuple[AssertionResult, ...]:
     """Attach waiver rationales to failed assertions, matched by
     assertion kind (``wall_min``, ``overhang_max``) — not the full
     ``kind:threshold`` name, so waivers survive threshold changes and
-    thresholds stay honest. Unknown kinds are a caller error."""
+    thresholds stay honest. A waiver whose bounds the reading has left
+    does not apply: the failure counts, and its detail says which bound
+    broke. Unknown kinds, and bounds on another kind, are caller
+    errors."""
     unknown = sorted(waive.keys() - {_assertion_kind(a.name) for a in assertions})
     if unknown:
         kinds = ", ".join(sorted(_assertion_kind(a.name) for a in assertions))
@@ -146,16 +152,34 @@ def _apply_waivers(
             f"waive keys match no assertion kind: {', '.join(unknown)}; "
             f"known kinds: {kinds}"
         )
+    foreign = [
+        f"{kind}: {', '.join(bounds)}"
+        for kind, w in waive.items()
+        if (bounds := w.foreign_bounds(kind))
+    ]
+    if foreign:
+        raise ValueError(f"waiver bounds belong to another kind — {'; '.join(foreign)}")
     return tuple(
-        replace(a, waived=waive[_assertion_kind(a.name)])
+        _waived(a, waive[_assertion_kind(a.name)], readings)
         if a.passed is False and _assertion_kind(a.name) in waive
         else a
         for a in assertions
     )
 
 
+def _waived(
+    a: AssertionResult, waiver: Waiver, readings: dict[str, float | None]
+) -> AssertionResult:
+    breaches = waiver.breaches(readings)
+    return (
+        replace(a, detail=f"{a.detail}; waiver not applied: {'; '.join(breaches)}")
+        if breaches
+        else replace(a, waived=waiver.reason, detail=f"{a.detail}{waiver.within}")
+    )
+
+
 def _warnings(
-    assertions: tuple[AssertionResult, ...], waive: dict[str, str]
+    assertions: tuple[AssertionResult, ...], waive: dict[str, Waiver]
 ) -> tuple[WarningEntry, ...]:
     waived = tuple(
         WarningEntry("waived_failure", a.name, a.waived, a.detail)
@@ -166,7 +190,7 @@ def _warnings(
         WarningEntry(
             "stale_waiver",
             a.name,
-            waive[_assertion_kind(a.name)],
+            waive[_assertion_kind(a.name)].reason,
             "assertion passed; remove the waiver",
         )
         for a in assertions
@@ -175,13 +199,23 @@ def _warnings(
     return waived + stale
 
 
+def _readings(
+    wall: WallSample | None, overhang: Overhang | None
+) -> dict[str, float | None]:
+    return {
+        "min_wall_mm": wall.thickness_mm if wall else None,
+        "area_mm2": overhang.area_mm2 if overhang else 0.0,
+        "regions": len(overhang.regions) if overhang else 0,
+    }
+
+
 def inspect(
     part: Part,
     *,
     method: FDM,
     out: str | Path = "outputs",
     name: str = "part",
-    waive: dict[str, str] | None = None,
+    waive: dict[str, str | Waiver] | None = None,
     solid_count: int | None = None,
 ) -> PrintabilityDiagnostics:
     """``solid_count`` declares how many solids the part is meant to be.
@@ -198,7 +232,7 @@ def inspect(
         up_axis=method.up_axis,
         angle_threshold_deg=method.overhang_max_deg,
     )
-    waivers = waive or {}
+    waivers = {kind: Waiver.create(w) for kind, w in (waive or {}).items()}
     solids = len(part.solids())
     assertions = _apply_waivers(
         (
@@ -211,6 +245,7 @@ def inspect(
             else (_solid_count_assertion(solids, solid_count),)
         ),
         waivers,
+        _readings(wall, overhang),
     )
     warnings = _warnings(assertions, waivers) + (
         (MultiSolid(part=name, solid_count=solids),)

@@ -120,6 +120,9 @@ is not repeated here.
   moved reads as `region removed` plus `region added`.
 - `assertions` — `wall_min:…` and `overhang_max:…` entries, plus
   `solid_count:N` when the count was declared; `passed` + `detail`,
-  plus `waived` (the rationale) when a failure was waived.
+  plus `waived` (the rationale) when a failure was waived. A `Waiver`
+  with bounds appends to `detail`: `— within the waiver's …` when it
+  applied, `; waiver not applied: …` naming each broken bound when it
+  did not (then `waived` is `null` and the failure counts).
 
 - `warnings` — see `SKILL.md` §Read `warnings` on every run.

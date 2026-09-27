@@ -99,6 +99,40 @@ anything. Cite evidence in the reason (`min_wall_at` witness,
 `min_wall_alignment`, the `overhang.regions` a waiver covers by area and
 centroid, a print plan), not just an assertion that it's fine.
 
+**Bind a waiver to the reading it was written against.** A bare reason
+waives the whole kind on that body: a new down-facing face added later
+is swallowed by the `overhang_max` waiver you wrote for one bore crown.
+Pass a `Waiver` instead and state the numbers as limits:
+
+```python
+from cad_khana.printability.waiver import Waiver
+
+inspect(
+    bracket(), method=FDM(wall_min_mm=2.5), out="outputs", name="bracket",
+    waive={
+        "overhang_max": Waiver(
+            reason="two Ø5.5 hole crowns, 54.25 mm², bridged",
+            max_area_mm2=55.0, max_regions=2,
+        ),
+        "wall_min": Waiver(reason="2.25 mm web over each hole", min_wall_mm=2.2),
+    },
+)
+```
+
+`max_area_mm2` and `max_regions` bound the `overhang` block's
+`area_mm2` and `len(regions)`; `min_wall_mm` is a floor on
+`min_wall_mm`. Within every bound, the waiver applies as a bare one
+does and the failure's `detail` ends `— within the waiver's
+max_area_mm2 55.0, max_regions 2`. Past one, **it does not apply**:
+`waived` stays `null`, the run goes red, and `detail` ends `; waiver
+not applied: area_mm2 81.38 exceeds its max_area_mm2 55.0; regions 3
+exceeds its max_regions 2` (a third hole). Set the
+limit just past the reading you measured — the slack is how much new
+area you are agreeing to not hear about. `max_regions` catches a new
+face whose area the slack would absorb. A reading that got *better*
+still applies; once the check passes outright, `stale_waiver` says so.
+A bound on the wrong kind (`min_wall_mm` under `overhang_max`) raises.
+
 **"Sampling artifact" is no longer a valid `wall_min` rationale on its
 own.** Wall readings now span material actually traversed, so a thin
 number is real material. Check `min_wall_alignment` before waiving: near

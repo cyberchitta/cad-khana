@@ -112,6 +112,7 @@ cad-khana/
         wall.py               # min_wall()
         overhangs.py          # detect_overhang() — honors FDM.up_axis
         inspect.py            # inspect() orchestrator + PrintabilityDiagnostics
+        waiver.py             # Waiver: a reason plus the reading bounds it holds for
       core/
         tessellation.py       # shared mesh utilities (wall + overhangs)
       export.py               # STL, STEP (used by `khana export`)
@@ -406,6 +407,12 @@ tip.
 Waivers are keyed by assertion **kind** (the part before the `:`), so
 thresholds stay honest and a waiver survives a threshold change; a
 waived failure keeps `passed: false` — the measurement is what it is.
+A `Waiver` states its reading as limits (`max_area_mm2`, `max_regions`,
+`min_wall_mm`), not `expect ± tol`: past a limit it does not apply and the
+run goes red, because a kind-wide waiver swallowed any new face on the
+body; a reading that improved still applies, since `stale_waiver` covers
+the outright pass. The bounds reach the JSON only as `detail` text —
+`waived` stays the reason string.
 **A threshold decides `passed` and what area counts, never whether the
 reading exists** (0.14): `overhang.max_angle_deg` is reported whatever
 `overhang_max_deg` says, because consumers raised it to 90° to keep the

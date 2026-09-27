@@ -7,6 +7,7 @@ from pytest import approx
 
 from cad_khana.printability.inspect import inspect
 from cad_khana.printability.methods import FDM
+from cad_khana.printability.waiver import Waiver
 
 
 def _cube(size: float = 10):
@@ -249,6 +250,149 @@ def test_waived_failure_prints_warning_to_stderr(tmp_path: Path, capsys):
     )
     err = capsys.readouterr().err
     assert "plate: warning: waived_failure: wall_min:5.0 — artifact" in err
+
+
+# --- bound waivers ------------------------------------------------------
+
+
+def _double_ledge():
+    # The L-shape plus a second 10×20×4 ledge off the -X face: a new
+    # down-facing face, 200 mm² more at 90°.
+    return _l_shape() + Pos(-15, 0, -5) * Box(10, 20, 4)
+
+
+def test_bound_overhang_waiver_applies_within_its_bound(tmp_path: Path):
+    result = inspect(
+        _l_shape(),
+        method=FDM(),
+        out=tmp_path,
+        name="ell",
+        waive={
+            "overhang_max": Waiver(
+                reason="ledge underside, 200 mm², printed with supports",
+                max_area_mm2=201.0,
+                max_regions=1,
+            )
+        },
+    )
+    assert result.status == "ok"
+    data = json.loads((tmp_path / "ell-printability.json").read_text())
+    (overhang,) = [a for a in data["assertions"] if a["name"].startswith("overhang")]
+    assert overhang["passed"] is False
+    assert overhang["waived"] == "ledge underside, 200 mm², printed with supports"
+    assert "within the waiver's max_area_mm2 201.0, max_regions 1" in overhang["detail"]
+    (warning,) = data["warnings"]
+    assert warning["kind"] == "waived_failure"
+    assert warning["detail"] == overhang["detail"]
+
+
+def test_a_new_down_facing_face_breaks_a_bound_overhang_waiver(tmp_path: Path, capsys):
+    with pytest.raises(SystemExit) as exc:
+        inspect(
+            _double_ledge(),
+            method=FDM(),
+            out=tmp_path,
+            name="ell",
+            waive={
+                "overhang_max": Waiver(
+                    reason="ledge underside, 200 mm²", max_area_mm2=201.0
+                )
+            },
+        )
+    assert exc.value.code == 1
+    data = json.loads((tmp_path / "ell-printability.json").read_text())
+    assert data["status"] == "assertion_failed"
+    (overhang,) = [a for a in data["assertions"] if a["name"].startswith("overhang")]
+    assert overhang["passed"] is False
+    assert overhang["waived"] is None
+    assert (
+        "waiver not applied: area_mm2 400.00 exceeds its max_area_mm2 201.0"
+        in overhang["detail"]
+    )
+    assert data["warnings"] == []
+    assert "ell: assertion failed: overhang_max:45.0" in capsys.readouterr().err
+
+
+def test_a_region_count_bound_catches_a_new_face_the_area_bound_misses(tmp_path: Path):
+    with pytest.raises(SystemExit):
+        inspect(
+            _double_ledge(),
+            method=FDM(),
+            out=tmp_path,
+            name="ell",
+            waive={"overhang_max": Waiver(reason="one ledge", max_regions=1)},
+        )
+    data = json.loads((tmp_path / "ell-printability.json").read_text())
+    (overhang,) = [a for a in data["assertions"] if a["name"].startswith("overhang")]
+    assert overhang["waived"] is None
+    assert "regions 2 exceeds its max_regions 1" in overhang["detail"]
+
+
+def test_bound_wall_waiver_applies_at_or_above_its_floor(tmp_path: Path):
+    result = inspect(
+        _plate(20, 20, 1),
+        method=FDM(wall_min_mm=5.0),
+        out=tmp_path,
+        name="plate",
+        waive={"wall_min": Waiver(reason="1 mm skin, by design", min_wall_mm=1.0)},
+    )
+    assert result.status == "ok"
+    (wall,) = [a for a in result.assertions if a.name.startswith("wall_min")]
+    assert wall.waived == "1 mm skin, by design"
+
+
+def test_a_thinner_wall_breaks_a_bound_wall_waiver(tmp_path: Path):
+    with pytest.raises(SystemExit):
+        inspect(
+            _plate(20, 20, 1),
+            method=FDM(wall_min_mm=5.0),
+            out=tmp_path,
+            name="plate",
+            waive={"wall_min": Waiver(reason="2 mm skin", min_wall_mm=2.0)},
+        )
+    data = json.loads((tmp_path / "plate-printability.json").read_text())
+    (wall,) = [a for a in data["assertions"] if a["name"].startswith("wall_min")]
+    assert wall["waived"] is None
+    assert "waiver not applied: min_wall_mm 1.0000 below its min_wall_mm 2.0" in (
+        wall["detail"]
+    )
+
+
+def test_a_bound_waiver_whose_check_passes_is_stale(tmp_path: Path):
+    result = inspect(
+        _cube(10),
+        method=FDM(),
+        out=tmp_path,
+        name="cube",
+        waive={"wall_min": Waiver(reason="gone", min_wall_mm=1.0)},
+    )
+    (warning,) = result.warnings
+    assert (warning.kind, warning.reason) == ("stale_waiver", "gone")
+
+
+def test_a_bare_string_waiver_detail_is_unchanged(tmp_path: Path):
+    inspect(
+        _l_shape(),
+        method=FDM(),
+        out=tmp_path,
+        name="ell",
+        waive={"overhang_max": "ledge"},
+    )
+    data = json.loads((tmp_path / "ell-printability.json").read_text())
+    (overhang,) = [a for a in data["assertions"] if a["name"].startswith("overhang")]
+    assert overhang["waived"] == "ledge"
+    assert "waiver" not in overhang["detail"]
+
+
+def test_a_bound_for_another_kind_raises(tmp_path: Path):
+    with pytest.raises(ValueError, match="max_area_mm2"):
+        inspect(
+            _plate(20, 20, 1),
+            method=FDM(wall_min_mm=5.0),
+            out=tmp_path,
+            name="plate",
+            waive={"wall_min": Waiver(reason="x", max_area_mm2=1.0)},
+        )
 
 
 # --- solid_count --------------------------------------------------------
