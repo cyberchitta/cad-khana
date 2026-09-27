@@ -2,9 +2,10 @@ import json
 from pathlib import Path
 
 import pytest
-from build123d import Box, BuildPart, Locations, Pos
+from build123d import Box, BuildPart, Cylinder, Locations, Pos, Rot
 from pytest import approx
 
+from cad_khana.printability.feature import Feature
 from cad_khana.printability.inspect import inspect
 from cad_khana.printability.methods import FDM
 from cad_khana.printability.waiver import Waiver
@@ -392,6 +393,240 @@ def test_a_bound_for_another_kind_raises(tmp_path: Path):
             out=tmp_path,
             name="plate",
             waive={"wall_min": Waiver(reason="x", max_area_mm2=1.0)},
+        )
+
+
+# --- feature waivers ----------------------------------------------------
+
+
+def _right_ledge():
+    return Pos(15, 0, 5) * Box(10, 20, 4)
+
+
+def _left_ledge():
+    return Pos(-15, 0, -5) * Box(10, 20, 4)
+
+
+def _ledged(**waivers):
+    # _double_ledge's two ledges as features: each underside, 200 mm² at
+    # 90°, lies on its own ledge block's bottom face.
+    return {
+        "right": Feature(_right_ledge(), waive=waivers.get("right", {})),
+        "left": Feature(_left_ledge(), waive=waivers.get("left", {})),
+    }
+
+
+def _pocket(x: float, floor: float):
+    return Pos(x, 0, floor / 2) * Box(8, 6, 10 - floor)
+
+
+def _two_floors():
+    # A 40×10×10 bar with two 8×6 pockets from the top: a 1.0 mm floor at
+    # x = -10 and a 0.8 mm floor at x = +10. Every other wall is 2 mm.
+    return _plate(40, 10, 10) - _pocket(-10, 1.0) - _pocket(10, 0.8)
+
+
+def _written(tmp_path: Path, name: str, kind: str) -> dict:
+    data = json.loads((tmp_path / f"{name}-printability.json").read_text())
+    (a,) = [a for a in data["assertions"] if a["name"].startswith(kind)]
+    return a
+
+
+def _warned(tmp_path: Path, name: str) -> list[dict]:
+    return json.loads((tmp_path / f"{name}-printability.json").read_text())["warnings"]
+
+
+def test_each_feature_waives_the_region_on_its_own_surface(tmp_path: Path):
+    result = inspect(
+        _double_ledge(),
+        method=FDM(),
+        out=tmp_path,
+        name="ell",
+        features=_ledged(
+            right={"overhang_max": Waiver(reason="right ledge", max_area_mm2=201.0)},
+            left={"overhang_max": Waiver(reason="left ledge", max_area_mm2=201.0)},
+        ),
+    )
+    assert result.status == "ok"
+    overhang = _written(tmp_path, "ell", "overhang")
+    assert overhang["waived"] == "right: right ledge; left: left ledge"
+    assert overhang["detail"].endswith(
+        "waived by feature right (max_area_mm2 201.0), left (max_area_mm2 201.0)"
+    )
+
+
+def test_a_region_on_a_feature_that_does_not_waive_fails(tmp_path: Path):
+    with pytest.raises(SystemExit):
+        inspect(
+            _double_ledge(),
+            method=FDM(),
+            out=tmp_path,
+            name="ell",
+            features=_ledged(right={"overhang_max": "right ledge"}),
+        )
+    overhang = _written(tmp_path, "ell", "overhang")
+    assert overhang["waived"] is None
+    assert overhang["detail"].endswith(
+        "not waived: 1 region no feature waives, worst region 200.00mm² at "
+        "(-15.00, 0.00, -7.00): traces to left, which does not waive overhang_max"
+    )
+
+
+def test_a_region_on_no_feature_fails(tmp_path: Path):
+    with pytest.raises(SystemExit):
+        inspect(
+            _double_ledge(),
+            method=FDM(),
+            out=tmp_path,
+            name="ell",
+            features={"right": Feature(_right_ledge(), waive={"overhang_max": "r"})},
+        )
+    assert _written(tmp_path, "ell", "overhang")["detail"].endswith(
+        "(-15.00, 0.00, -7.00): traces to no feature"
+    )
+
+
+def test_a_feature_bound_reads_only_that_features_regions(tmp_path: Path):
+    with pytest.raises(SystemExit):
+        inspect(
+            _double_ledge(),
+            method=FDM(),
+            out=tmp_path,
+            name="ell",
+            features=_ledged(
+                right={"overhang_max": Waiver(reason="r", max_area_mm2=150.0)},
+                left={"overhang_max": Waiver(reason="l", max_area_mm2=201.0)},
+            ),
+        )
+    assert _written(tmp_path, "ell", "overhang")["detail"].endswith(
+        "(15.00, 0.00, 3.00): right's waiver not applied: area_mm2 200.00 "
+        "exceeds its max_area_mm2 150.0"
+    )
+
+
+def test_a_bore_crown_traces_to_the_bore_not_the_block_it_was_cut_from(
+    tmp_path: Path,
+):
+    bore = Rot(90, 0, 0) * Cylinder(3, 30)
+    result = inspect(
+        _plate(20, 20, 20) - bore,
+        method=FDM(),
+        out=tmp_path,
+        name="bored",
+        features={
+            "body": Feature(_plate(20, 20, 20)),
+            "bore": Feature(bore, waive={"overhang_max": "Ø6 crown, bridged"}),
+        },
+    )
+    assert result.status == "ok"
+    assert _written(tmp_path, "bored", "overhang")["waived"] == "bore: Ø6 crown, bridged"
+
+
+def test_a_feature_waiver_nothing_traces_to_is_stale(tmp_path: Path):
+    inspect(
+        _l_shape(),
+        method=FDM(),
+        out=tmp_path,
+        name="ell",
+        features=_ledged(
+            right={"overhang_max": "right ledge"}, left={"overhang_max": "gone"}
+        ),
+    )
+    (stale,) = [w for w in _warned(tmp_path, "ell") if w["kind"] == "stale_waiver"]
+    assert stale["reason"] == "gone"
+    assert stale["detail"] == "no failure traces to feature left; remove its waiver"
+
+
+def test_a_feature_waiver_on_a_passing_check_is_stale(tmp_path: Path):
+    inspect(
+        _cube(),
+        method=FDM(),
+        out=tmp_path,
+        name="cube",
+        features={"all": Feature(_cube(), waive={"overhang_max": "nothing"})},
+    )
+    (stale,) = _warned(tmp_path, "cube")
+    assert stale["detail"] == "assertion passed; remove feature all's waiver"
+
+
+def test_the_body_waiver_takes_what_the_features_leave(tmp_path: Path):
+    result = inspect(
+        _double_ledge(),
+        method=FDM(),
+        out=tmp_path,
+        name="ell",
+        features={"right": Feature(_right_ledge(), waive={"overhang_max": "r"})},
+        waive={"overhang_max": "everything else"},
+    )
+    assert result.status == "ok"
+    overhang = _written(tmp_path, "ell", "overhang")
+    assert overhang["waived"] == "right: r; everything else"
+    assert "1 region no feature waives" in overhang["detail"]
+
+
+def test_a_thin_wall_is_waived_only_when_both_its_sides_waive(tmp_path: Path):
+    features = {
+        "bar": Feature(_plate(40, 10, 10), waive={"wall_min": "floors, by design"}),
+        "pocket_a": Feature(_pocket(-10, 1.0)),
+        "pocket_b": Feature(_pocket(10, 0.8), waive={"wall_min": "0.8 floor"}),
+    }
+    with pytest.raises(SystemExit):
+        inspect(
+            _two_floors(),
+            method=FDM(wall_min_mm=1.5),
+            out=tmp_path,
+            name="bar",
+            features=features,
+        )
+    wall = _written(tmp_path, "bar", "wall_min")
+    assert wall["waived"] is None
+    assert "worst wall 1.0000mm" in wall["detail"]
+    assert wall["detail"].endswith("traces to pocket_a, which does not waive wall_min")
+
+
+def test_a_wall_with_one_side_on_no_feature_fails(tmp_path: Path):
+    with pytest.raises(SystemExit):
+        inspect(
+            _two_floors(),
+            method=FDM(wall_min_mm=1.5),
+            out=tmp_path,
+            name="bar",
+            features={
+                "pocket_a": Feature(_pocket(-10, 1.0), waive={"wall_min": "a"}),
+                "pocket_b": Feature(_pocket(10, 0.8), waive={"wall_min": "b"}),
+            },
+        )
+    assert _written(tmp_path, "bar", "wall_min")["detail"].endswith(
+        "one side traces to no feature"
+    )
+
+
+def test_every_thin_wall_waived_by_its_features_applies(tmp_path: Path):
+    result = inspect(
+        _two_floors(),
+        method=FDM(wall_min_mm=1.5),
+        out=tmp_path,
+        name="bar",
+        features={
+            "bar": Feature(_plate(40, 10, 10), waive={"wall_min": "floors"}),
+            "pocket_a": Feature(_pocket(-10, 1.0), waive={"wall_min": "a"}),
+            "pocket_b": Feature(
+                _pocket(10, 0.8), waive={"wall_min": Waiver(reason="b", min_wall_mm=0.79)}
+            ),
+        },
+    )
+    assert result.status == "ok"
+
+
+def test_a_feature_cannot_waive_a_check_with_no_place(tmp_path: Path):
+    with pytest.raises(ValueError, match="solid_count"):
+        inspect(
+            _two_bodies(),
+            method=FDM(),
+            out=tmp_path,
+            name="pair",
+            solid_count=1,
+            features={"all": Feature(_cube(), waive={"solid_count": "x"})},
         )
 
 

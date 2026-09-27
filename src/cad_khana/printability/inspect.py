@@ -16,10 +16,22 @@ from cad_khana.mechanism.diagnostics import (
     BBox,
     _bbox,
 )
+from cad_khana.printability.feature import Coverage, Failure, Feature, cover
 from cad_khana.printability.methods import FDM
-from cad_khana.printability.overhangs import Overhang, detect_overhang
+from cad_khana.printability.overhangs import (
+    Overhang,
+    detect_overhang,
+    regions_with_points,
+)
 from cad_khana.printability.waiver import Waiver
-from cad_khana.printability.wall import WEDGE_ALIGNMENT, WallSample, min_wall
+from cad_khana.printability.wall import (
+    WEDGE_ALIGNMENT,
+    WallSample,
+    thinnest,
+    wall_samples,
+)
+
+TRACEABLE_KINDS = ("wall_min", "overhang_max")
 
 
 @dataclass(frozen=True)
@@ -75,12 +87,16 @@ class PrintabilityDiagnostics:
     warnings: tuple[WarningEntry | MultiSolid, ...] = field(default_factory=tuple)
 
 
+def _point(at: tuple[float, float, float]) -> str:
+    return ", ".join(f"{c:.2f}" for c in at)
+
+
 def _wall_assertion(wall: WallSample | None, method: FDM) -> AssertionResult:
     name = f"wall_min:{method.wall_min_mm}"
     if wall is None:
         return AssertionResult(name, False, "min wall could not be computed")
     passed = wall.thickness_mm >= method.wall_min_mm - BOUND_EPSILON
-    at = ", ".join(f"{c:.2f}" for c in wall.at)
+    at = _point(wall.at)
     wedge = (
         ""
         if wall.alignment >= WEDGE_ALIGNMENT
@@ -114,7 +130,7 @@ def _overhang_detail(overhang: Overhang, method: FDM) -> str:
     """A failure past the bound always has a region: the steepest facet
     is past the threshold, so it counts."""
     largest, count = overhang.regions[0], len(overhang.regions)
-    at = ", ".join(f"{c:.2f}" for c in largest.centroid_mm)
+    at = _point(largest.centroid_mm)
     return (
         f"overhang {overhang.max_angle_deg:.4f}° exceeds max "
         f"{method.overhang_max_deg}° across {count} "
@@ -133,38 +149,175 @@ def _assertion_kind(name: str) -> str:
     return name.split(":", 1)[0]
 
 
+def _check_waivers(
+    kinds: set[str], waive: dict[str, Waiver], features: dict[str, Feature]
+) -> None:
+    """Unknown kinds, bounds on another kind, and a feature waiving a check
+    no failure of which has a place are caller errors."""
+    keyed = {
+        **{kind: w for kind, w in waive.items()},
+        **{
+            f"{kind} (feature {name})": w
+            for name, f in features.items()
+            for kind in f.waive
+            if (w := f.waiver(kind))
+        },
+    }
+    unknown = sorted(k for k in keyed if k.split(" ")[0] not in kinds)
+    if unknown:
+        raise ValueError(
+            f"waive keys match no assertion kind: {', '.join(unknown)}; "
+            f"known kinds: {', '.join(sorted(kinds))}"
+        )
+    placeless = sorted(
+        f"{kind} (feature {name})"
+        for name, f in features.items()
+        for kind in f.waive
+        if kind not in TRACEABLE_KINDS
+    )
+    if placeless:
+        raise ValueError(
+            f"a feature can waive only {', '.join(TRACEABLE_KINDS)} — "
+            f"{', '.join(placeless)} has no place to trace"
+        )
+    foreign = [
+        f"{key}: {', '.join(bounds)}"
+        for key, w in keyed.items()
+        if (bounds := w.foreign_bounds(key.split(" ")[0]))
+    ]
+    if foreign:
+        raise ValueError(f"waiver bounds belong to another kind — {'; '.join(foreign)}")
+
+
 def _apply_waivers(
     assertions: tuple[AssertionResult, ...],
     waive: dict[str, Waiver],
     readings: dict[str, float | None],
+    features: dict[str, Feature],
+    coverages: dict[str, Coverage],
 ) -> tuple[AssertionResult, ...]:
     """Attach waiver rationales to failed assertions, matched by
     assertion kind (``wall_min``, ``overhang_max``) — not the full
     ``kind:threshold`` name, so waivers survive threshold changes and
     thresholds stay honest. A waiver whose bounds the reading has left
     does not apply: the failure counts, and its detail says which bound
-    broke. Unknown kinds, and bounds on another kind, are caller
-    errors."""
-    unknown = sorted(waive.keys() - {_assertion_kind(a.name) for a in assertions})
-    if unknown:
-        kinds = ", ".join(sorted(_assertion_kind(a.name) for a in assertions))
-        raise ValueError(
-            f"waive keys match no assertion kind: {', '.join(unknown)}; "
-            f"known kinds: {kinds}"
-        )
-    foreign = [
-        f"{kind}: {', '.join(bounds)}"
-        for kind, w in waive.items()
-        if (bounds := w.foreign_bounds(kind))
-    ]
-    if foreign:
-        raise ValueError(f"waiver bounds belong to another kind — {'; '.join(foreign)}")
+    broke. A kind some feature waives goes by what the features cover
+    first; the body-wide waiver, if any, takes what is left."""
     return tuple(
-        _waived(a, waive[_assertion_kind(a.name)], readings)
-        if a.passed is False and _assertion_kind(a.name) in waive
+        a
+        if a.passed is not False
+        else _featured(a, kind, coverages[kind], features, waive.get(kind), readings)
+        if (kind := _assertion_kind(a.name)) in coverages
+        else _waived(a, waive[kind], readings)
+        if kind in waive
         else a
         for a in assertions
     )
+
+
+def _limits(name: str, waiver: Waiver) -> str:
+    bounds = ", ".join(f"{n} {v}" for n, v in waiver.bounds.items())
+    return f"{name} ({bounds})" if bounds else name
+
+
+def _featured(
+    a: AssertionResult,
+    kind: str,
+    coverage: Coverage,
+    features: dict[str, Feature],
+    body: Waiver | None,
+    readings: dict[str, float | None],
+) -> AssertionResult:
+    waivers = {n: features[n].waiver(kind) for n in coverage.covering}
+    by = ", ".join(_limits(n, w) for n, w in waivers.items())
+    reasons = "; ".join(f"{n}: {w.reason}" for n, w in waivers.items())
+    if not coverage.uncovered:
+        return replace(a, waived=reasons, detail=f"{a.detail} — waived by feature {by}")
+    worst, why = (_worst[kind])(coverage.uncovered)
+    count = len(coverage.uncovered)
+    left = (
+        f"{count} {_noun[kind]}{'' if count == 1 else 's'} no feature waives, "
+        f"worst {worst.where}: {why}"
+    )
+    rest = replace(a, detail=f"{a.detail}; {left}")
+    if body is None:
+        return replace(rest, detail=f"{a.detail}; not waived: {left}")
+    held = _waived(rest, body, readings)
+    return (
+        replace(held, waived=f"{reasons}; {held.waived}")
+        if held.waived is not None and reasons
+        else held
+    )
+
+
+_noun = {"overhang_max": "region", "wall_min": "reading"}
+_worst = {
+    "overhang_max": lambda u: max(u, key=lambda p: p[0].reading),
+    "wall_min": lambda u: min(u, key=lambda p: p[0].reading),
+}
+
+
+def _overhang_failures(part: Part, method: FDM) -> tuple[Failure, ...]:
+    return tuple(
+        Failure(
+            ends=(tuple((p.X, p.Y, p.Z) for p in points),),
+            reading=region.area_mm2,
+            where=f"region {region.area_mm2:.2f}mm² at ({_point(region.centroid_mm)})",
+        )
+        for region, points in regions_with_points(
+            part, up_axis=method.up_axis, angle_threshold_deg=method.overhang_max_deg
+        )
+    )
+
+
+def _wall_failures(samples: tuple[WallSample, ...], method: FDM) -> tuple[Failure, ...]:
+    return tuple(
+        Failure(
+            ends=((s.at,), (s.exit_at,)),
+            reading=s.thickness_mm,
+            where=f"wall {s.thickness_mm:.4f}mm at ({_point(s.at)})",
+        )
+        for s in samples
+        if s.thickness_mm < method.wall_min_mm - BOUND_EPSILON
+    )
+
+
+def _overhang_readings(failures: tuple[Failure, ...]) -> dict[str, float | None]:
+    return {
+        "area_mm2": sum((f.reading for f in failures), 0.0),
+        "regions": len(failures),
+        "min_wall_mm": None,
+    }
+
+
+def _wall_readings(failures: tuple[Failure, ...]) -> dict[str, float | None]:
+    return {
+        "min_wall_mm": min((f.reading for f in failures), default=None),
+        "area_mm2": 0.0,
+        "regions": 0,
+    }
+
+
+def _coverages(
+    assertions: tuple[AssertionResult, ...],
+    features: dict[str, Feature],
+    part: Part,
+    samples: tuple[WallSample, ...],
+    method: FDM,
+) -> dict[str, Coverage]:
+    """Trace the failures of each failed check some feature waives. A kind
+    whose check passed has nothing to trace: every waiver of it is stale."""
+    failed = {_assertion_kind(a.name) for a in assertions if a.passed is False}
+    waived = {k for f in features.values() for k in f.waive}
+    traced = {
+        "overhang_max": lambda: cover(
+            "overhang_max", _overhang_failures(part, method), features, _overhang_readings
+        ),
+        "wall_min": lambda: cover(
+            "wall_min", _wall_failures(samples, method), features, _wall_readings
+        ),
+    }
+    return {kind: traced[kind]() for kind in TRACEABLE_KINDS if kind in failed & waived}
 
 
 def _waived(
@@ -179,7 +332,10 @@ def _waived(
 
 
 def _warnings(
-    assertions: tuple[AssertionResult, ...], waive: dict[str, Waiver]
+    assertions: tuple[AssertionResult, ...],
+    waive: dict[str, Waiver],
+    features: dict[str, Feature],
+    coverages: dict[str, Coverage],
 ) -> tuple[WarningEntry, ...]:
     waived = tuple(
         WarningEntry("waived_failure", a.name, a.waived, a.detail)
@@ -196,7 +352,24 @@ def _warnings(
         for a in assertions
         if a.passed is True and _assertion_kind(a.name) in waive
     )
-    return waived + stale
+    stale_features = tuple(
+        WarningEntry(
+            "stale_waiver",
+            a.name,
+            waiver.reason,
+            f"assertion passed; remove feature {name}'s waiver"
+            if a.passed is True
+            else f"no failure traces to feature {name}; remove its waiver",
+        )
+        for a in assertions
+        for name, f in features.items()
+        if (waiver := f.waiver(kind := _assertion_kind(a.name))) is not None
+        and (
+            a.passed is True
+            or (kind in coverages and name in coverages[kind].stale)
+        )
+    )
+    return waived + stale + stale_features
 
 
 def _readings(
@@ -217,37 +390,45 @@ def inspect(
     name: str = "part",
     waive: dict[str, str | Waiver] | None = None,
     solid_count: int | None = None,
+    features: dict[str, Feature] | None = None,
 ) -> PrintabilityDiagnostics:
     """``solid_count`` declares how many solids the part is meant to be.
     Undeclared, a part above one solid draws a ``multi_solid`` warning;
     declared, the count is a claim like the others — it lands in
     ``assertions`` with the count in ``value``, a mismatch fails the run
     (or is waived under kind ``solid_count``), and the warning has
-    nothing left to say."""
+    nothing left to say.
+
+    ``features`` names the cutters and blocks the part was built from, each
+    with its own waivers. A failure is waived only when every surface it
+    lies on traces to a feature and every feature it traces to waives it;
+    ``waive`` stays the body-wide fallback for whatever they leave."""
     out_path = resolve_out(out)
     out_path.mkdir(parents=True, exist_ok=True)
-    wall = min_wall(part)
+    samples = wall_samples(part)
+    wall = thinnest(samples)
     overhang = detect_overhang(
         part,
         up_axis=method.up_axis,
         angle_threshold_deg=method.overhang_max_deg,
     )
     waivers = {kind: Waiver.create(w) for kind, w in (waive or {}).items()}
+    features = features or {}
     solids = len(part.solids())
-    assertions = _apply_waivers(
-        (
-            _wall_assertion(wall, method),
-            _overhang_assertion(overhang, method),
-        )
-        + (
-            ()
-            if solid_count is None
-            else (_solid_count_assertion(solids, solid_count),)
-        ),
-        waivers,
-        _readings(wall, overhang),
+    checked = (
+        _wall_assertion(wall, method),
+        _overhang_assertion(overhang, method),
+    ) + (
+        ()
+        if solid_count is None
+        else (_solid_count_assertion(solids, solid_count),)
     )
-    warnings = _warnings(assertions, waivers) + (
+    _check_waivers({_assertion_kind(a.name) for a in checked}, waivers, features)
+    coverages = _coverages(checked, features, part, samples, method)
+    assertions = _apply_waivers(
+        checked, waivers, _readings(wall, overhang), features, coverages
+    )
+    warnings = _warnings(assertions, waivers, features, coverages) + (
         (MultiSolid(part=name, solid_count=solids),)
         if solid_count is None and solids > 1
         else ()

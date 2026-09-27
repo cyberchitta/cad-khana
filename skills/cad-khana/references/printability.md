@@ -1,7 +1,7 @@
 # Printability
 
-Load before writing an `inspect()` call, a waiver, or reading a
-`<name>-printability.json`. The first part is how to use it; the rest
+Load before writing an `inspect()` call, a waiver, choosing a print
+orientation, or reading a `<name>-printability.json`. The first part is how to use it; the rest
 is how wall thickness and overhangs are computed, and where these
 approximations break down. Keep this honest — false confidence from a
 bad diagnostic is worse than no diagnostic.
@@ -44,6 +44,18 @@ printability constraints rather than placeholders:
 failure — under `khana` at the end of the script, standalone
 immediately (see `assertions.md`). Each call is
 independent — pass a different `name=` per printed part.
+
+**Choosing a print orientation** is one `inspect()` per candidate
+`up_axis`, each under its own `name=` (`f"bracket-{label}"`), in a
+scratch command script. Oblique ups work; the bed is the part's lowest
+point along each one. Don't waive to keep the sweep green: under `khana
+run` every candidate's JSON is written before the run exits 1, so the
+reds are the comparison. Each file records its `method_params.up_axis`,
+and `khana diff` between two candidates names the up change and every
+region added or removed, so it gives you the overhang trade directly.
+Wall readings do not depend on orientation, and bed contact area is not
+reported. Run the sweep with `--out-root` (`cli.md`) so its files stay
+out of the unit's `outputs/`.
 
 **`inspect()` calls live in a command script**, conventionally
 `printability.py` beside the unit's `assembly.py`, run with `khana
@@ -132,6 +144,60 @@ area you are agreeing to not hear about. `max_regions` catches a new
 face whose area the slack would absorb. A reading that got *better*
 still applies; once the check passes outright, `stale_waiver` says so.
 A bound on the wrong kind (`min_wall_mm` under `overhang_max`) raises.
+
+**Waive per feature when one body has failures with different
+reasons.** A bound still waives every failure of its kind on the body:
+seat faces and incidental ceilings share one `overhang_max`, and a
+floor under a knife edge covers any other thin wall that reads above
+it. Pass the cutters and blocks the part was built from as `features=`,
+each with its own waivers, in the inspected body's frame:
+
+```python
+from cad_khana.printability.feature import Feature
+
+inspect(
+    frame(), method=FDM(up_axis=(0, 0, -1)), out="outputs", name="frame",
+    features={
+        "seat": Feature(seat_cutter, waive={"overhang_max": Waiver(
+            reason="acrylic seat, bridged, sanded flat",
+            max_area_mm2=431.0, max_regions=6)}),
+        "pin_bores": Feature(bore_cutters, waive={"overhang_max": Waiver(
+            reason="Ø5.4 crowns, drilled through", max_regions=2)}),
+        "body": Feature(frame_block),   # declared, waives nothing
+    },
+)
+```
+
+Each failure is traced to the features whose **surface** it lies on,
+not merely their volume: an overhang region to the surfaces holding
+all of its facets, a thin wall to the surfaces at *both* ends of the
+reading, a knife edge to the two surfaces meeting there. A failure is
+waived only when every end traces to some feature and **every feature
+it traces to waives that kind**, within that waiver's bounds. The
+bounds read only the failures traced to that feature. Anything else
+counts, and `detail` says why for the worst of it: `traces to no
+feature`, `one side traces to no feature`, `traces to body, which does
+not waive wall_min`, or `seat's waiver not applied: area_mm2 430.00
+exceeds its max_area_mm2 400.0`. When everything is covered, `waived`
+joins each feature's reason (`seat: …; pin_bores: …`) and `detail` ends
+`— waived by feature seat (max_area_mm2 431.0, max_regions 6),
+pin_bores (max_regions 2)`.
+
+Declare the feature that **made** the surface. A face a cutter left
+behind lies on the cutter: a seat plane that a pocket cutter trimmed
+the lips down to traces to that cutter, not to the lips, and a bore
+crown inside a block traces to the bore. A face on two features'
+surfaces (a bracket top flush with the seat plane) traces to both,
+counts toward both features' bounds, and needs both to waive it.
+Declaring a feature that waives nothing is how you make a failure on
+it count rather than fall through as untraced. Because a wall has two
+ends, a thin wall between a waived knife edge and a new hole traces to
+the hole, and it fails unless the hole also waives `wall_min`.
+
+`waive=` stays the body-wide fallback: it covers whatever the features
+leave, with the reasons joined. A feature waiver that no failure
+traces to, or whose check passes, gets a `stale_waiver` warning.
+`solid_count` has no place on the body, so a feature cannot waive it.
 
 **"Sampling artifact" is no longer a valid `wall_min` rationale on its
 own.** Wall readings now span material actually traversed, so a thin

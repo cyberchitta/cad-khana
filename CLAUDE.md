@@ -113,6 +113,7 @@ cad-khana/
         overhangs.py          # detect_overhang() — honors FDM.up_axis
         inspect.py            # inspect() orchestrator + PrintabilityDiagnostics
         waiver.py             # Waiver: a reason plus the reading bounds it holds for
+        feature.py            # Feature: a cutter/block with waivers; traces failures to it
       core/
         tessellation.py       # shared mesh utilities (wall + overhangs)
       export.py               # STL, STEP (used by `khana export`)
@@ -420,6 +421,17 @@ run goes red, because a kind-wide waiver swallowed any new face on the
 body; a reading that improved still applies, since `stale_waiver` covers
 the outright pass. The bounds reach the JSON only as `detail` text —
 `waived` stays the reason string.
+**Feature waivers** (`printability/feature.py`) trace each failure to the
+features whose *surface* holds it — containment is wrong once features
+nest, since a bore crown lies inside the block it was cut from — and
+waive only when every end traces and every traced feature waives. A
+wall has two ends because "bore vs trim plane" and "bore vs second hole"
+share a witness point. Features are declared at `inspect()`, not by a
+build-time wrapper: tracing works after the fact, and a wrapper would be
+style enforcement on part functions. Region points include facet
+centroids projected onto the face, because a ruled face's long facets
+have every corner on the faces the feature passes through. No schema
+bump: only `waived`/`detail` text changes.
 **A threshold decides `passed` and what area counts, never whether the
 reading exists** (0.14): `overhang.max_angle_deg` is reported whatever
 `overhang_max_deg` says, because consumers raised it to 90° to keep the

@@ -1,20 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from itertools import chain, combinations, groupby
 from math import acos, ceil, cos, sin
 
-from build123d import Axis, Face, Part, Vector
-from OCP.BRepGProp import BRepGProp_Face
-from OCP.GeomAPI import GeomAPI_ProjectPointOnSurf
-from OCP.gp import gp_Pnt, gp_Vec
+from build123d import Axis, Part, Vector
 
 from cad_khana.core.tessellation import (
     TESSELLATION_ANGULAR_TOLERANCE,
     TESSELLATION_TOLERANCE_MM,
     Triangle,
     _tessellate_faces,
+    on_surface,
 )
 
 BACKOFF_MM = 4 * TESSELLATION_TOLERANCE_MM
@@ -46,6 +44,9 @@ class WallSample:
     opposite most squarely, so it reads the same way: a web under a groove
     is near 1.0.
 
+    `at` is where the span enters material and `exit_at` where it leaves:
+    the two surfaces the wall lies between.
+
     It locates the reading; it does not decide a waiver. A wedge tip can be
     an ordinary printed corner or a feathered fin running the height of a
     wall — only the witness tells which.
@@ -54,32 +55,16 @@ class WallSample:
     thickness_mm: float
     at: tuple[float, float, float]
     alignment: float
+    exit_at: tuple[float, float, float]
 
 
-def _on_surface(face: Face, triangle: Triangle) -> Triangle:
-    """A facet re-anchored on the surface it approximates: its centroid
-    projected onto the face, carrying the face's outward normal there.
-
-    A facet's own plane is only a chord. On a trimmed curved face the mesher
-    spans long triangles between trim vertices at different heights, tilted
-    well off the surface — 19 deg on a cylinder whose trim edges sit at
-    different z. A ray along such a normal crosses the wall slantwise, and
-    two such facets can fold concavely along a chord of a convex surface,
-    which reads as a crease where the surface has none. The surface normal
-    is what makes a facet ray perpendicular to its entry face, and what a
-    crease is judged by.
-    """
-    u, v = GeomAPI_ProjectPointOnSurf(
-        triangle.centroid.to_pnt(), face.geom_adaptor()
-    ).LowerDistanceParameters()
-    point, normal = gp_Pnt(), gp_Vec()
-    BRepGProp_Face(face.wrapped).Normal(u, v, point, normal)
-    return replace(triangle, centroid=Vector(point), normal=Vector(normal).normalized())
+def _xyz(v: Vector) -> tuple[float, float, float]:
+    return (v.X, v.Y, v.Z)
 
 
 def _surface_facets(part: Part) -> tuple[Triangle, ...]:
     return tuple(
-        _on_surface(face, triangle)
+        on_surface(face, triangle)
         for face, triangles in zip(part.faces(), _tessellate_faces(part))
         for triangle in triangles
     )
@@ -135,12 +120,12 @@ def _wall_span(crossings: list[Crossing]) -> WallSample | None:
     if not forward or forward[0][2] >= 0:
         return None
     entered, at, _ = forward[0]
-    leaving = next(((d, a) for d, _, a in forward[1:] if a > 0), None)
+    leaving = next((c for c in forward[1:] if c[2] > 0), None)
     if leaving is None:
         return None
-    span, alignment = leaving[0] - entered, leaving[1]
+    span, exit_at, alignment = leaving[0] - entered, leaving[1], leaving[2]
     return (
-        WallSample(span, (at.X, at.Y, at.Z), alignment)
+        WallSample(span, _xyz(at), alignment, _xyz(exit_at))
         if span > MIN_SPAN_MM
         else None
     )
@@ -235,7 +220,7 @@ def _crease_span(point: Vector, crossings: list[Crossing]) -> WallSample | None:
         return None
     span = leaving[0] - (entries[-1] if entries else 0.0)
     return (
-        WallSample(span, (point.X, point.Y, point.Z), leaving[2])
+        WallSample(span, _xyz(point), leaving[2], _xyz(leaving[1]))
         if span > MIN_SPAN_MM
         else None
     )
@@ -306,11 +291,15 @@ def _crease_samples(part: Part, triangles: tuple[Triangle, ...]) -> Iterator[Wal
     )
 
 
-def min_wall(part: Part) -> WallSample | None:
+def wall_samples(part: Part) -> tuple[WallSample, ...]:
     triangles = _surface_facets(part)
     facet_samples = (s for t in triangles if (s := _sample(part, t)) is not None)
-    return min(
-        chain(facet_samples, _crease_samples(part, triangles)),
-        key=lambda s: s.thickness_mm,
-        default=None,
-    )
+    return tuple(chain(facet_samples, _crease_samples(part, triangles)))
+
+
+def thinnest(samples: tuple[WallSample, ...]) -> WallSample | None:
+    return min(samples, key=lambda s: s.thickness_mm, default=None)
+
+
+def min_wall(part: Part) -> WallSample | None:
+    return thinnest(wall_samples(part))

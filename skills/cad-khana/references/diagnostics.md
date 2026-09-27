@@ -123,6 +123,10 @@ is not repeated here.
   plus `waived` (the rationale) when a failure was waived. A `Waiver`
   with bounds appends to `detail`: `— within the waiver's …` when it
   applied, `; waiver not applied: …` naming each broken bound when it
-  did not (then `waived` is `null` and the failure counts).
+  did not (then `waived` is `null` and the failure counts). Under
+  `features=`, `waived` joins each covering feature's reason
+  (`seat: …; pin_bores: …`) and `detail` ends `— waived by feature …`;
+  what the features leave is counted in `detail`, `; not waived: N
+  regions no feature waives, worst …: <why>` (see `printability.md`).
 
 - `warnings` — see `SKILL.md` §Read `warnings` on every run.

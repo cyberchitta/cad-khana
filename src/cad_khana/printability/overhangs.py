@@ -5,7 +5,7 @@ from math import asin, degrees
 
 from build123d import Part, Plane, Vector
 
-from cad_khana.core.tessellation import Triangle, _tessellate_faces
+from cad_khana.core.tessellation import Triangle, _tessellate_faces, on_surface
 from cad_khana.mechanism.diagnostics import BBox
 
 BUILD_PLATE_EPSILON_MM = 1e-3
@@ -85,6 +85,35 @@ def _region(facets: tuple[_Facet, ...]) -> OverhangRegion:
     )
 
 
+def _facing_down(part: Part, up: Vector) -> tuple[tuple[_Facet, ...], ...]:
+    min_up = _build_plate_level(part, up)
+    return tuple(
+        tuple(
+            _Facet(t, ang)
+            for t in face
+            if (ang := _overhang_angle_deg(t.normal, up)) > FACING_DOWN_EPSILON_DEG
+            and not _on_build_plate(t, up, min_up)
+        )
+        for face in _tessellate_faces(part)
+    )
+
+
+def _over(
+    facing_down: tuple[tuple[_Facet, ...], ...], threshold: float
+) -> tuple[tuple[_Facet, ...], ...]:
+    return tuple(
+        counted
+        for face in facing_down
+        if (counted := tuple(f for f in face if f.angle_deg > threshold))
+    )
+
+
+def _largest_first(
+    over: tuple[tuple[_Facet, ...], ...],
+) -> tuple[OverhangRegion, ...]:
+    return tuple(sorted((_region(face) for face in over), key=lambda r: -r.area_mm2))
+
+
 def detect_overhang(
     part: Part,
     *,
@@ -95,25 +124,8 @@ def detect_overhang(
     those past the threshold count toward ``area_mm2`` and are grouped
     by B-rep face into ``regions``, largest first — every region, with
     no size floor, so the regions' areas sum to ``area_mm2``."""
-    up = Vector(*up_axis).normalized()
-    min_up = _build_plate_level(part, up)
-    facing_down = tuple(
-        tuple(
-            _Facet(t, ang)
-            for t in face
-            if (ang := _overhang_angle_deg(t.normal, up)) > FACING_DOWN_EPSILON_DEG
-            and not _on_build_plate(t, up, min_up)
-        )
-        for face in _tessellate_faces(part)
-    )
-    over = tuple(
-        counted
-        for face in facing_down
-        if (counted := tuple(f for f in face if f.angle_deg > angle_threshold_deg))
-    )
-    regions = tuple(
-        sorted((_region(face) for face in over), key=lambda r: -r.area_mm2)
-    )
+    facing_down = _facing_down(part, Vector(*up_axis).normalized())
+    regions = _largest_first(_over(facing_down, angle_threshold_deg))
     return (
         Overhang(
             area_mm2=sum((r.area_mm2 for r in regions), 0.0),
@@ -122,4 +134,32 @@ def detect_overhang(
         )
         if any(facing_down)
         else None
+    )
+
+
+def regions_with_points(
+    part: Part,
+    *,
+    up_axis: tuple[float, float, float] = (0, 0, 1),
+    angle_threshold_deg: float = 45.0,
+) -> tuple[tuple[OverhangRegion, tuple[Vector, ...]], ...]:
+    """``detect_overhang``'s regions, largest first, each with the points
+    that say which surface it lies on: its facets' corners, and their
+    centroids projected onto the face. Corners alone sit on the face's
+    boundary — a bore's long facets span it end to end, so every corner
+    also lies on the faces the bore passes through."""
+    facing_down = _facing_down(part, Vector(*up_axis).normalized())
+    return tuple(
+        sorted(
+            (
+                (
+                    _region(counted),
+                    tuple(c for f in counted for c in f.triangle.corners)
+                    + tuple(on_surface(face, f.triangle).centroid for f in counted),
+                )
+                for face, facets in zip(part.faces(), facing_down)
+                if (counted := tuple(f for f in facets if f.angle_deg > angle_threshold_deg))
+            ),
+            key=lambda pair: -pair[0].area_mm2,
+        )
     )
