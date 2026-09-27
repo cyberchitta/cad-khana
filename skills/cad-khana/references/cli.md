@@ -81,6 +81,11 @@ the script's own root, so a scratch probe outside the repo
 (`khana run /tmp/probe.py` from the repo root) imports the repo's
 packages without `PYTHONPATH=.`.
 
+`khana run` passes the script no arguments: anything after the script's
+path is parsed as an option of `run` itself, so it fails. Parametrize a
+scratch script with environment variables instead
+(`FACES=-Z khana run sweep.py`, read with `os.environ.get`).
+
 One caveat for standalone files: they are cached in `sys.modules`
 under the **file stem**, so two different `assembly.py` files in one
 process resolve to whichever loaded first. Inside a package tree this
