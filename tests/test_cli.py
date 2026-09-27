@@ -623,6 +623,31 @@ def test_run_lets_a_standalone_script_import_its_sibling_module(
     assert result.exit_code == 0, result.output
 
 
+def test_run_lets_a_scratch_script_import_packages_under_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A scratch probe outside the repo, run from the repo root, imports
+    the repo's packages — what ``PYTHONPATH=. python probe.py`` gives.
+    Without cwd on ``sys.path`` only the script's own directory is
+    importable and this raises ModuleNotFoundError."""
+    repo = tmp_path / "repo"
+    (repo / "cwdpkg").mkdir(parents=True)
+    (repo / "cwdpkg" / "__init__.py").write_text("")
+    (repo / "cwdpkg" / "part.py").write_text("SIZE = 7\n")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    script = scratch / "probe.py"
+    script.write_text(
+        "from cwdpkg.part import SIZE\n"
+        "\n"
+        "assert SIZE == 7, f'imported the wrong package: {SIZE}'\n"
+    )
+    monkeypatch.chdir(repo)
+
+    result = runner.invoke(app, ["run", str(script)])
+    assert result.exit_code == 0, result.output
+
+
 def test_package_member_failure_writes_error_diagnostics(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

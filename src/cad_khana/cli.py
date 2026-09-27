@@ -117,6 +117,10 @@ TargetOutOpt = Annotated[
 
 
 def _exec_script(script: Path) -> None:
+    # A scratch probe outside the repo, run from the repo root, imports
+    # the repo's packages — ``PYTHONPATH=. python probe.py`` semantics.
+    # Inserted first so the script's own root, inserted below, precedes it.
+    ensure_importable(Path.cwd())
     spec = package_module_spec(script)
     if spec is None:
         # ``python script.py`` semantics: the script's own directory is

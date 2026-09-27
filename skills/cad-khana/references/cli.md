@@ -62,6 +62,11 @@ verbs and for `khana run` alike, so a sub-assembly file can be both
 imported by its composing parent and addressed standalone with no
 `sys.path` bootstrapping of its own.
 
+`khana run` also puts the **current directory** on `sys.path`, after
+the script's own root, so a scratch probe outside the repo
+(`khana run /tmp/probe.py` from the repo root) imports the repo's
+packages without `PYTHONPATH=.`.
+
 One caveat for standalone files: they are cached in `sys.modules`
 under the **file stem**, so two different `assembly.py` files in one
 process resolve to whichever loaded first. Inside a package tree this
