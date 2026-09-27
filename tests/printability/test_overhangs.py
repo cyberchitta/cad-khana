@@ -1,6 +1,23 @@
-from build123d import Box, BuildPart, Cylinder, Location, Pos
+from math import atan, degrees, sqrt
+
+from build123d import (
+    Box,
+    BuildPart,
+    BuildSketch,
+    Cylinder,
+    Location,
+    Locations,
+    Mode,
+    Plane,
+    Polygon,
+    Pos,
+    Rot,
+    Sphere,
+    extrude,
+)
 from pytest import approx
 
+from cad_khana.core.tessellation import _tessellate, _tessellate_faces
 from cad_khana.printability.overhangs import detect_overhang
 
 
@@ -62,3 +79,93 @@ def test_area_counts_only_facets_past_the_threshold():
     part = _box(20, 20, 20) + Pos(15, 0, 5) * Box(10, 20, 4)
     assert detect_overhang(part).area_mm2 == approx(200.0, rel=1e-6)
     assert detect_overhang(part, angle_threshold_deg=90.0).area_mm2 == 0.0
+
+
+# --- regions: where the area sits ----------------------------------------
+
+
+def _two_ledges():
+    # The +X ledge underside is 10 x 20 = 200 mm² at z=3, centred on
+    # (15, 0); the -X ledge underside is 6 x 10 = 60 mm² at z=-1,
+    # centred on (-13, 0).
+    return (
+        _box(20, 20, 20)
+        + Pos(15, 0, 5) * Box(10, 20, 4)
+        + Pos(-13, 0, 0) * Box(6, 10, 2)
+    )
+
+
+def _sloped_ledge():
+    # A prism off the +X face whose underside runs from (10, z=-2) to
+    # (20, z=2) across y in [-10, 10]: overhang angle atan(10/4), area
+    # 20 * sqrt(116), centroid (15, 0, 0).
+    with BuildPart() as p:
+        Box(20, 20, 20)
+        with BuildSketch(Plane.XZ):
+            Polygon((10, -2), (20, 2), (10, 2), align=None)
+        extrude(amount=10, both=True)
+    return p.part
+
+
+def test_a_ledge_is_one_region_with_its_area_angle_centroid_and_bbox():
+    part = _box(20, 20, 20) + Pos(15, 0, 5) * Box(10, 20, 4)
+    (region,) = detect_overhang(part).regions
+    assert region.area_mm2 == approx(200.0, rel=1e-6)
+    assert region.max_angle_deg == approx(90.0, abs=1e-6)
+    assert region.centroid_mm == approx((15.0, 0.0, 3.0), abs=1e-6)
+    assert region.bbox.min == approx((10.0, -10.0, 3.0), abs=1e-6)
+    assert region.bbox.max == approx((20.0, 10.0, 3.0), abs=1e-6)
+
+
+def test_separate_ledges_are_separate_regions_largest_first():
+    overhang = detect_overhang(_two_ledges())
+    areas = [r.area_mm2 for r in overhang.regions]
+    assert areas == approx([200.0, 60.0], rel=1e-6)
+    assert overhang.regions[1].centroid_mm == approx((-13.0, 0.0, -1.0), abs=1e-6)
+    assert sum(areas) == approx(overhang.area_mm2, rel=1e-12)
+
+
+def test_a_sloped_ceiling_region_reads_its_analytic_area_and_angle():
+    overhang = detect_overhang(_sloped_ledge())
+    (region,) = overhang.regions
+    assert region.area_mm2 == approx(20 * sqrt(116), rel=1e-6)
+    assert region.max_angle_deg == approx(degrees(atan(10 / 4)), abs=1e-6)
+    assert region.centroid_mm == approx((15.0, 0.0, 0.0), abs=1e-6)
+    assert overhang.area_mm2 == approx(region.area_mm2, rel=1e-12)
+
+
+def test_regions_hold_only_area_past_the_threshold():
+    # 68.2° counts at 45° and not at 70°; the reading stays either way.
+    assert detect_overhang(_sloped_ledge(), angle_threshold_deg=70.0).regions == ()
+
+
+def test_the_build_plate_face_is_never_a_region():
+    overhang = detect_overhang(_two_ledges())
+    assert all(r.bbox.min[2] > -10.0 for r in overhang.regions)
+
+
+def test_regions_sum_to_the_aggregate_on_curved_geometry():
+    with BuildPart() as p:
+        Box(30, 30, 30)
+        with Locations((0, 0, 0)):
+            Sphere(12, mode=Mode.SUBTRACT)
+        Cylinder(4, 40, rotation=(90, 0, 0), mode=Mode.SUBTRACT)
+    overhang = detect_overhang(p.part)
+    assert len(overhang.regions) > 1
+    assert sum(r.area_mm2 for r in overhang.regions) == approx(
+        overhang.area_mm2, rel=1e-12
+    )
+    areas = [r.area_mm2 for r in overhang.regions]
+    assert areas == sorted(areas, reverse=True)
+
+
+def test_per_face_facets_are_exactly_the_whole_part_facets():
+    # Re-meshing a face on its own triangulates it differently, which
+    # would let the regions drift from the aggregate on curved parts.
+    part = Box(30, 30, 30) - Sphere(12) - Rot(90, 0, 0) * Cylinder(4, 40)
+    whole = _tessellate(part)
+    grouped = _tessellate_faces(part)
+    assert len(grouped) == len(part.faces())
+    assert [tuple(t.centroid) for face in grouped for t in face] == [
+        tuple(t.centroid) for t in whole
+    ]

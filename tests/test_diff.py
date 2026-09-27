@@ -328,7 +328,7 @@ def test_printability_min_wall_witness_move():
 def test_printability_overhang_added():
     old = _empty_printability()
     new = _empty_printability() | {
-        "overhang": {"area_mm2": 100.0, "max_angle_deg": 90.0}
+        "overhang": {"area_mm2": 100.0, "max_angle_deg": 90.0, "regions": []}
     }
     out = diff(old, new)
     assert "overhang:" in out
@@ -337,12 +337,60 @@ def test_printability_overhang_added():
 
 def test_printability_overhang_removed():
     old = _empty_printability() | {
-        "overhang": {"area_mm2": 100.0, "max_angle_deg": 90.0}
+        "overhang": {"area_mm2": 100.0, "max_angle_deg": 90.0, "regions": []}
     }
     new = _empty_printability()
     out = diff(old, new)
     assert "overhang:" in out
     assert "removed" in out
+
+
+def _region(area: float, at: list[float]) -> dict:
+    return {
+        "area_mm2": area,
+        "max_angle_deg": 90.0,
+        "centroid_mm": at,
+        "bbox": {"min": at, "max": at},
+    }
+
+
+def _with_regions(*regions: dict) -> dict:
+    return _empty_printability() | {
+        "overhang": {
+            "area_mm2": sum(r["area_mm2"] for r in regions),
+            "max_angle_deg": 90.0,
+            "regions": list(regions),
+        }
+    }
+
+
+def test_printability_overhang_region_added_and_removed():
+    ledge = _region(200.0, [15.0, 0.0, 3.0])
+    old = _with_regions(ledge, _region(60.0, [-13.0, 0.0, -1.0]))
+    new = _with_regions(ledge, _region(0.83, [4.0, 4.0, 0.2]))
+    out = diff(old, new)
+    assert "region added: 0.83 mm² at (4.00, 4.00, 0.20)" in out
+    assert "region removed: 60 mm² at (-13.00, 0.00, -1.00)" in out
+    assert "15.00, 0.00, 3.00" not in out
+
+
+def test_printability_overhang_region_area_change_at_the_same_place():
+    old = _with_regions(_region(200.0, [15.0, 0.0, 3.0]))
+    new = _with_regions(_region(150.0, [15.0, 0.0, 3.0]))
+    out = diff(old, new)
+    assert "region changed: at (15.00, 0.00, 3.00) area 200 → 150 (-25.0%)" in out
+
+
+def test_printability_overhang_region_centroid_noise_is_no_change():
+    old = _with_regions(_region(200.0, [15.0, 0.0, 3.0]))
+    new = _with_regions(_region(200.0 + 1e-9, [15.0 + 1e-9, 0.0, 3.0]))
+    assert "region" not in diff(old, new)
+
+
+def test_printability_overhang_added_counts_its_regions():
+    new = _with_regions(_region(200.0, [15.0, 0.0, 3.0]), _region(60.0, [0, 0, 0]))
+    out = diff(_empty_printability(), new)
+    assert "added: area=260 mm² max_angle=90° regions=2" in out
 
 
 def test_printability_assertion_regression():

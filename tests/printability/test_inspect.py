@@ -137,7 +137,11 @@ def test_raised_overhang_threshold_still_records_the_angle(tmp_path: Path):
     )
     data = json.loads((tmp_path / "ell-printability.json").read_text())
     assert result.status == "ok"
-    assert data["overhang"] == {"area_mm2": 0.0, "max_angle_deg": approx(90.0, abs=0.01)}
+    assert data["overhang"] == {
+        "area_mm2": 0.0,
+        "max_angle_deg": approx(90.0, abs=0.01),
+        "regions": [],
+    }
 
 # --- waivers ------------------------------------------------------------
 
@@ -346,3 +350,27 @@ def test_waiving_solid_count_without_declaring_it_is_an_unknown_kind(tmp_path: P
             name="body",
             waive={"solid_count": "no claim to waive"},
         )
+
+
+def test_overhang_regions_land_in_the_json(tmp_path: Path):
+    with pytest.raises(SystemExit):
+        inspect(_l_shape(), method=FDM(), out=tmp_path, name="ell")
+    data = json.loads((tmp_path / "ell-printability.json").read_text())
+    (region,) = data["overhang"]["regions"]
+    assert region["area_mm2"] == approx(200.0, rel=1e-6)
+    assert region["max_angle_deg"] == approx(90.0, abs=1e-6)
+    assert region["centroid_mm"] == approx([15.0, 0.0, 3.0], abs=1e-6)
+    assert region["bbox"] == {
+        "min": approx([10.0, -10.0, 3.0], abs=1e-6),
+        "max": approx([20.0, 10.0, 3.0], abs=1e-6),
+    }
+
+
+def test_overhang_failure_detail_names_where_the_largest_region_is(tmp_path: Path):
+    part = _l_shape() + Pos(-13, 0, 0) * Box(6, 10, 2)
+    with pytest.raises(SystemExit):
+        inspect(part, method=FDM(), out=tmp_path, name="ell")
+    data = json.loads((tmp_path / "ell-printability.json").read_text())
+    (failure,) = [a for a in data["assertions"] if a["name"].startswith("overhang_max")]
+    assert "2 regions" in failure["detail"]
+    assert "largest 200.00mm² at (15.00, 0.00, 3.00)" in failure["detail"]

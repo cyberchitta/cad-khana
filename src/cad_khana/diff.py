@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 from cad_khana.mechanism.diagnostics import SCHEMA_VERSION
@@ -331,6 +332,41 @@ def _scalar_line(field: str, old: Any, new: Any) -> list[str]:
     return [f"  {field}: {_delta(old, new)}"]
 
 
+def _at(point: list[float]) -> str:
+    return "(" + ", ".join(f"{c:.2f}" for c in point) + ")"
+
+
+def _region_key(region: Diag) -> tuple[float, ...]:
+    """Where a region is, to the precision the diff prints: a face that
+    kept its place matches across runs; one that moved reads as removed
+    and added, which is what a waiver naming it needs to hear."""
+    return tuple(round(c, 2) for c in region["centroid_mm"])
+
+
+def _largest_first(regions: Iterable[Diag]) -> list[Diag]:
+    return sorted(regions, key=lambda r: -r["area_mm2"])
+
+
+def _regions_section(old: list[Diag], new: list[Diag]) -> list[str]:
+    old_map = {_region_key(r): r for r in old}
+    new_map = {_region_key(r): r for r in new}
+    added = [
+        f"  region added: {r['area_mm2']:.3g} mm² at {_at(r['centroid_mm'])}"
+        for r in _largest_first(new_map[k] for k in new_map.keys() - old_map.keys())
+    ]
+    removed = [
+        f"  region removed: {r['area_mm2']:.3g} mm² at {_at(r['centroid_mm'])}"
+        for r in _largest_first(old_map[k] for k in old_map.keys() - new_map.keys())
+    ]
+    changed = [
+        f"  region changed: at {_at(new_map[k]['centroid_mm'])} area "
+        f"{_pct(old_map[k]['area_mm2'], new_map[k]['area_mm2'])}"
+        for k in sorted(old_map.keys() & new_map.keys())
+        if not _numbers_close(old_map[k]["area_mm2"], new_map[k]["area_mm2"])
+    ]
+    return added + removed + changed
+
+
 def _overhang_section(old: Diag | None, new: Diag | None) -> list[str]:
     if old == new:
         return []
@@ -338,19 +374,21 @@ def _overhang_section(old: Diag | None, new: Diag | None) -> list[str]:
         return [
             f"  added: area={new['area_mm2']:.3g} mm²"
             f" max_angle={new['max_angle_deg']:.3g}°"
+            f" regions={len(new['regions'])}"
         ]
     if new is None:
         return ["  removed"]
-    lines = []
-    if old.get("area_mm2") != new.get("area_mm2"):
-        lines.append(
-            f"  area_mm2: {_pct(old['area_mm2'], new['area_mm2'])}"
-        )
-    if old.get("max_angle_deg") != new.get("max_angle_deg"):
-        lines.append(
-            f"  max_angle_deg: {_delta(old['max_angle_deg'], new['max_angle_deg'])}"
-        )
-    return lines
+    area = (
+        [f"  area_mm2: {_pct(old['area_mm2'], new['area_mm2'])}"]
+        if old["area_mm2"] != new["area_mm2"]
+        else []
+    )
+    angle = (
+        [f"  max_angle_deg: {_delta(old['max_angle_deg'], new['max_angle_deg'])}"]
+        if old["max_angle_deg"] != new["max_angle_deg"]
+        else []
+    )
+    return area + angle + _regions_section(old["regions"], new["regions"])
 
 
 def _method_params_section(old: Diag, new: Diag) -> list[str]:

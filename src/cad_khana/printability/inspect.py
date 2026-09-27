@@ -105,15 +105,21 @@ def _overhang_assertion(
     if overhang is None:
         return AssertionResult(name, True, None)
     passed = overhang.max_angle_deg <= method.overhang_max_deg + BOUND_EPSILON
-    detail = (
-        None
-        if passed
-        else (
-            f"overhang {overhang.max_angle_deg:.4f}° exceeds max "
-            f"{method.overhang_max_deg}°"
-        )
-    )
+    detail = None if passed else _overhang_detail(overhang, method)
     return AssertionResult(name, passed, detail)
+
+
+def _overhang_detail(overhang: Overhang, method: FDM) -> str:
+    """A failure past the bound always has a region: the steepest facet
+    is past the threshold, so it counts."""
+    largest, count = overhang.regions[0], len(overhang.regions)
+    at = ", ".join(f"{c:.2f}" for c in largest.centroid_mm)
+    return (
+        f"overhang {overhang.max_angle_deg:.4f}° exceeds max "
+        f"{method.overhang_max_deg}° across {count} "
+        f"region{'' if count == 1 else 's'}, largest "
+        f"{largest.area_mm2:.2f}mm² at ({at})"
+    )
 
 
 def _solid_count_assertion(count: int, eq: int) -> AssertionResult:

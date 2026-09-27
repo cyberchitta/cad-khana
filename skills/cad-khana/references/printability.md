@@ -96,7 +96,8 @@ records your reason in `waived`, adds a `waived_failure` entry to
 If the waived check starts passing, a `stale_waiver` warning tells you
 to delete the waiver — don't leave waivers that no longer waive
 anything. Cite evidence in the reason (`min_wall_at` witness,
-`min_wall_alignment`, a print plan), not just an assertion that it's fine.
+`min_wall_alignment`, the `overhang.regions` a waiver covers by area and
+centroid, a print plan), not just an assertion that it's fine.
 
 **"Sampling artifact" is no longer a valid `wall_min` rationale on its
 own.** Wall readings now span material actually traversed, so a thin
@@ -250,7 +251,10 @@ a wall (a tessellated cylinder reads ~1e-16°), not a face pointing
 down. Over what remains, the diagnostic reports `max_angle_deg`, the
 steepest downward-facing triangle **whatever the threshold**, and
 `area_mm2`, the area of triangles with `overhang_angle >
-FDM.overhang_max_deg` (default 45°) — `0.0` when none are. The
+FDM.overhang_max_deg` (default 45°) — `0.0` when none are — and
+`regions`, those same triangles grouped by the B-rep face they lie on
+(area, steepest angle, centroid, bbox each; largest first; no size
+floor, so they sum to `area_mm2`). The
 threshold decides the pass and which area counts, never whether the
 reading exists: raising it to 90° leaves a ceiling reading
 `max_angle_deg: 90.0` with no area. The block is `null` only when no
@@ -277,9 +281,11 @@ triangle faces down at all.
 - **Threshold is per-part, not global.** Set via
   `FDM(overhang_max_deg=…)`. 45° is a common default but printer- and
   material-specific.
-- **Area aggregation is coarse.** A single per-part entry tells you
-  there's an overhang but not where. Callers who need location
-  information should iterate the tessellation themselves.
+- **Regions are per B-rep face, not per connected patch.** Each entry
+  in `overhang.regions` is the counted area of one face, with its
+  centroid and bbox — the rows a waiver text names ("Ø5.4 pin bore
+  crown, 88.78 mm²"). Regions follow the model's faces, so a crown that
+  is two faces there reads as two regions side by side.
 
 ### When to trust it
 

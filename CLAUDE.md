@@ -364,7 +364,9 @@ Maintainer facts behind those fields:
   "min_wall_mm": 1.8,
   "min_wall_at": [x, y, z],
   "min_wall_alignment": 1.0,
-  "overhang": {"area_mm2": 42.1, "max_angle_deg": 58},
+  "overhang": {"area_mm2": 42.1, "max_angle_deg": 58,
+               "regions": [{"area_mm2": 42.1, "max_angle_deg": 58, "centroid_mm": [x, y, z],
+                            "bbox": {"min": [x,y,z], "max": [x,y,z]}}]},
   "assertions": [
     {"name": "wall_min:1.5", "passed": false, "detail": "min wall 0.31mm below min 1.5mm at (x, y, z), alignment 0.24 — the faces splay apart here, so this is the tip of a wedge feature rather than a wall between parallel faces", "waived": "knife-edge runout at the star ridge, alignment 0.24"}
   ],

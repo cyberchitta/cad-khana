@@ -102,11 +102,22 @@ is not repeated here.
   This one number decides the question because every reading is taken
   perpendicular to the face it starts from (see `SKILL.md` §Known limitations),
   so only the far side's angle is ever in doubt.
-- `overhang` — `{area_mm2, max_angle_deg}`, or `null` when no face
+- `overhang` — `{area_mm2, max_angle_deg, regions}`, or `null` when no face
   (off the build plate) points down at all. `max_angle_deg` is the
   steepest downward face **whatever the threshold**; `area_mm2` counts
   only faces past `overhang_max_deg`, so it is `0.0` when none are.
   Raising the threshold stops the failure, never the reading.
+  `regions` says where that area sits: one entry per B-rep face with
+  area past the threshold — `{area_mm2, max_angle_deg, centroid_mm,
+  bbox}` over that face's counted facets — largest first. Every face is
+  listed, however small (a 0.42 mm² first-layer sliver shows as what it
+  is), so the regions' `area_mm2` sum to the block's. Regions follow
+  the model's faces, so a crown that is two faces there is two regions.
+  `[]` when `area_mm2` is `0.0`. The failing `overhang_max` assertion's
+  `detail` names the region count and the largest region's area and
+  centroid. `khana diff` matches regions by centroid to 0.01 mm: one
+  that kept its place and changed area reads `region changed`; one that
+  moved reads as `region removed` plus `region added`.
 - `assertions` — `wall_min:…` and `overhang_max:…` entries, plus
   `solid_count:N` when the count was declared; `passed` + `detail`,
   plus `waived` (the rationale) when a failure was waived.
