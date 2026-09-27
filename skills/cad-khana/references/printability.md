@@ -52,6 +52,23 @@ than a claim on the assembly, and no verb evaluates them. A green
 `khana check` says nothing about printability — which is exactly why
 that script's docstring must say so.
 
+**Inspect the body the assembly places**, not a re-typed constructor
+call: `asm.part(path)` returns the `PlacedPart` at a dotted tree path
+(`"drive.bracket"`; paths in `composition.md`), and its `.part` is the
+body.
+
+```python
+inspect(build_mechanism().part("drive.bracket").part, method=FDM(), out="outputs", name="bracket")
+```
+
+`.part` is the body **unlocated**, in the frame its factory built it
+in — the same object whichever assembly you call `part()` on, and the
+frame `FDM(up_axis=…)` is read in. It is the owning unit's local frame
+only where `with_part` placed it at the identity; the placement lives
+in `.location` (unit-local from the unit's own `part()`, world from the
+root's). To inspect in the unit's frame instead, pass
+`p.part.moved(p.location)` with `p = unit.part("bracket")`.
+
 **Waiving a known-benign failure.** When a check fails for a reason
 you've verified is an artifact or an accepted trade-off (a sharp-edge
 sampling artifact, a 90° ceiling you'll print with supports), waive it
