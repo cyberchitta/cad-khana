@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
+from ocp_tessellate.convert import to_ocpgroup
 from typer.testing import CliRunner
 
 from cad_khana import environment, viewer
@@ -1254,3 +1255,197 @@ def test_show_missing_file_exits_two(tmp_path: Path):
 def test_show_bad_regex_exits_two(tmp_path: Path):
     result = runner.invoke(app, ["show", str(_show_json(tmp_path)), "--grep", "("])
     assert result.exit_code == 2
+
+
+# --- check --only / view --only --hide -------------------------------------
+
+
+def _claims_module() -> str:
+    return (
+        "from build123d import Box, BuildPart, Location\n"
+        "from cad_khana.mechanism.assembly import Assembly\n"
+        "\n"
+        "with BuildPart() as p:\n"
+        "    Box(10, 10, 10)\n"
+        "assembly = (\n"
+        "    Assembly()\n"
+        "    .with_part('a', p.part)\n"
+        "    .with_part('b', p.part, location=Location((5, 0, 0)))\n"
+        "    .with_part('c', p.part, location=Location((50, 0, 0)))\n"
+        "    .assert_no_interference('a', 'b', name='clear_a_b')\n"
+        "    .assert_no_interference('a', 'c', name='clear_a_c')\n"
+        "    .assert_distance('a', 'c', min_mm=1.0, name='gap_a_c')\n"
+        ")\n"
+    )
+
+
+def test_check_only_evaluates_matching_claims_and_writes_the_json(tmp_path: Path):
+    module = tmp_path / "asm.py"
+    module.write_text(_claims_module())
+    out = tmp_path / "out"
+    result = runner.invoke(
+        app, ["check", str(module), "--out", str(out), "--only", "gap_*"]
+    )
+    assert result.exit_code == 0, result.output
+    data = json.loads((out / "mechanism.json").read_text())
+    assert [a["name"] for a in data["assertions"]] == ["gap_a_c"]
+    assert data["selection"]["only"] == ["gap_*"]
+    assert "partial run: 1 of 3 assertions" in result.output
+
+
+def test_check_only_is_repeatable_and_goes_red_on_a_selected_failure(tmp_path: Path):
+    module = tmp_path / "asm.py"
+    module.write_text(_claims_module())
+    out = tmp_path / "out"
+    result = runner.invoke(
+        app,
+        ["check", str(module), "--out", str(out), "--only", "gap_*", "--only", "clear_a_b"],
+    )
+    assert result.exit_code == 1, result.output
+    data = json.loads((out / "mechanism.json").read_text())
+    assert [a["name"] for a in data["assertions"]] == ["clear_a_b", "gap_a_c"]
+    assert data["status"] == "assertion_failed"
+
+
+def test_check_only_matching_nothing_is_a_usage_error(tmp_path: Path):
+    """A typo that evaluates zero claims must not exit 0."""
+    module = tmp_path / "asm.py"
+    module.write_text(_claims_module())
+    out = tmp_path / "out"
+    result = runner.invoke(
+        app, ["check", str(module), "--out", str(out), "--only", "gpa_*"]
+    )
+    assert result.exit_code == 2, result.output
+    assert "'gpa_*'" in result.output
+    assert not (out / "mechanism.json").exists()
+
+
+def _tree_module() -> str:
+    return (
+        "from build123d import Box, BuildPart, Color, Location\n"
+        "from cad_khana.mechanism.assembly import Assembly\n"
+        "\n"
+        "def cube():\n"
+        "    with BuildPart() as p:\n"
+        "        Box(2, 2, 2)\n"
+        "    return p.part\n"
+        "\n"
+        "arm = Assembly().with_part('tip', cube()).with_part(\n"
+        "    'root', cube(), location=Location((5, 0, 0)), color=Color('red'))\n"
+        "s1 = Assembly().with_part('hub', cube()).with_subassembly(\n"
+        "    'arm', arm, location=Location((0, 10, 0)))\n"
+        "assembly = (\n"
+        "    Assembly()\n"
+        "    .with_part('frame', cube())\n"
+        "    .with_subassembly('s1', s1, location=Location((20, 0, 0)))\n"
+        ")\n"
+    )
+
+
+def _leaves(nodes) -> list[str]:
+    return [
+        leaf
+        for n in nodes
+        for leaf in (
+            [f"{n.label}.{x}" for x in _leaves(n.children)] if n.children else [n.label]
+        )
+    ]
+
+
+def _captured_view(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *flags: str
+) -> tuple[object, list[dict]]:
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        viewer, "show", lambda *objs, **kw: calls.append({"objs": objs, **kw})
+    )
+    module = tmp_path / "tree.py"
+    module.write_text(_tree_module())
+    return runner.invoke(app, ["view", str(module), *flags]), calls
+
+
+def test_view_nests_sub_assemblies_by_dotted_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    result, calls = _captured_view(tmp_path, monkeypatch)
+    assert result.exit_code == 0, result.output
+    (call,) = calls
+    assert call["names"] == ["frame", "s1"]
+    assert _leaves(call["objs"]) == ["frame", "s1.hub", "s1.arm.tip", "s1.arm.root"]
+
+
+def test_view_nesting_is_the_tree_ocp_converts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """``show`` hands its objects to ``ocp_tessellate``'s ``to_ocpgroup``;
+    the group tree it builds is what the viewer's tree panel lists. The
+    render itself is not checked here."""
+    _, (call,) = _captured_view(tmp_path, monkeypatch)
+    group, _ = to_ocpgroup(*call["objs"], names=call["names"])
+
+    def walk(g) -> list[str]:
+        kids = getattr(g, "objects", None) or []
+        return [g.name] if not kids else [f"{g.name}/{w}" for k in kids for w in walk(k)]
+
+    leaves = [w.split("/", 1)[1] for w in walk(group)]
+    assert leaves == ["frame", "s1/hub", "s1/arm/tip", "s1/arm/root"]
+
+
+def test_view_keeps_part_colors_through_nesting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _, (call,) = _captured_view(tmp_path, monkeypatch)
+    s1 = call["objs"][1]
+    arm = next(c for c in s1.children if c.label == "arm")
+    root = next(c for c in arm.children if c.label == "root")
+    assert root.color is not None and tuple(root.color)[:3] == (1.0, 0.0, 0.0)
+
+
+def test_view_only_pushes_a_subtree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    result, (call,) = _captured_view(tmp_path, monkeypatch, "--only", "s1.arm")
+    assert result.exit_code == 0, result.output
+    assert _leaves(call["objs"]) == ["s1.arm.tip", "s1.arm.root"]
+
+
+def test_view_hide_drops_a_subtree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    result, (call,) = _captured_view(
+        tmp_path, monkeypatch, "--hide", "s1.arm", "--hide", "frame"
+    )
+    assert result.exit_code == 0, result.output
+    assert _leaves(call["objs"]) == ["s1.hub"]
+
+
+def test_view_unknown_path_is_a_usage_error_with_close_matches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    result, calls = _captured_view(tmp_path, monkeypatch, "--hide", "s1.amr")
+    assert result.exit_code == 2, result.output
+    assert "s1.arm" in result.output
+    assert calls == []
+
+
+def test_diff_refuses_a_partial_run_against_a_full_one(tmp_path: Path):
+    module = tmp_path / "asm.py"
+    module.write_text(_claims_module())
+    full, part = tmp_path / "full", tmp_path / "part"
+    assert runner.invoke(app, ["check", str(module), "--out", str(full)]).exit_code == 1
+    only = ["check", str(module), "--out", str(part), "--only", "gap_*"]
+    assert runner.invoke(app, only).exit_code == 0
+    result = runner.invoke(
+        app, ["diff", str(full / "mechanism.json"), str(part / "mechanism.json")]
+    )
+    assert result.exit_code == 2, result.output
+    assert "cannot diff a partial run" in result.output
+
+
+def test_diff_reads_two_partial_runs_of_the_same_selection(tmp_path: Path):
+    module = tmp_path / "asm.py"
+    module.write_text(_claims_module())
+    one, two = tmp_path / "one", tmp_path / "two"
+    for out in (one, two):
+        only = ["check", str(module), "--out", str(out), "--only", "gap_*"]
+        assert runner.invoke(app, only).exit_code == 0
+    result = runner.invoke(
+        app, ["diff", str(one / "mechanism.json"), str(two / "mechanism.json")]
+    )
+    assert result.exit_code == 0, result.output

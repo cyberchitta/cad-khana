@@ -46,6 +46,35 @@ def _require_current_schema(old: Diag, new: Diag) -> None:
         )
 
 
+def _selected(diag: Diag) -> list[str] | None:
+    selection = diag.get("selection")
+    return None if selection is None else selection["only"]
+
+
+def _require_same_selection(old: Diag, new: Diag) -> None:
+    """A partial run holds a subset of the claims, so against a full run
+    (or another subset) every claim it left out would read as removed
+    and every interference as unknown. Two runs of one selection
+    compare like for like."""
+    before, after = _selected(old), _selected(new)
+    if before != after:
+        raise ValueError(
+            "cannot diff a partial run against a different selection "
+            f"(old only={before}, new only={after}): claims one run left out "
+            "would read as removed; re-run both with the same --only, or "
+            "both without"
+        )
+
+
+def _selection_section(old: Diag, new: Diag) -> list[str]:
+    before, after = old.get("selection") or {}, new.get("selection") or {}
+    return [
+        f"  {field} {before[field]} → {after[field]}"
+        for field in ("declared", "evaluated")
+        if before and before[field] != after[field]
+    ]
+
+
 def _assertion_state(assertion: Diag) -> str:
     if assertion["passed"] is not None:
         return "passed" if assertion["passed"] else "failed"
@@ -298,12 +327,13 @@ def _mech_warnings_section(old: list[Diag], new: list[Diag]) -> list[str]:
 def _diff_mechanism(old: Diag, new: Diag) -> str:
     sections: tuple[tuple[str, list[str]], ...] = (
         ("status", _status_section(old, new)),
+        ("selection", _selection_section(old, new)),
         ("motions", _motions_section(old.get("motions", []), new.get("motions", []))),
         ("parts", _mech_parts_section(old.get("parts", {}), new.get("parts", {}))),
         (
             "interferences",
             _interferences_section(
-                old.get("interferences", []), new.get("interferences", [])
+                old.get("interferences") or [], new.get("interferences") or []
             ),
         ),
         (
@@ -521,6 +551,7 @@ def diff(old: Diag, new: Diag) -> str:
             "both files must be the same kind"
         )
     _require_current_schema(old, new)
+    _require_same_selection(old, new)
     return (
         _diff_printability(old, new)
         if old_kind == "printability"

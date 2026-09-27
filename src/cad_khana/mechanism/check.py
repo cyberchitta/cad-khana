@@ -12,6 +12,8 @@ from cad_khana.mechanism.assembly import Assembly
 from cad_khana.mechanism.assertions import solid_count_claimed
 from cad_khana.mechanism.diagnostics import (
     Diagnostics,
+    Selection,
+    Warning,
     compute,
     multi_solid_warnings,
     skipped_counts,
@@ -24,9 +26,35 @@ class CheckResult:
     diagnostics: Diagnostics
 
 
-def check(assembly: Assembly, out: str | Path = "outputs") -> CheckResult:
+def _partial(
+    only: tuple[str, ...], declared: int, evaluated: int
+) -> tuple[Selection | None, tuple[Warning, ...]]:
+    """A partial run's record: the selection field, and the warning that
+    puts it where a green is read."""
+    return (
+        (None, ())
+        if not only
+        else (
+            Selection(only=only, declared=declared, evaluated=evaluated),
+            ({"kind": "partial_run", "evaluated": evaluated, "declared": declared},),
+        )
+    )
+
+
+def check(
+    assembly: Assembly,
+    out: str | Path = "outputs",
+    only: tuple[str, ...] = (),
+) -> CheckResult:
     """Compute diagnostics, hold every assertion over every declared
     motion, write ``mechanism.json``.
+
+    With ``only`` (name globs; each must match an assertion, or
+    ``SelectionError`` is raised before anything is written) it is a
+    **partial run**: only the matching assertions are held, the
+    all-pairs interference pass is skipped (``interferences: null``),
+    and the file records the selection and a ``partial_run`` warning,
+    so the result cannot be read as the whole model's.
 
     Part diagnostics and ``interferences[]`` describe the as-built pose
     only; assertions are held at it and at each motion sample
@@ -37,17 +65,30 @@ def check(assembly: Assembly, out: str | Path = "outputs") -> CheckResult:
     (``viewer.push``), ``khana draw`` (``draw.draw``) — so a declaration
     module is identical under all of them.
     """
+    held = hold(assembly, only)
     out_path = resolve_out(out)
     out_path.mkdir(parents=True, exist_ok=True)
-    held = hold(assembly)
     assertion_results = held.assertions
     failed = any(a.passed is False for a in assertion_results)
-    computed = compute(assembly)
-    warnings = held.warnings + multi_solid_warnings(
-        computed.parts, solid_count_claimed(assembly.all_assertions)
+    computed = compute(assembly, pairs=not only)
+    selection, partial = _partial(only, held.declared, len(assertion_results))
+    # The rest-pose caveat is about ``interferences[]``; a partial run
+    # left that field null, so the caveat would describe nothing.
+    held_warnings = tuple(
+        w
+        for w in held.warnings
+        if not (only and w["kind"] == "interferences_rest_pose_only")
+    )
+    warnings = (
+        partial
+        + held_warnings
+        + multi_solid_warnings(
+            computed.parts, solid_count_claimed(assembly.all_assertions)
+        )
     )
     diagnostics = replace(
         computed,
+        selection=selection,
         assertions=assertion_results,
         skipped_counts=skipped_counts(assertion_results),
         motions=held.motions,
@@ -69,6 +110,13 @@ def check(assembly: Assembly, out: str | Path = "outputs") -> CheckResult:
         kinds = Counter(w["kind"] for w in warnings)
         summary = ", ".join(f"{n} {kind}" for kind, n in kinds.items())
         print(f"warnings: {summary} — see {json_path}", file=sys.stderr)
+    if selection is not None:
+        print(
+            f"partial run: {selection.evaluated} of {selection.declared} "
+            f"assertions (only {', '.join(only)}); interferences not "
+            "computed — not a whole-model result",
+            file=sys.stderr,
+        )
     if failed:
         for a in assertion_results:
             if a.passed is False:

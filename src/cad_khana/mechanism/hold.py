@@ -62,6 +62,7 @@ from cad_khana.mechanism.diagnostics import (
     WorstAt,
 )
 from cad_khana.mechanism.motion import Motion, Pose
+from cad_khana.selection import claims
 
 Key = tuple[object, ...]
 ABSENCES = ("absent_part", ABSENT_JOINT)
@@ -70,9 +71,14 @@ PLACEMENT_DECIMALS = 9
 
 @dataclass(frozen=True)
 class Held:
+    """``declared`` counts every assertion the tree declares;
+    ``assertions`` holds the ones evaluated — all of them unless
+    ``hold`` was given ``only``."""
+
     assertions: tuple[AssertionResult, ...]
     motions: tuple[MotionSummary, ...]
     warnings: tuple[Warning, ...]
+    declared: int
 
 
 @dataclass(frozen=True)
@@ -413,7 +419,17 @@ def _warnings(
     )
 
 
-def hold(assembly: Assembly) -> Held:
+def _selected(
+    assertions: tuple[Assertion, ...], keep: tuple[bool, ...]
+) -> tuple[Assertion, ...]:
+    return tuple(a for a, k in zip(assertions, keep) if k)
+
+
+def hold(assembly: Assembly, only: tuple[str, ...] = ()) -> Held:
+    """Every assertion, or with ``only`` those whose name matches one of
+    its globs (``selection.claims``: each glob must match something).
+    A contact claim's phase is read against every claim on its pair,
+    selected or not — the siblings are the declaration."""
     motions = assembly.all_motions
     schedules = tuple((m, m.poses) for m in motions)
     samples = (_Sample(0, None, None, {}),) + tuple(
@@ -427,9 +443,15 @@ def hold(assembly: Assembly) -> Held:
             start=1,
         )
     )
-    rest = _Frame(samples[0], assembly, assembly.all_assertions)
+    declared = assembly.all_assertions
+    keep = claims(tuple(a.name for a in declared), only) if only else None
+
+    def narrow(full: tuple[Assertion, ...]) -> tuple[Assertion, ...]:
+        return full if keep is None else _selected(full, keep)
+
+    contacts = contact_claims(declared)
+    rest = _Frame(samples[0], assembly, narrow(declared))
     assertions = rest.assertions
-    contacts = contact_claims(assertions)
     index = _Index.create(assertions, contacts)
     # A datum plane or direction is qualified through the joints above
     # it, so a tree that declares one re-derives its assertions per
@@ -453,7 +475,7 @@ def hold(assembly: Assembly) -> Held:
     for sample in samples[1:]:
         posed = assembly.posed(sample.pose)
         frame = _Frame(
-            sample, posed, posed.all_assertions if rederive else assertions
+            sample, posed, narrow(posed.all_assertions) if rederive else assertions
         )
         for i in index.affected(rest, frame):
             later.setdefault(i, []).append(visit(i, frame))
@@ -480,4 +502,5 @@ def hold(assembly: Assembly) -> Held:
         assertions=results,
         motions=summaries,
         warnings=_warnings(assertions, results, summaries, rest.values),
+        declared=len(declared),
     )

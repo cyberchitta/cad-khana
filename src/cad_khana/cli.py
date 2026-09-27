@@ -19,6 +19,7 @@ from cad_khana.export import export_assembly
 from cad_khana.mechanism.assembly import Assembly
 from cad_khana.mechanism.check import check as check_assembly
 from cad_khana.mechanism.diagnostics import Diagnostics
+from cad_khana.selection import SelectionError
 from cad_khana.show import report, report_json, require_diagnostics
 from cad_khana.target import (
     Target,
@@ -209,7 +210,9 @@ def _run_target(
 
     The error boundary of ``_run_script`` applies here too — a factory
     that raises still leaves ``status: "error"`` behind. Failure
-    deferral does not: one member, one evaluation.
+    deferral does not: one member, one evaluation. A target naming no
+    member, or a selection naming nothing, is a usage error (exit 2)
+    that writes nothing, since nothing ran.
     """
     target = Target.parse(spec)
     if not target.path.is_file():
@@ -221,7 +224,7 @@ def _run_target(
     out_path = target.default_out if out is None else Path.cwd() / out
     try:
         verb(resolve(target), out_path)
-    except TargetError as exc:
+    except (TargetError, SelectionError) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=2)
     except SystemExit as exc:
@@ -238,14 +241,33 @@ def _run_target(
 
 
 @app.command()
-def check(target: TargetArg, out: TargetOutOpt = None) -> None:
+def check(
+    target: TargetArg,
+    out: TargetOutOpt = None,
+    only: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--only",
+            help=(
+                "Evaluate only assertions whose name matches this glob "
+                "(fnmatch, case-sensitive; repeatable). A partial run: "
+                "interferences are not computed, and the JSON records the "
+                "selection and a partial_run warning. A glob matching no "
+                "assertion exits 2."
+            ),
+        ),
+    ] = None,
+) -> None:
     """Import a module, resolve its assembly, and write diagnostics.
 
     Computes diagnostics, evaluates every assertion the assembly (and
     anything it composes) declares, writes `mechanism.json`, and exits
     nonzero if any assertion failed. No export, no viewer push.
     """
-    _run_target(target, out, "check", lambda a, o: check_assembly(a, out=o))
+    globs = tuple(only or ())
+    _run_target(
+        target, out, "check", lambda a, o: check_assembly(a, out=o, only=globs)
+    )
 
 
 @app.command()
@@ -260,9 +282,38 @@ def _write_exports(assembly: Assembly, out: Path) -> None:
 
 
 @app.command()
-def view(target: TargetArg, out: TargetOutOpt = None) -> None:
-    """Import a module and push its assembly to the OCP viewer."""
-    _run_target(target, out, "view", lambda a, _out: viewer.push(a))
+def view(
+    target: TargetArg,
+    out: TargetOutOpt = None,
+    only: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--only",
+            help=(
+                "Push only this dotted part or sub-assembly path and "
+                "everything under it (repeatable)."
+            ),
+        ),
+    ] = None,
+    hide: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--hide",
+            help=(
+                "Leave out this dotted part or sub-assembly path and "
+                "everything under it (repeatable; applied after --only)."
+            ),
+        ),
+    ] = None,
+) -> None:
+    """Import a module and push its assembly to the OCP viewer, nested
+    by sub-assembly. An unknown path exits 2."""
+    _run_target(
+        target,
+        out,
+        "view",
+        lambda a, _out: viewer.push(a, tuple(only or ()), tuple(hide or ())),
+    )
 
 
 @app.command()

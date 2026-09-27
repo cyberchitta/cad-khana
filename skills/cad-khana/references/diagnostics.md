@@ -15,6 +15,15 @@ its claims filtered, sorted or grouped; see `references/cli.md`.
 - `hint` — short pattern-matched repair suggestion when `status` is
   `"error"`; `null` otherwise. Read this first before parsing the
   traceback — it resolves the most common errors in one line.
+- `selection` — `null` on a whole-model run. On a **partial run**
+  (`khana check --only <glob>`), `{only, declared, evaluated,
+  not_computed}`: the name globs as given, the tree's assertion count
+  and how many the globs kept, and the fields left `null` —
+  `["interferences"]`. `assertions`, `skipped_counts` and
+  `motions[].moved` / `.movable` then cover the selected claims only,
+  and `status: "ok"` means *those* held. The file also carries a
+  `partial_run` warning; `khana diff` refuses it against a file of a
+  different selection.
 - `parts[name].volume_mm3` — sanity-check a part is not empty.
 - `parts[name].bbox` — sanity-check on size and placement.
 - `parts[name].face_count` / `edge_count` / `vertex_count` — cheapest
@@ -24,7 +33,9 @@ its claims filtered, sorted or grouped; see `references/cli.md`.
   something is detached (or touches only along an edge); see
   `multi_solid` in `SKILL.md` §Read `warnings` on every run.
 - `interferences` — list of overlapping part pairs with volume +
-  centroid, **at the as-built pose only**, motion or no motion.
+  centroid, **at the as-built pose only**, motion or no motion. `null`
+  on a partial run: the all-pairs pass did not run, which `[]` (ran,
+  found none) would misstate.
 - `motions` — one entry per declared motion: `samples`, and per driven
   joint the range covered and `max_step`, the widest gap between
   adjacent samples. Empty means every green below is a one-pose green.

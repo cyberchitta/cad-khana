@@ -533,3 +533,47 @@ def test_a_keepout_claim_over_several_parts_reports_the_worst_pose_minimum():
     assert result.passed
     assert result.value == pytest.approx(5.0)  # tip at 0deg: y -1 → zone y -6
     assert result.detail == "nearest: swing.tip at 5.0000mm"
+
+
+# --- only: a subset of the claims -----------------------------------------
+
+
+def test_only_holds_the_matching_claims_over_every_motion():
+    a = (
+        _swung()
+        .assert_no_interference("post", "swing.arm", name="arm_clear")
+        .assert_no_interference("post", "swing.tip", name="tip_clear")
+        .assert_distance("post", "base", min_mm=1.0, name="base_gap")
+        .with_motion(_swing(90))
+    )
+    held = hold(a, only=("*_clear",))
+    assert [r.name for r in held.assertions] == ["arm_clear", "tip_clear"]
+    assert held.declared == 3
+    assert held.assertions[0].passed is False
+    assert held.assertions[0].poses.evaluated == 8
+    assert held.motions[0].movable == 2
+
+
+def test_a_full_hold_declares_what_it_evaluates():
+    held = hold(_swung().assert_no_interference("post", "swing.arm"))
+    assert held.declared == len(held.assertions) == 1
+
+
+def test_only_keeps_the_phase_its_unselected_siblings_give_a_contact_claim():
+    """A permission out of phase lapses to forbidding only when no
+    sibling on the pair is in force — the siblings are the whole
+    declaration, so selecting one must not strip the others from it."""
+    a = (
+        _swung()
+        .assert_allowed_contact(
+            "post", "swing.arm", max_overlap_mm3=5, name="low",
+            during=JointWindow("swing", 0, 50),
+        )
+        .assert_allowed_contact(
+            "post", "swing.arm", max_overlap_mm3=2000, name="high",
+            during=JointWindow("swing", 50, 100),
+        )
+        .with_motion(_swing(90))
+    )
+    (low,) = hold(a, only=("low",)).assertions
+    assert low.passed is True

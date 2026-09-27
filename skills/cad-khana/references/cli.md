@@ -4,7 +4,8 @@ Load before addressing a `:factory`, when an output file is not where
 you expected, before a run whose outputs must stay apart (a before/after
 baseline, parallel runs), when an import fails under `khana`, when
 setting up the viewer, before writing a script that checks several
-members of a family, or before querying a diagnostics JSON too large to
+members of a family, before checking a subset of the claims or viewing
+part of the tree, or before querying a diagnostics JSON too large to
 read whole. The verb list and exit codes are in `SKILL.md` §CLI.
 
 ## Targets: `<module-path>[:<factory>]`
@@ -131,6 +132,44 @@ server, one to push the current file to it:
 ]
 ```
 
+## One run over a subset: `check --only`, `view --only` / `--hide`
+
+```
+khana check assembly.py --only 'clear_of:*'                 # hold only these claims
+khana check assembly.py --only 'clear_of:*' --only 'gap_*'  # repeatable: any glob
+khana view assembly.py --only s1                            # s1 and everything under it
+khana view assembly.py --hide s1.arm --hide frame           # everything but these
+```
+
+**`check --only <glob>`** holds only the assertions whose name matches
+(`fnmatch`, case-sensitive: `*`, `?`, `[...]` — a literal `[` in a name
+is written `[[]`), over every declared motion as usual, and still
+writes `mechanism.json`. It is a **partial run**, and the file says so
+three ways: `selection` records the globs and `declared` / `evaluated`
+counts, a `partial_run` warning is listed, and stderr says
+`partial run: N of M assertions (only …); interferences not computed —
+not a whole-model result`. The all-pairs interference pass — on a
+large tree most of a check's time — is skipped, so `interferences` is
+`null`, not `[]`. A glob that matches no assertion is a usage error
+(exit 2) that writes nothing: a typo would otherwise evaluate zero
+claims and exit 0. Each glob must match something, so one typo among
+several is caught too. A contact claim's `during=` phase is still read
+against every claim on its pair, selected or not.
+
+Use it to watch a claim family go red and green while you edit; close
+with a whole run before believing the model is clean. `khana diff`
+refuses a partial file against a full one, or against another
+selection — the claims one side left out would read as removed — and
+compares two runs of the same `--only`.
+
+**`view --only` / `--hide <path>`** filter what is pushed by dotted tree
+path (`s1`, `s1.arm`, `frame`): a path names a part or a whole
+sub-assembly (every part under it; `s1` never matches `s10`), both are
+repeatable, and `--hide` applies after `--only`. An unknown path is a
+usage error (exit 2) naming close matches. The push nests parts by
+sub-assembly, so the viewer's tree has a row for `s1` to toggle. (`draw
+--part` still takes one part name.)
+
 ## Parametrized families
 
 The CLI addresses **one member per invocation**, and a factory is
@@ -171,7 +210,8 @@ member, and nothing signals that but the sentence.
 
 A top-level `mechanism.json` can hold tens of thousands of claims.
 `khana show <file>` reads one `mechanism.json` or
-`<name>-printability.json` and prints a summary — status, the counts of
+`<name>-printability.json` and prints a summary — status, a
+`partial run:` line when the file is one, the counts of
 passed / failed / waived / skipped assertions (skips by class), warnings
 by kind — then one line per assertion: state (`ok`, `FAIL`, `waived`,
 `skip`), `value` (`-` when the claim records none), name, and `detail`

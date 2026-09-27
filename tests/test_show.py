@@ -53,6 +53,20 @@ def mech(tmp_path_factory: pytest.TempPathFactory) -> dict:
 
 
 @pytest.fixture(scope="module")
+def partial(tmp_path_factory: pytest.TempPathFactory) -> dict:
+    out = tmp_path_factory.mktemp("partial")
+    assembly = (
+        Assembly()
+        .with_part("a", _cube(), location=Location((0, 0, 0)))
+        .with_part("b", _cube(), location=Location((15, 0, 0)))
+        .assert_distance("a", "b", min_mm=0.2, name="gap:a/b")
+        .assert_no_interference("a", "b", name="clear:a/b")
+    )
+    check(assembly, out=out, only=("gap:*",))
+    return json.loads((out / "mechanism.json").read_text())
+
+
+@pytest.fixture(scope="module")
 def printability(tmp_path_factory: pytest.TempPathFactory) -> dict:
     out = tmp_path_factory.mktemp("print")
     inspect(
@@ -194,3 +208,9 @@ def test_a_file_that_is_not_diagnostics_is_refused():
         require_diagnostics({"foo": 1})
     with pytest.raises(ValueError):
         require_diagnostics([1, 2])
+
+
+def test_summary_says_a_partial_run_is_partial(partial: dict):
+    text = summary(partial)
+    assert "partial run: 1 of 2 assertions (only gap:*)" in text
+    assert "interferences not computed" in text

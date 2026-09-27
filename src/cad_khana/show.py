@@ -210,10 +210,24 @@ def _body_line(diag: Diag) -> str:
             f"max_angle_deg {_fmt(overhang.get('max_angle_deg'))}  "
             f"solid_count {diag.get('solid_count')}"
         )
+    found = diag.get("interferences", [])
     return (
         f"parts {len(diag.get('parts', {}))}  "
-        f"interferences {len(diag.get('interferences', []))}  "
+        f"interferences {'not computed' if found is None else len(found)}  "
         f"motions {len(diag.get('motions', []))}"
+    )
+
+
+def _selection_lines(diag: Diag) -> list[str]:
+    selection = diag.get("selection")
+    return (
+        [
+            f"partial run: {selection['evaluated']} of {selection['declared']} "
+            f"assertions (only {', '.join(selection['only'])}) — not a "
+            "whole-model result"
+        ]
+        if selection
+        else []
     )
 
 
@@ -223,6 +237,7 @@ def summary(diag: Diag) -> str:
         [
             _header(diag),
             *_error_lines(diag),
+            *_selection_lines(diag),
             _body_line(diag),
             _assertion_line(diag["assertions"]),
             f"warnings: {_counted(warnings) if warnings else 'none'}",

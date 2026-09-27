@@ -630,3 +630,42 @@ def test_two_vacuous_motions_are_labelled_apart():
     out = diff(_empty_mech(), _empty_mech() | {"warnings": vacuous})
     assert "added: motion_moved_nothing: turn" in out
     assert "added: motion_moved_nothing: nudge" in out
+
+
+# --- partial runs -----------------------------------------------------------
+
+
+def _partial(only: list[str]) -> dict:
+    return {
+        **_empty_mech(),
+        "interferences": None,
+        "selection": {
+            "only": only,
+            "declared": 3,
+            "evaluated": 1,
+            "not_computed": ["interferences"],
+        },
+    }
+
+
+def test_diff_refuses_a_partial_run_against_a_full_one():
+    """Claims the partial run left out would read as removed."""
+    with pytest.raises(ValueError, match="cannot diff a partial run"):
+        diff(_empty_mech(), _partial(["gap_*"]))
+    with pytest.raises(ValueError, match="cannot diff a partial run"):
+        diff(_partial(["gap_*"]), _empty_mech())
+
+
+def test_diff_refuses_two_different_selections():
+    with pytest.raises(ValueError, match="cannot diff a partial run"):
+        diff(_partial(["gap_*"]), _partial(["clear_*"]))
+
+
+def test_diff_compares_two_runs_of_one_selection():
+    assert diff(_partial(["gap_*"]), _partial(["gap_*"])) == "no changes\n"
+
+
+def test_diff_reports_a_changed_declared_count_under_one_selection():
+    grown = _partial(["gap_*"])
+    grown["selection"] = {**grown["selection"], "declared": 4}
+    assert "declared 3 → 4" in diff(_partial(["gap_*"]), grown)

@@ -9,7 +9,7 @@ from build123d import Part
 if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
 
-SCHEMA_VERSION = "0.15"
+SCHEMA_VERSION = "0.16"
 INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
 
 # Absolute tolerance on assertion bound comparisons, in the bound's own
@@ -158,17 +158,31 @@ def skipped_counts(results: tuple[AssertionResult, ...]) -> dict[str, int]:
 
 
 @dataclass(frozen=True)
+class Selection:
+    """What a partial run (``check(..., only=...)``) left out. ``only``
+    — the name globs as given; ``declared`` / ``evaluated`` — the tree's
+    assertions and the ones the globs kept; ``not_computed`` — the
+    top-level fields this run did not compute and left ``null``."""
+
+    only: tuple[str, ...]
+    declared: int
+    evaluated: int
+    not_computed: tuple[str, ...] = ("interferences",)
+
+
+@dataclass(frozen=True)
 class Diagnostics:
     schema_version: str = SCHEMA_VERSION
     status: str = "ok"
     error: str | None = None
     hint: str | None = None
+    selection: Selection | None = None
     skipped_counts: dict[str, int] = field(
         default_factory=lambda: skipped_counts(())
     )
     motions: tuple[MotionSummary, ...] = ()
     parts: dict[str, PartDiagnostics] = field(default_factory=dict)
-    interferences: tuple[Interference, ...] = ()
+    interferences: tuple[Interference, ...] | None = ()
     assertions: tuple[AssertionResult, ...] = ()
     warnings: tuple[Warning, ...] = ()
 
@@ -261,13 +275,23 @@ def _interference(a: PlacedPart, b: PlacedPart) -> Interference | None:
     )
 
 
-def compute(assembly: Assembly) -> Diagnostics:
-    placed = assembly.placed_parts
-    shapes = {p.name: _placed(p) for p in placed}
-    parts = {name: _part_diagnostics(shape) for name, shape in shapes.items()}
-    interferences = tuple(
+def interferences(assembly: Assembly) -> tuple[Interference, ...]:
+    """Every pair of parts, intersected — quadratic in the part count,
+    and the bulk of a large tree's ``check``."""
+    return tuple(
         r
-        for a, b in combinations(placed, 2)
+        for a, b in combinations(assembly.placed_parts, 2)
         if (r := _interference(a, b)) is not None
     )
-    return Diagnostics(parts=parts, interferences=interferences)
+
+
+def compute(assembly: Assembly, pairs: bool = True) -> Diagnostics:
+    """Part diagnostics, and with ``pairs`` the all-pairs interference
+    pass; without it ``interferences`` is ``None`` — not computed, which
+    ``[]`` (computed, none found) must never be mistaken for."""
+    parts = {
+        p.name: _part_diagnostics(_placed(p)) for p in assembly.placed_parts
+    }
+    return Diagnostics(
+        parts=parts, interferences=interferences(assembly) if pairs else None
+    )

@@ -9,6 +9,7 @@ from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
 from cad_khana.mechanism.check import check
 from cad_khana.mechanism.diagnostics import SCHEMA_VERSION
 from cad_khana.mechanism.motion import Motion
+from cad_khana.selection import SelectionError
 
 
 def _cube(size: float = 10):
@@ -169,7 +170,7 @@ def test_check_skipped_assertion_does_not_fail_the_run(tmp_path: Path):
 def test_check_with_nothing_skipped_still_lists_every_skip_class(tmp_path: Path):
     check(Assembly().with_part("a", _cube()), out=tmp_path)
     data = json.loads((tmp_path / "mechanism.json").read_text())
-    assert data["schema_version"] == "0.15"
+    assert data["schema_version"] == "0.16"
     assert data["skipped_counts"] == {
         "absent_part": 0,
         "absent_joint": 0,
@@ -359,3 +360,72 @@ def test_check_says_nothing_about_motions_when_none_are_declared(
     """No new output for the many consumers that declare no motion."""
     check(Assembly().with_part("a", _cube()), out=tmp_path)
     assert "poses, moved" not in capsys.readouterr().err
+
+
+# --- only: a partial run ---------------------------------------------------
+
+
+def _overlapping_pair() -> Assembly:
+    return (
+        Assembly()
+        .with_part("a", _cube(), location=Location((0, 0, 0)))
+        .with_part("b", _cube(), location=Location((5, 0, 0)))
+        .with_part("c", _cube(), location=Location((50, 0, 0)))
+        .assert_no_interference("a", "c", name="clear_a_c")
+        .assert_no_interference("b", "c", name="clear_b_c")
+        .assert_distance("a", "c", min_mm=1.0, name="gap_a_c")
+    )
+
+
+def test_a_full_run_records_no_selection(tmp_path: Path):
+    check(_overlapping_pair(), out=tmp_path)
+    data = json.loads((tmp_path / "mechanism.json").read_text())
+    assert data["selection"] is None
+    assert len(data["interferences"]) == 1
+    assert all(w["kind"] != "partial_run" for w in data["warnings"])
+
+
+def test_only_evaluates_the_matching_claims_and_says_it_was_partial(
+    tmp_path: Path, capsys
+):
+    check(_overlapping_pair(), out=tmp_path, only=("clear_*",))
+    data = json.loads((tmp_path / "mechanism.json").read_text())
+    assert [a["name"] for a in data["assertions"]] == ["clear_a_c", "clear_b_c"]
+    assert data["selection"] == {
+        "only": ["clear_*"],
+        "declared": 3,
+        "evaluated": 2,
+        "not_computed": ["interferences"],
+    }
+    assert {"kind": "partial_run", "evaluated": 2, "declared": 3} in data["warnings"]
+    err = capsys.readouterr().err
+    assert "partial run: 2 of 3 assertions" in err
+    assert "interferences not computed" in err
+
+
+def test_a_partial_run_never_reads_interferences_as_an_empty_green(tmp_path: Path):
+    """``[]`` means "looked, found none"; the pass did not run, so the
+    field says nothing rather than something false."""
+    check(_overlapping_pair(), out=tmp_path, only=("gap_*",))
+    data = json.loads((tmp_path / "mechanism.json").read_text())
+    assert data["interferences"] is None
+    assert set(data["parts"]) == {"a", "b", "c"}
+
+
+def test_a_partial_run_drops_the_rest_pose_interference_caveat(tmp_path: Path):
+    """``interferences_rest_pose_only`` speaks about a field this run
+    left null."""
+    assembly = _swung().with_motion(
+        Motion.over_joint("swing_in", "swing", 0.0, 30.0, step=30.0)
+    )
+    check(assembly, out=tmp_path, only=("arm_*",))
+    data = json.loads((tmp_path / "mechanism.json").read_text())
+    kinds = [w["kind"] for w in data["warnings"]]
+    assert "interferences_rest_pose_only" not in kinds
+    assert "partial_run" in kinds
+
+
+def test_a_glob_matching_no_claim_raises_and_writes_nothing(tmp_path: Path):
+    with pytest.raises(SelectionError, match="'clera_\\*'"):
+        check(_overlapping_pair(), out=tmp_path, only=("clera_*",))
+    assert not (tmp_path / "mechanism.json").exists()

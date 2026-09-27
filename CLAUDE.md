@@ -120,6 +120,7 @@ cad-khana/
       draw.py                 # HLR engineering drawings (PNG + SVG)
       viewer.py               # ocp_vscode push (used by `khana view`)
       diff.py                 # dispatches on file kind (mechanism/printability)
+      selection.py            # subset of one run: claim globs, tree paths
       show.py                 # reads one diagnostics JSON: summary, filters, groups
       target.py               # <module>[:<factory>] → Assembly (import-model verbs)
       cli.py                  # typer CLI — thin dispatcher
@@ -203,9 +204,9 @@ and do one thing to it. **Execute-model** commands run a script for
 effect.
 
 ```
-khana check  <target>           # diagnostics + assertions, write mechanism.json
+khana check  <target> [--only <glob>]...   # diagnostics + assertions, write mechanism.json
 khana export <target>           # STL + STEP
-khana view   <target>           # push to OCP viewer
+khana view   <target> [--only|--hide <path>]...   # push to OCP viewer, nested by sub-assembly
 khana draw   <target> --format png|svg|both   # orthographic/iso HLR line-art
 khana run    <script>           # execute an orchestration script
 khana diff <old> <new>          # diff two diagnostics JSON files
@@ -229,6 +230,12 @@ run. Any command that imports or executes user code writes
 even on failure, so the agent can always read structured error info.
 `diff` follows the `diff`/`git diff` contract: exit 0 when the files
 are equivalent, 1 when differences are found, 2 on error.
+
+`check --only` and `view --only/--hide` select a subset for one run
+(`selection.py`; `hold` and `viewer.push` take the tuples, the CLI only
+parses). A selection matching nothing is a usage error like an
+unresolvable target — exit 2, no JSON — because a typo'd glob that held
+zero claims and exited 0 is the vacuous green.
 `show` is a reader, not a verdict: exit 0 whatever the file says, 2
 when it is not a diagnostics file.
 
@@ -238,7 +245,7 @@ A module the import-model verbs consume never calls `check()`,
 full design, its phases, and what is still owed:
 `_notes/draft-script-decomposition.md`.
 
-## Diagnostics JSON schemas (v0.15)
+## Diagnostics JSON schemas (v0.16)
 
 Version these from day one. Agents depend on field stability.
 
@@ -259,10 +266,11 @@ for three bumps.
 
 ```json
 {
-  "schema_version": "0.15",
+  "schema_version": "0.16",
   "status": "ok | error | assertion_failed",
   "error": null,
   "hint": "Missing .part accessor — use `with BuildPart() as p: ...; return p.part`.",
+  "selection": null,
   "skipped_counts": {"absent_part": 0, "absent_joint": 0, "out_of_phase": 0},
   "motions": [
     {"name": "stack_turn", "samples": 180,
@@ -299,6 +307,11 @@ for three bumps.
   ]
 }
 ```
+
+A partial run (`check --only`) carries `"selection": {"only": ["clear_of:*"],
+"declared": 2203, "evaluated": 12, "not_computed": ["interferences"]}`,
+`"interferences": null`, and `{"kind": "partial_run", "evaluated": 12,
+"declared": 2203}` first in `warnings`.
 
 Maintainer facts behind those fields:
 
@@ -347,6 +360,18 @@ Maintainer facts behind those fields:
   from non-linear schedules. Sweeps derive a claim; assertions hold it.
 - Sub-assembly assertions and motions qualify into every composing root
   (`Assembly.all_assertions`, `Assembly.all_motions`).
+- **A partial run skips the interference pass** because it is what a
+  large tree's check spends its time on (sorted-studs m05, 250 parts:
+  37 s of a 49 s check; under its 180-pose motion, hold adds 37 s more,
+  which the selection narrows), and a subset run exists to be fast.
+  `interferences: null` rather than `[]`, so it cannot read as "looked,
+  found none"; `interferences_rest_pose_only` is dropped with it.
+  `status` is not changed — it answers for the claims held — and the
+  whole-model caveat rides `selection`, the `partial_run` warning, the
+  stderr line and `khana show`'s summary. `diff` refuses two files of
+  different selections (a left-out claim would read as removed).
+  Contacts are grouped from the full declaration, since a sibling
+  permission decides an out-of-phase one.
 - Bound comparisons carry `BOUND_EPSILON` (1e-6 in the bound's units):
   consumers derive geometry from the constant they bound against, so
   exact comparison flips on solver noise.
@@ -355,7 +380,7 @@ Maintainer facts behind those fields:
 
 ```json
 {
-  "schema_version": "0.15",
+  "schema_version": "0.16",
   "kind": "printability",
   "status": "ok | assertion_failed",
   "name": "housing",

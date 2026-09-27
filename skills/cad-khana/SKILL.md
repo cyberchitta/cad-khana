@@ -310,6 +310,8 @@ before believing an exit 0. Every kind:
 - `interferences_rest_pose_only` — a motion is declared, and
   `interferences[]` did not follow it: unasserted pairs are checked at
   the as-built pose only.
+- `partial_run` (`evaluated`, `declared`) — `khana check --only` held
+  a subset and computed no interferences: a green here is not the model's.
 - `multi_solid` (`part`, `solid_count`) — a part in several pieces that
   no `assert_solid_count` / `inspect(..., solid_count=N)` speaks for:
   bound it or declare it. Nothing else sees a severed part.
