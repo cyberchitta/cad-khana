@@ -10,7 +10,7 @@ from typing import Annotated
 
 import typer
 
-from cad_khana import _failures, environment
+from cad_khana import _failures, _paths, environment
 from cad_khana import draw as _draw
 from cad_khana import viewer
 from cad_khana.diff import NO_CHANGES, diff as compute_diff
@@ -81,8 +81,22 @@ OutOpt = Annotated[
         "--out",
         help=(
             "Directory to write error diagnostics if the script fails. "
-            "Defaults to <script-dir>/outputs; an explicit value is taken "
-            "as cwd-relative."
+            "Defaults to <script-dir>/outputs, moved under --out-root when "
+            "one is given; an explicit value is taken as cwd-relative."
+        ),
+    ),
+]
+
+OutRootOpt = Annotated[
+    Path | None,
+    typer.Option(
+        "--out-root",
+        envvar="KHANA_OUT_ROOT",
+        help=(
+            "Write every relative out= of the script's check()/inspect() "
+            "calls under this directory, at the anchored path's place "
+            "relative to the cwd (cad/m02/outputs -> <root>/cad/m02/outputs). "
+            "Absolute out= paths are left alone. Cwd-relative."
         ),
     ),
 ]
@@ -140,16 +154,22 @@ def _exec_script(script: Path) -> None:
         runpy.run_module(module, run_name="__main__", alter_sys=True)
 
 
-def _run_script(script: Path, out: Path | None, command: str) -> None:
+def _run_script(
+    script: Path, out: Path | None, command: str, root: Path | None = None
+) -> None:
     """Run a user script with failures deferred to this boundary.
 
     Every ``check()``/``inspect()`` in the script runs, so all of its
     diagnostics JSON is current when the agent reads it; the failures are
     rolled up here and exit nonzero once. Only the boundary can defer —
-    see ``_failures``.
+    see ``_failures``. An output root is the same kind of boundary
+    switch: set for the run, reset after it — see ``_paths``.
     """
+    _paths.set_root(None if root is None else Path.cwd() / root)
+    if root is not None:
+        typer.echo(f"khana {command}: relative out= written under {root}", err=True)
     if out is None:
-        out = script.resolve().parent / "outputs"
+        out = _paths.under_root(script.resolve().parent / "outputs")
     _failures.defer()
     try:
         _exec_script(script)
@@ -166,6 +186,7 @@ def _run_script(script: Path, out: Path | None, command: str) -> None:
         raise typer.Exit(code=1)
     finally:
         failed = _failures.take()
+        _paths.set_root(None)
     if failed:
         typer.echo(
             f"khana {command}: {len(failed)} of the run's diagnostics failed:",
@@ -243,14 +264,16 @@ def view(target: TargetArg, out: TargetOutOpt = None) -> None:
 
 
 @app.command()
-def run(script: ScriptArg, out: OutOpt = None) -> None:
+def run(
+    script: ScriptArg, out: OutOpt = None, out_root: OutRootOpt = None
+) -> None:
     """Execute an orchestration script (sweeps, inspect() batches, exports).
 
     Declarations belong in modules the import-model commands consume;
     this is the escape hatch for genuinely imperative work. `check()`
     called from here writes diagnostics only.
     """
-    _run_script(script, out, "run")
+    _run_script(script, out, "run", out_root)
 
 
 @app.command(

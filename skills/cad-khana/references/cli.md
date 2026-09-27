@@ -50,6 +50,19 @@ An explicit `--out <dir>` overrides and is taken **cwd-relative**
 passed to `check()` / `inspect()` anchors to the *script's* directory,
 so `out="outputs"` lands next to the script regardless of cwd.
 
+`khana run --out-root <dir>` (or `KHANA_OUT_ROOT=<dir>`) moves every
+**relative** `out=` of the script's `check()` / `inspect()` calls under
+`<dir>`, at the anchored directory's path relative to the cwd: run from
+the repo root, `cad/m02/printability.py` with `out="outputs"` writes to
+`<dir>/cad/m02/outputs/`. Different scripts under one root therefore
+never collide, so two parallel runs of one unit each take their own
+root, and a before/after baseline is two roots handed to `khana diff`.
+An anchor outside the cwd (a scratch probe) mirrors its full absolute
+path under the root. **An absolute `out=` is left alone** — it still
+writes where it says. Without `--out`, the error diagnostics of a
+failed script go under the root too; an explicit `--out` is not moved.
+Exporters (`export_assembly`, GLB) do not read the root.
+
 ## Imports resolve as if you had run the file directly
 
 A **package member** (its directory and every ancestor up to the

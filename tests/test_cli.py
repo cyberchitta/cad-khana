@@ -1034,3 +1034,127 @@ def test_diff_schema_mismatch_exits_two(tmp_path: Path):
     b = _mech_json(tmp_path, "b.json")
     result = runner.invoke(app, ["diff", str(a), str(b)])
     assert result.exit_code == 2
+
+
+def _rooted_script(out: str) -> str:
+    """A script whose check() and inspect() both write to one ``out=``."""
+    return (
+        "from build123d import Box, BuildPart\n"
+        "from cad_khana.mechanism.assembly import Assembly\n"
+        "from cad_khana.mechanism.check import check\n"
+        "from cad_khana.printability.inspect import inspect\n"
+        "from cad_khana.printability.methods import FDM\n"
+        "with BuildPart() as p:\n"
+        "    Box(10, 10, 10)\n"
+        "check(Assembly().with_part('cube', p.part), out=" + repr(out) + ")\n"
+        "inspect(p.part, method=FDM(), out=" + repr(out) + ", name='cube')\n"
+    )
+
+
+def _unit_script(repo: Path, unit: str, out: str = "outputs") -> Path:
+    (repo / unit).mkdir(parents=True)
+    script = repo / unit / "probe.py"
+    script.write_text(_rooted_script(out))
+    return script
+
+
+def test_out_root_moves_relative_out_under_the_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """``--out-root`` mirrors the cwd-relative path of each anchored
+    ``out=``, so two scripts' ``outputs/`` stay apart under one root."""
+    repo, root = tmp_path / "repo", tmp_path / "root"
+    a, b = _unit_script(repo, "cad/m02"), _unit_script(repo, "cad/m03")
+    monkeypatch.chdir(repo)
+    for script in (a, b):
+        result = runner.invoke(app, ["run", str(script), "--out-root", str(root)])
+        assert result.exit_code == 0, result.output
+    for unit in ("cad/m02", "cad/m03"):
+        assert (root / unit / "outputs" / "mechanism.json").exists()
+        assert (root / unit / "outputs" / "cube-printability.json").exists()
+        assert not (repo / unit / "outputs").exists()
+
+
+def test_out_root_normalises_parent_segments(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    repo, root = tmp_path / "repo", tmp_path / "root"
+    script = _unit_script(repo, "cad/m02", out="../shared")
+    monkeypatch.chdir(repo)
+    result = runner.invoke(app, ["run", str(script), "--out-root", str(root)])
+    assert result.exit_code == 0, result.output
+    assert (root / "cad" / "shared" / "mechanism.json").exists()
+
+
+def test_out_root_mirrors_an_anchor_outside_the_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    repo, root, scratch = tmp_path / "repo", tmp_path / "root", tmp_path / "scratch"
+    repo.mkdir()
+    script = _unit_script(scratch, "probe")
+    monkeypatch.chdir(repo)
+    result = runner.invoke(app, ["run", str(script), "--out-root", str(root)])
+    assert result.exit_code == 0, result.output
+    mirrored = root / script.parent.resolve().relative_to("/") / "outputs"
+    assert (mirrored / "mechanism.json").exists()
+    assert not (script.parent / "outputs").exists()
+
+
+def test_out_root_leaves_an_absolute_out_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    repo, root, fixed = tmp_path / "repo", tmp_path / "root", tmp_path / "fixed"
+    script = _unit_script(repo, "cad/m02", out=str(fixed))
+    monkeypatch.chdir(repo)
+    result = runner.invoke(app, ["run", str(script), "--out-root", str(root)])
+    assert result.exit_code == 0, result.output
+    assert (fixed / "mechanism.json").exists()
+    assert (fixed / "cube-printability.json").exists()
+    assert not root.exists()
+
+
+def test_out_root_absent_keeps_out_beside_the_script(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    repo = tmp_path / "repo"
+    script = _unit_script(repo, "cad/m02")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("KHANA_OUT_ROOT", raising=False)
+    result = runner.invoke(app, ["run", str(script)])
+    assert result.exit_code == 0, result.output
+    assert (repo / "cad/m02/outputs/mechanism.json").exists()
+    assert (repo / "cad/m02/outputs/cube-printability.json").exists()
+
+
+def test_out_root_from_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    repo, root = tmp_path / "repo", tmp_path / "root"
+    script = _unit_script(repo, "cad/m02")
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("KHANA_OUT_ROOT", str(root))
+    result = runner.invoke(app, ["run", str(script)])
+    assert result.exit_code == 0, result.output
+    assert (root / "cad/m02/outputs/mechanism.json").exists()
+
+
+def test_out_root_places_error_diagnostics_and_does_not_leak(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Without ``--out``, the error diagnostics follow the root too; and
+    the root is reset at the boundary, like failure deferral."""
+    repo, root = tmp_path / "repo", tmp_path / "root"
+    (repo / "cad/m02").mkdir(parents=True)
+    bad = repo / "cad/m02/bad.py"
+    bad.write_text("raise RuntimeError('kaboom')\n")
+    monkeypatch.chdir(repo)
+    result = runner.invoke(app, ["run", str(bad), "--out-root", str(root)])
+    assert result.exit_code == 1
+    assert "kaboom" in json.loads(
+        (root / "cad/m02/outputs/mechanism.json").read_text()
+    )["error"]
+    assert not (repo / "cad/m02/outputs").exists()
+
+    good = _unit_script(repo, "cad/m03")
+    assert runner.invoke(app, ["run", str(good)]).exit_code == 0
+    assert (repo / "cad/m03/outputs/mechanism.json").exists()
