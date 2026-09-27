@@ -406,12 +406,12 @@ for the task they cover.
 
 | Load | before |
 |---|---|
-| `references/cli.md` | addressing a `:factory`, looking for an output file, an import failing under `khana`, the viewer, or checking several members of a family |
-| `references/style.md` | writing a new part function or declaration module |
+| `references/cli.md` | addressing a `:factory`, looking for an output file, keeping a script's outputs apart (before/after baselines, parallel runs), an import failing under `khana`, the viewer, or checking several members of a family |
+| `references/style.md` | writing or changing a part function or its helpers, or a declaration module |
 | `references/assertions.md` | writing or changing any `assert_*` — the catalogue, solid count, distance/scalar, contact claims and `during=`, group assertions |
 | `references/composition.md` | adding a sub-assembly, joint or anchor, or a claim about two units |
 | `references/motion.md` | anything that moves or animates — declared motions, sweeps, GLB export |
-| `references/printability.md` | an `inspect()` call, a waiver, or a printability JSON |
+| `references/printability.md` | an `inspect()` call, a waiver, a printability JSON, or choosing a print orientation |
 | `references/diagnostics.md` | reading any JSON field beyond `status`, `passed`, `skipped_counts` and `warnings` |
 | `references/drawings.md` | `khana draw` — which view answers which question |
 | `references/build123d_quickref.md` | selector operators, algebraic vs Builder mode, type-conversion shortcuts |

@@ -1,9 +1,10 @@
 # CLI: targets, output, imports, viewer, families
 
 Load before addressing a `:factory`, when an output file is not where
-you expected, when an import fails under `khana`, when setting up the
-viewer, or before writing a script that checks several members of a
-family. The verb list and exit codes are in `SKILL.md` §CLI.
+you expected, before a run whose outputs must stay apart (a before/after
+baseline, parallel runs), when an import fails under `khana`, when
+setting up the viewer, or before writing a script that checks several
+members of a family. The verb list and exit codes are in `SKILL.md` §CLI.
 
 ## Targets: `<module-path>[:<factory>]`
 

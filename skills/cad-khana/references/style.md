@@ -1,7 +1,8 @@
 # Authoring style
 
-Load before writing a new part function or declaration module. These
-conventions are what make a script re-editable; nothing enforces them.
+Load before writing or changing a part function or its helpers, or a
+declaration module. These conventions are what make a script
+re-editable; nothing enforces them.
 
 ## Declaration module
 
