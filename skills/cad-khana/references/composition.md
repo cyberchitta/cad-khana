@@ -53,8 +53,9 @@ and three-line tests share one runner.)
 **Geometry that exists only to be asserted against** comes in two
 forms. A **keep-out**, a volume parts must stay out of (a driver's
 corridor, a bolt's drop-in path, an RF zone), is an argument to
-`assert_clear_of` (`assertions.md` §Keep-outs). It is never a part, so it
-can sit in the product's own builder. A **probe** that other claims pair
+`assert_clear_of`, or a unit's named `with_keepout` asserted by path
+(`assertions.md` §Keep-outs). It is never a part, so it can sit in the
+product's own builder. A **probe** that other claims pair
 with, or that you want drawn (a sightline cone checked with
 `assert_no_interference`), is an ordinary `with_part` in a check module.
 Nothing in the library marks it un-manufacturable, and it needs no special
@@ -82,6 +83,16 @@ ask **when the claim has to hold**, and declare it where that is true.
   and declare the keep-out against them. In the finished product the
   cover blocks the path, and should. Name the file for the step
   (`check_step_arc_screws.py`).
+
+**Which builder**, when the geometry is known low and the parts exist
+high: a driver corridor's pose is a stage fact, while the bodies it must
+clear are the machine's. A keep-out holds only parts of the assembly the
+claim is declared in, so declare the keep-out where the geometry is
+known (`stage.with_keepout("arc_screw_driver", driver)`) and assert it
+where the parts are (`top.assert_clear_of([...],
+"m02_chain.s1.arc_screw_driver")`), the way an anchor is exported low
+and asserted high (§Named interface anchors). It rides the stage's
+placement and joints into the claim at every pose.
 
 A claim declared at the wrong level fails in one of two ways. Declared
 in the builder, the step claim reads red on a correct design. Declared

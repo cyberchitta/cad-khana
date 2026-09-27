@@ -187,6 +187,32 @@ class Anchor:
 
 
 @dataclass(frozen=True)
+class KeepOutZone:
+    """A named keep-out solid in the owning assembly's local frame, with
+    the ``seat`` plane it stands on if it has one.
+
+    The anchor pattern for a volume: a unit that knows where a driver's
+    corridor or a bolt's drop-in path is declares it in its own frame
+    (``with_keepout``), and whichever level has the parts it must clear
+    holds them out of it by path (``assert_clear_of(parts,
+    "unit.corridor")``), resolved through the tree like an anchor
+    (``Assembly.keepout``). Like an anchor it carries no part: nothing
+    exports, draws or lists it, and it lives in its own namespace.
+    """
+
+    name: str
+    solid: Shape
+    seat: Plane | None = None
+
+    def moved(self, location: Location) -> "KeepOutZone":
+        return replace(
+            self,
+            solid=self.solid.moved(location),
+            seat=None if self.seat is None else Plane(location * self.seat.location),
+        )
+
+
+@dataclass(frozen=True)
 class RevoluteJoint:
     """Single-DOF revolute joint between a parent ``Assembly`` and a
     ``SubAssembly``. ``angle_deg`` is the animatable DOF (set per-frame
@@ -297,6 +323,7 @@ class Assembly:
     assertions: tuple[Assertion, ...] = ()
     anchors: tuple[Anchor, ...] = ()
     motions: tuple[Motion, ...] = ()
+    keepouts: tuple[KeepOutZone, ...] = ()
 
     def _check_sibling_name(self, name: str) -> None:
         """Sibling names must be unique at each tree level — they are
@@ -396,6 +423,43 @@ class Assembly:
             if a.name == head:
                 return a.location
         raise KeyError(f"no anchor named {head!r}")
+
+    def with_keepout(
+        self, name: str, solid: Shape, *, seat: Plane | None = None
+    ) -> "Assembly":
+        """Declare a named keep-out solid in this assembly's local frame
+        (see ``KeepOutZone``), for a parent to hold its parts out of by
+        path. ``seat`` is the plane the keep-out stands on, normal
+        pointing into it (see ``assert_clear_of``). Names follow the
+        anchor rules: no ``.``, unique among this level's keep-outs, no
+        collision with part, sub-assembly or anchor names."""
+        if "." in name:
+            raise ValueError(
+                f"keep-out name {name!r} contains '.' — reserved as the "
+                f"tree-path separator"
+            )
+        if any(k.name == name for k in self.keepouts):
+            raise ValueError(f"duplicate keep-out name {name!r}")
+        return replace(
+            self, keepouts=self.keepouts + (KeepOutZone(name, solid, seat),)
+        )
+
+    def keepout(self, path: str) -> KeepOutZone:
+        """Resolve a dotted keep-out ``path`` to its ``KeepOutZone`` in
+        this assembly's frame, composed through each sub-assembly's
+        ``effective_location`` like ``anchor``, so a keep-out under a
+        jointed subtree moves with the joint. Raises ``KeyError`` if any
+        segment is missing."""
+        head, _, rest = path.partition(".")
+        if rest:
+            for s in self.subassemblies:
+                if s.name == head:
+                    return s.assembly.keepout(rest).moved(s.effective_location)
+            raise KeyError(f"no sub-assembly named {head!r}")
+        for k in self.keepouts:
+            if k.name == head:
+                return k
+        raise KeyError(f"no keep-out named {head!r}")
 
     def part(self, path: str) -> PlacedPart:
         """Resolve a dotted part ``path`` to its ``PlacedPart`` in this
@@ -734,25 +798,55 @@ class Assembly:
     def assert_clear_of(
         self,
         parts: str | Iterable[str],
-        keepout: Shape,
+        keepout: Shape | str,
         *,
-        name: str,
+        name: str | None = None,
         min_mm: float = 0.0,
+        seat: Plane | None = None,
         excluding: Iterable[str] = (),
         during: During = None,
     ) -> "Assembly":
-        """Assert that every part in ``parts`` stays out of ``keepout``:
-        a solid in this assembly's frame that is not a part (a driver's
-        corridor, a bolt's drop-in path, an RF zone), so nothing exports
-        or draws it. It rides this assembly's placement when composed.
+        """Assert that every part in ``parts`` stays out of ``keepout``,
+        a volume that is not a part (a driver's corridor, a bolt's
+        drop-in path, an RF zone), so nothing exports or draws it.
+
+        ``keepout`` is a solid in this assembly's frame, which rides
+        this assembly's placement when composed and needs a ``name``;
+        or the dotted path of a keep-out a unit below declared with
+        ``with_keepout``, resolved at every pose so it rides the joints
+        on its way up, and named by its path unless ``name`` is given.
+        A keep-out holds only parts of the assembly the claim is
+        declared in: declare the solid where its geometry is known, and
+        assert it where the parts are.
 
         ``parts`` is a part path, a dotted sub-assembly path (every part
-        under it), or an iterable of either; ``excluding`` drops paths
-        from that set, such as the part whose countersink the corridor
-        starts in. One claim per part, named
-        ``clear_of:<name>/<part>>=<min_mm>``, so a failure names the part.
-        Any overlap fails; ``min_mm`` is the clearance past touching.
+        under it), or an iterable of either; ``excluding`` drops whole
+        parts from that set, such as the part whose countersink the
+        corridor starts in. The claim is one result, named
+        ``clear_of:<name>>=<min_mm>``: ``value`` is the least distance
+        over the parts, and a second call under the same name at this
+        level raises. Any overlap fails; ``min_mm`` is the clearance past
+        touching.
+
+        ``seat`` (inline form only — a named keep-out carries its own)
+        is the plane the keep-out stands on, normal pointing into it.
+        Contact at the seat is the design: distance is measured from
+        material past the seat, so ``value`` keeps the headroom, while
+        any overlap still fails.
         """
+        if isinstance(keepout, str):
+            if seat is not None:
+                raise ValueError(
+                    f"assert_clear_of({keepout!r}): a named keep-out carries "
+                    f"its own seat — declare it with with_keepout(seat=…)"
+                )
+            self.keepout(keepout)
+        elif name is None:
+            raise ValueError(
+                "assert_clear_of: an inline keep-out needs a name — or "
+                "declare it with with_keepout and assert it by path"
+            )
+        label = name or keepout
         dropped = set(excluding)
         names = tuple(
             n
@@ -760,20 +854,22 @@ class Assembly:
             if n not in dropped
         )
         if not names:
-            raise ValueError(f"assert_clear_of({name!r}): no part left to hold clear")
-        return reduce(
-            lambda asm, n: asm._asserting(
-                KeepOut(
-                    a=n,
-                    keepout=keepout,
-                    name=f"clear_of:{name}/{n}>={min_mm:g}{_phase_label(during)}",
-                    min_mm=min_mm,
-                ),
-                during,
-            ),
-            names,
-            self,
+            raise ValueError(f"assert_clear_of({label!r}): no part left to hold clear")
+        claim_name = f"clear_of:{label}>={min_mm:g}{_phase_label(during)}"
+        if any(a.name == claim_name for a in self.assertions):
+            raise ValueError(
+                f"assert_clear_of: {claim_name!r} is already declared at this "
+                f"level — one call is one result, and `khana diff` keys "
+                f"results by name; give each call its own name"
+            )
+        assertion = KeepOut(
+            parts=names,
+            keepout=keepout,
+            name=claim_name,
+            min_mm=min_mm,
+            seat=seat,
         )
+        return self._asserting(assertion, during)
 
     def assert_scalar(
         self,

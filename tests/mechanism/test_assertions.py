@@ -1,5 +1,5 @@
 import pytest
-from build123d import Axis, Box, BuildPart, Location, Locations, Plane, Pos
+from build123d import Axis, Box, BuildPart, Cylinder, Location, Locations, Plane, Pos, Rot
 
 from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
 from cad_khana.mechanism.assertions import JointWindow, evaluate
@@ -1183,7 +1183,7 @@ def test_a_keepout_clear_by_its_margin_passes_and_records_the_distance():
     (result,) = evaluate(
         _plate().assert_clear_of("plate", _corridor(10), name="m4_drop_in", min_mm=2)
     )
-    assert result.name == "clear_of:m4_drop_in/plate>=2"
+    assert result.name == "clear_of:m4_drop_in>=2"
     assert result.passed
     assert result.value == pytest.approx(5.0)
 
@@ -1193,7 +1193,9 @@ def test_a_keepout_closer_than_its_margin_fails_with_a_witness():
         _plate().assert_clear_of("plate", _corridor(10), name="m4", min_mm=6.0)
     )
     assert result.passed is False
-    assert result.detail.startswith("distance 5.0000mm below min 6.0mm at (")
+    assert result.detail.startswith(
+        "1 of 1 parts: plate distance 5.0000mm below min 6.0mm at ("
+    )
     assert result.detail.endswith(", 5.00)")
 
 
@@ -1201,7 +1203,9 @@ def test_any_overlap_fails_even_at_a_zero_margin():
     (result,) = evaluate(_plate().assert_clear_of("plate", _corridor(2), name="m4"))
     assert result.passed is False
     assert result.value == 0.0
-    assert result.detail.startswith("overlaps the keep-out by 48.0000mm^3 centred at (")
+    assert result.detail.startswith(
+        "1 of 1 parts: plate overlaps the keep-out by 48.0000mm^3 centred at ("
+    )
 
 
 def test_touching_a_keepout_passes_at_a_zero_margin():
@@ -1211,34 +1215,48 @@ def test_touching_a_keepout_passes_at_a_zero_margin():
 
 
 def _rig() -> Assembly:
+    # From the corridor (|x|, |y| <= 2): the skirt 23 mm off, the bowl 33.
     rig = (
         Assembly()
         .with_part("sector", _cube(), location=Location((0, 0, 0)))
         .with_part("skirt", _cube(), location=Location((30, 0, 0)))
-        .with_part("bowl", _cube(), location=Location((0, 30, 0)))
+        .with_part("bowl", _cube(), location=Location((0, 40, 0)))
     )
     return Assembly().with_subassembly("rig", rig)
 
 
-def test_a_subtree_is_held_clear_part_by_part_less_the_excluded():
+def test_a_keepout_claim_is_one_result_reading_its_nearest_part():
     # The corridor starts inside the sector it drills.
-    names = [
-        r.name
-        for r in evaluate(
-            _rig().assert_clear_of(
-                "rig", _corridor(2), name="driver", excluding=["rig.sector"]
-            )
+    (result,) = evaluate(
+        _rig().assert_clear_of(
+            "rig", _corridor(2), name="driver", excluding=["rig.sector"]
         )
-    ]
-    assert names == ["clear_of:driver/rig.bowl>=0", "clear_of:driver/rig.skirt>=0"]
+    )
+    assert result.name == "clear_of:driver>=0"
+    assert result.passed
+    assert result.value == pytest.approx(23.0)
+    assert result.detail == "nearest: rig.skirt at 23.0000mm"
 
 
-def test_without_the_exclusion_the_drilled_part_fails():
-    results = {
-        r.name: r.passed
-        for r in evaluate(_rig().assert_clear_of("rig", _corridor(2), name="driver"))
-    }
-    assert results["clear_of:driver/rig.sector>=0"] is False
+def test_a_failing_keepout_claim_lists_every_failing_part_and_only_those():
+    (result,) = evaluate(
+        _rig().assert_clear_of("rig", _corridor(2), name="driver", min_mm=25.0)
+    )
+    assert result.passed is False
+    assert result.value == 0.0
+    sector, skirt = result.detail.split("; ")
+    assert sector.startswith("2 of 3 parts: rig.sector overlaps the keep-out by 48.0000mm^3")
+    assert skirt.startswith("rig.skirt distance 23.0000mm below min 25.0mm at (")
+    assert "rig.bowl" not in result.detail
+
+
+def test_a_keepout_claim_naming_an_absent_part_skips_whole():
+    (result,) = evaluate(
+        _plate().assert_clear_of(["plate", "ghost"], _corridor(10), name="m4")
+    )
+    assert result.passed is None
+    assert result.skipped == "absent_part"
+    assert "ghost" in result.detail
 
 
 def test_a_keepout_rides_the_placement_of_the_assembly_that_declares_it():
@@ -1246,7 +1264,7 @@ def test_a_keepout_rides_the_placement_of_the_assembly_that_declares_it():
     (result,) = evaluate(
         Assembly().with_subassembly("unit", unit, location=Location((100, 0, 0)))
     )
-    assert result.name == "unit.clear_of:m4/plate>=5"
+    assert result.name == "unit.clear_of:m4>=5"
     assert result.passed
     assert result.value == pytest.approx(5.0)
 
@@ -1254,3 +1272,161 @@ def test_a_keepout_rides_the_placement_of_the_assembly_that_declares_it():
 def test_a_keepout_that_selects_no_part_is_an_error():
     with pytest.raises(ValueError, match="no part left"):
         _plate().assert_clear_of("plate", _corridor(10), name="m4", excluding=["plate"])
+
+
+def test_an_inline_keepout_needs_a_name():
+    with pytest.raises(ValueError, match="name"):
+        _plate().assert_clear_of("plate", _corridor(10))
+
+
+# --- named keep-outs ----------------------------------------------------
+
+
+def _unit_with_zone() -> Assembly:
+    # The keep-out is known here; the part it must clear is not.
+    return Assembly().with_keepout("reach", _corridor(10))
+
+
+def test_a_named_keepout_is_declared_low_and_held_high():
+    top = (
+        _plate()
+        .with_subassembly("unit", _unit_with_zone(), location=Location((0, 0, 3)))
+        .assert_clear_of("plate", "unit.reach", min_mm=7)
+    )
+    (result,) = evaluate(top)
+    assert result.name == "clear_of:unit.reach>=7"
+    assert result.passed
+    assert result.value == pytest.approx(8.0)
+
+
+def test_a_named_keepout_rides_every_level_above_the_one_that_asserts():
+    mid = (
+        _plate()
+        .with_subassembly("unit", _unit_with_zone())
+        .assert_clear_of("plate", "unit.reach", min_mm=5)
+    )
+    (result,) = evaluate(
+        Assembly().with_subassembly("mid", mid, location=Location((100, 0, 0)))
+    )
+    assert result.name == "mid.clear_of:unit.reach>=5"
+    assert result.passed
+    assert result.value == pytest.approx(5.0)
+
+
+def test_a_named_keepout_path_is_checked_where_it_is_asserted():
+    with pytest.raises(KeyError, match="reahc"):
+        _plate().with_subassembly("unit", _unit_with_zone()).assert_clear_of(
+            "plate", "unit.reahc"
+        )
+
+
+def test_a_keepout_name_is_one_segment_and_unique_at_its_level():
+    with pytest.raises(ValueError, match="'.'"):
+        Assembly().with_keepout("a.b", _corridor(10))
+    with pytest.raises(ValueError, match="duplicate"):
+        _unit_with_zone().with_keepout("reach", _corridor(10))
+
+
+def test_a_named_keepout_carries_its_own_seat():
+    with pytest.raises(ValueError, match="seat"):
+        _plate().with_subassembly("unit", _unit_with_zone()).assert_clear_of(
+            "plate", "unit.reach", seat=Plane.XY
+        )
+
+
+# --- seated keep-outs ---------------------------------------------------
+#
+# A clamp block whose top face (z = 0) is a bolt's seat, with a Ø4.5 bore
+# under it, and a collar wall rising from the seat around a Ø8 × 24
+# drop-in corridor standing on it. The collar's inner radius is `wall_r`,
+# so its clearance from the corridor is wall_r - 4, exactly.
+
+
+def _clamp(wall_r: float | None) -> Assembly:
+    block = Pos(0, 0, -5) * Box(20, 20, 10) - Pos(0, 0, -5) * Cylinder(2.25, 10)
+    body = (
+        block
+        if wall_r is None
+        else block
+        + (Pos(0, 0, 5) * Cylinder(wall_r + 2, 10) - Pos(0, 0, 5) * Cylinder(wall_r, 10))
+    )
+    return Assembly().with_part("clamp", body)
+
+
+BOLT_CORRIDOR = Pos(0, 0, 12) * Cylinder(4, 24)
+
+
+def test_a_seated_keepout_reads_the_clearance_past_its_seat():
+    (result,) = evaluate(
+        _clamp(4.5).assert_clear_of(
+            "clamp", BOLT_CORRIDOR, name="m4", seat=Plane.XY, min_mm=0.5
+        )
+    )
+    assert result.passed
+    assert result.value == pytest.approx(0.5, abs=1e-6)
+
+
+def test_without_its_seat_the_same_keepout_reads_zero():
+    (result,) = evaluate(
+        _clamp(4.5).assert_clear_of("clamp", BOLT_CORRIDOR, name="m4")
+    )
+    assert result.passed
+    assert result.value == pytest.approx(0.0, abs=1e-6)
+
+
+def test_a_seated_keepout_fails_a_wall_inside_its_margin():
+    (result,) = evaluate(
+        _clamp(4.3).assert_clear_of(
+            "clamp", BOLT_CORRIDOR, name="m4", seat=Plane.XY, min_mm=0.5
+        )
+    )
+    assert result.passed is False
+    assert result.value == pytest.approx(0.3, abs=1e-6)
+    assert "clamp distance 0.3000mm below min 0.5mm" in result.detail
+
+
+def test_a_seat_does_not_excuse_an_overlap():
+    (result,) = evaluate(
+        _clamp(3.5).assert_clear_of(
+            "clamp", BOLT_CORRIDOR, name="m4", seat=Plane.XY
+        )
+    )
+    assert result.passed is False
+    assert result.value == 0.0
+    assert "clamp overlaps the keep-out" in result.detail
+
+
+def test_a_part_wholly_on_the_seat_side_has_no_reading():
+    (result,) = evaluate(
+        _clamp(None).assert_clear_of(
+            "clamp", BOLT_CORRIDOR, name="m4", seat=Plane.XY, min_mm=0.5
+        )
+    )
+    assert result.passed
+    assert result.value is None
+    assert result.detail == "no selected part has material past the seat"
+
+
+def test_a_named_seat_is_composed_with_its_keepout():
+    # Turned onto its side and moved: an uncomposed seat would clip the
+    # clamp along the wrong plane.
+    unit = _clamp(4.5).with_keepout("m4", BOLT_CORRIDOR, seat=Plane.XY)
+    top = (
+        Assembly()
+        .with_subassembly("unit", unit, location=Pos(50, 0, 0) * Rot(90, 0, 0))
+        .assert_clear_of("unit", "unit.m4", min_mm=0.5)
+    )
+    (result,) = evaluate(top)
+    assert result.passed
+    assert result.value == pytest.approx(0.5, abs=1e-6)
+
+
+def test_two_keepout_claims_under_one_name_at_one_level_are_an_error():
+    # `khana diff` keys claims by name: a second one would shadow the first.
+    a = (
+        _plate()
+        .with_part("other", _cube(), location=Location((30, 0, 0)))
+        .assert_clear_of("plate", _corridor(10), name="m4")
+    )
+    with pytest.raises(ValueError, match="clear_of:m4>=0"):
+        a.assert_clear_of("other", _corridor(10), name="m4")

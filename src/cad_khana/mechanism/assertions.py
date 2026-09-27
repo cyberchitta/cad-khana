@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from build123d import Location, Part, Plane, Shape, Vector
+from build123d import Compound, Keep, Location, Part, Plane, Shape, Vector
 
 from cad_khana.mechanism.diagnostics import (
     BOUND_EPSILON,
@@ -366,51 +366,137 @@ def _largest(common: Shape | Iterable[Shape]) -> Shape:
     return common if isinstance(common, Shape) else max(common, key=lambda s: s.volume)
 
 
+# Material within this height of a seat plane counts as the seat: the
+# face a keep-out stands on is coplanar with the keep-out's base, and
+# clipping exactly at the plane would leave that face, at distance 0.
+SEAT_EPSILON_MM = 1e-3
+
+
+def _past(shape: Shape, seat: Plane) -> Shape | None:
+    """The part of ``shape`` strictly on the keep-out side of ``seat``
+    (its normal side), or ``None`` when nothing of it is."""
+    kept = shape.split(seat.offset(SEAT_EPSILON_MM), keep=Keep.TOP)
+    return Compound(kept) if isinstance(kept, list) else kept
+
+
+@dataclass(frozen=True)
+class _Reading:
+    """One part against a keep-out. ``distance`` is ``None`` for a part
+    with nothing past the seat: its contact is the seat's."""
+
+    part: str
+    overlap: float
+    distance: float | None
+    measured: Shape | None
+
+    def failure(self, keepout: Shape, min_mm: float) -> str | None:
+        return (
+            f"{self.part} overlaps the keep-out by {self.overlap:.4f}mm^3 "
+            f"centred at ({_at(_largest(self.measured & keepout).center())})"
+            if self.overlap > INTERFERENCE_VOLUME_EPSILON_MM3
+            else f"{self.part} distance {self.distance:.4f}mm below min "
+            f"{min_mm}mm at ({_at(self.measured.closest_points(keepout)[0])})"
+            if self.distance is not None and self.distance < min_mm - BOUND_EPSILON
+            else None
+        )
+
+
+def _reading(part: str, shape: Shape, keepout: Shape, seat: Plane | None) -> _Reading:
+    overlap = intersection_volume(shape, keepout)
+    if overlap > 0.0:
+        return _Reading(part, overlap, 0.0, shape)
+    past = shape if seat is None else _past(shape, seat)
+    return _Reading(
+        part, overlap, None if past is None else past.distance_to(keepout), past
+    )
+
+
 @dataclass(frozen=True)
 class KeepOut:
-    """Part ``a`` stays out of ``keepout`` — a solid that is not a part:
-    a driver's corridor, a bolt's drop-in path, an RF zone. Declared in
-    the asserting assembly's frame and composed through placements like
-    a datum ``Plane``. It is never exported or drawn, because it is not
-    a part.
+    """The parts ``parts`` stay out of ``keepout`` — a solid that is not
+    a part: a driver's corridor, a bolt's drop-in path, an RF zone. It is
+    never exported or drawn, because it is not a part. ``keepout`` is
+    either the solid, declared in the asserting assembly's frame and
+    composed through placements like a datum ``Plane``, or the dotted
+    path of a keep-out a unit declared by name (``with_keepout``),
+    resolved against the tree at each pose (``bound``) like an anchor.
 
-    Any overlap fails, whatever ``min_mm``: a distance of 0 cannot tell
-    touching from inside. Otherwise the minimum distance must reach
-    ``min_mm``, so the default 0 allows touching. ``value`` is that
-    distance, 0 when overlapping. A failing ``detail`` names the part's
-    point nearest the keep-out, or the centroid of the overlap."""
+    One claim, one result. Any overlap fails, whatever ``min_mm``: a
+    distance of 0 cannot tell touching from inside. Otherwise every
+    part's distance must reach ``min_mm``, so the default 0 allows
+    touching. ``value`` is the least distance over the parts, 0 when
+    one overlaps. ``detail`` names the nearest part on a pass (a label,
+    true either way) and, on a failure, every failing part with its
+    reading and a witness: its point nearest the keep-out, or the
+    centroid of the overlap.
 
-    a: str
-    keepout: Shape
+    ``seat`` is a plane whose normal points into the keep-out — the face
+    it stands on, declared and composed with it. Contact there is the
+    design, so distance is measured from each part's material strictly
+    past the seat (``SEAT_EPSILON_MM``); the overlap test still takes the
+    whole part. A part with nothing past the seat has no distance, and
+    when no part has any, ``value`` is ``None``.
+
+    A part in ``parts`` absent from the run skips the whole claim as
+    ``absent_part``, as for every claim naming its parts: a minimum
+    taken over the parts that happen to be present would read as
+    covering the ones it never looked at."""
+
+    parts: tuple[str, ...]
+    keepout: Shape | str
     name: str
     min_mm: float = 0.0
+    seat: Plane | None = None
 
     @property
     def part_refs(self) -> tuple[str, ...]:
-        return (self.a,)
+        return self.parts
 
     def qualified(self, prefix: str, location: Location) -> "KeepOut":
         return replace(
             self,
-            a=f"{prefix}.{self.a}",
-            keepout=self.keepout.moved(location),
+            parts=tuple(f"{prefix}.{n}" for n in self.parts),
+            keepout=(
+                f"{prefix}.{self.keepout}"
+                if isinstance(self.keepout, str)
+                else self.keepout.moved(location)
+            ),
+            seat=None if self.seat is None else _qualified_plane(self.seat, location),
             name=f"{prefix}.{self.name}",
         )
 
+    def bound(self, assembly: Assembly) -> "KeepOut":
+        """This claim with a named keep-out resolved to its solid and
+        seat where the assembly stands now."""
+        if not isinstance(self.keepout, str):
+            return self
+        zone = assembly.keepout(self.keepout)
+        return replace(self, keepout=zone.solid, seat=zone.seat)
+
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
-        shape = parts[self.a]
-        overlap = intersection_volume(shape, self.keepout)
-        distance = 0.0 if overlap > 0.0 else shape.distance_to(self.keepout)
-        detail = (
-            f"overlaps the keep-out by {overlap:.4f}mm^3 centred "
-            f"at ({_at(_largest(shape & self.keepout).center())})"
-            if overlap > INTERFERENCE_VOLUME_EPSILON_MM3
-            else f"distance {distance:.4f}mm below min {self.min_mm}mm "
-            f"at ({_at(shape.closest_points(self.keepout)[0])})"
-            if distance < self.min_mm - BOUND_EPSILON
-            else None
+        readings = tuple(
+            _reading(n, parts[n], self.keepout, self.seat) for n in self.parts
         )
-        return AssertionResult(self.name, detail is None, detail, value=distance)
+        read = tuple(r for r in readings if r.distance is not None)
+        nearest = min(read, key=lambda r: r.distance, default=None)
+        failures = tuple(
+            f
+            for r in sorted(read, key=lambda r: (r.distance, -r.overlap))
+            if (f := r.failure(self.keepout, self.min_mm))
+        )
+        detail = (
+            f"{len(failures)} of {len(readings)} parts: " + "; ".join(failures)
+            if failures
+            else "no selected part has material past the seat"
+            if nearest is None
+            else f"nearest: {nearest.part} at {nearest.distance:.4f}mm"
+        )
+        return AssertionResult(
+            self.name,
+            not failures,
+            detail,
+            value=None if nearest is None else nearest.distance,
+        )
 
     def slack(self, value: float) -> float:
         return value - self.min_mm
@@ -730,6 +816,19 @@ def resolved(assertion: Assertion, state: str) -> Assertion:
     )
 
 
+def bound(assertion: Assertion, assembly: Assembly) -> Assertion:
+    """The claim with anything it names in the tree — a named keep-out —
+    resolved where the assembly stands, phase wrapper kept."""
+    claim = core(assertion)
+    if not isinstance(claim, KeepOut):
+        return assertion
+    return (
+        replace(assertion, inner=claim.bound(assembly))
+        if isinstance(assertion, Phased)
+        else claim.bound(assembly)
+    )
+
+
 def _skipped(name: str, kind: str, detail: str) -> AssertionResult:
     return AssertionResult(name, None, f"skipped: {detail}", skipped=kind)
 
@@ -752,6 +851,7 @@ def evaluate_one(
         return assertion.evaluate_on(assembly)
     if isinstance(assertion, ScalarClaim):
         return assertion.evaluate()
+    assertion = bound(assertion, assembly)
     state = phase(assertion, values, contacts)
     if state == ABSENT_JOINT:
         joints = ", ".join(assertion.absent_joints(values))

@@ -16,10 +16,12 @@ where its own parts are, relative to each other, and on the phase it is
 in. Poses that agree on both share one evaluation, and at each pose only
 the assertions touching a part that moved (or a joint that turned) are
 looked at again. That reuse is exact, not a heuristic: it keys on the
-composed placements themselves. A datum-plane target or an ``along``
-direction is declared in its unit's frame and rides the joints above
-it, not any named part: those claims are re-derived at every pose,
-looked at every time, and key on absolute placement plus the direction.
+composed placements themselves. A datum-plane target, an ``along``
+direction or a keep-out is declared in its unit's frame and rides the
+joints above it, not any named part: those claims are re-derived at
+every pose (a named keep-out resolved against the posed tree), looked
+at every time, and key on absolute placement plus the direction, or
+plus the keep-out's and its seat's placement.
 
 Pure: no file I/O. ``check()`` writes what this returns.
 """
@@ -145,10 +147,10 @@ def _is_absolute(claim: Assertion) -> bool:
     )
 
 
-def _direction_signature(claim: Distance | KeepOut) -> tuple[float, ...]:
+def _direction_signature(claim: Distance) -> tuple[float, ...]:
     return (
         ()
-        if isinstance(claim, KeepOut) or claim.along is None
+        if claim.along is None
         else tuple(round(c, PLACEMENT_DECIMALS) for c in claim.along)
     )
 
@@ -158,6 +160,18 @@ def _pose_invariant(assertion: Assertion) -> bool:
     can move one, so none is counted against a motion that moved
     nothing — the reason ``MotionSummary.movable`` exists."""
     return isinstance(core(assertion), ScalarClaim | SolidCount)
+
+
+def _keepout_key(claim: KeepOut, frame: _Frame) -> Key:
+    """Where every part stands, and where the keep-out and its seat
+    stand — a named one resolved at this pose, so one under a joint that
+    moves none of the parts is still a new measurement."""
+    placed = claim.bound(frame.assembly)
+    return (
+        tuple(frame.signatures[n] for n in placed.parts),
+        _signature(placed.keepout.location),
+        None if placed.seat is None else _signature(placed.seat.location),
+    )
 
 
 def _geometry(assertion: Assertion, frame: _Frame) -> Key:
@@ -171,11 +185,11 @@ def _geometry(assertion: Assertion, frame: _Frame) -> Key:
     locations = frame.locations
     if any(n not in locations for n in claim.part_refs):
         return ("absent",)
+    if isinstance(claim, KeepOut):
+        return _keepout_key(claim, frame)
     if _is_absolute(claim):
         target = (
-            _signature(claim.keepout.location)
-            if isinstance(claim, KeepOut)
-            else _signature(claim.b.location)
+            _signature(claim.b.location)
             if isinstance(claim.b, Plane)
             else frame.signatures[claim.b]
         )

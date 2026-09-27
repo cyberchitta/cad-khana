@@ -496,3 +496,40 @@ def test_a_keepout_under_a_driven_joint_moves_with_it():
     result = _only(a)
     assert result.passed
     assert result.value == pytest.approx(7.0)
+
+
+def test_a_named_keepout_under_a_joint_is_held_against_a_root_part():
+    """The keep-out is declared in the swinging unit, at radius 20 on its
+    arm, and asserted from the root against the fixed post: it sweeps
+    into the post past ~70deg. The post never moves, so only the
+    keep-out's own placement in the key tells one pose from another."""
+    arm = Assembly().with_keepout("reach", Pos(20, 0, 0) * Box(4, 4, 4))
+    a = (
+        Assembly()
+        .with_part("post", _cube(), location=Location((0, 20, 0)))
+        .with_subassembly("swing", arm, joint=RevoluteJoint(axis=Axis.Z))
+        .assert_clear_of("post", "swing.reach")
+        .with_motion(_swing(90))
+    )
+    result = _only(a)
+    assert result.name == "clear_of:swing.reach>=0"
+    assert result.passed is False
+    assert result.poses.failed == 2  # 75, 90deg
+    assert result.poses.distinct == 7  # as built and the 0deg sample coincide
+    assert "post overlaps the keep-out" in result.detail
+
+
+def test_a_keepout_claim_over_several_parts_reports_the_worst_pose_minimum():
+    """The tip swings 15deg per sample away from a zone parked beside it;
+    the fixed post stays over 33 mm from it. The claim's value is the
+    minimum over both parts, taken at its worst pose."""
+    zone = Pos(40, -8, 0) * Box(4, 4, 4)
+    a = (
+        _swung()
+        .assert_clear_of(["post", "swing.tip"], zone, name="zone", min_mm=1)
+        .with_motion(_swing(90))
+    )
+    result = _only(a)
+    assert result.passed
+    assert result.value == pytest.approx(5.0)  # tip at 0deg: y -1 → zone y -6
+    assert result.detail == "nearest: swing.tip at 5.0000mm"

@@ -25,7 +25,7 @@ JSON stale from a previous run while it still reads as current.
 |---|---|
 | `.assert_no_interference(a, b)` | Parts `a` and `b` don't overlap (intersection volume ≤ 0.001 mm³). |
 | `.assert_distance(a, b, min_mm=…, max_mm=…)` | Bounded distance from part `a` to part `b` **or a datum `Plane`**. Either bound alone, or both for "close but not touching" (a gear mesh). See below for `along=` and `grow_*_mm`. |
-| `.assert_clear_of(parts, keepout, name=…, min_mm=0)` | Parts stay out of a **keep-out solid that is not a part**: a driver's corridor, a bolt's drop-in path, an RF zone. Any overlap fails; `min_mm` is clearance past touching. See below. |
+| `.assert_clear_of(parts, keepout, name=…, min_mm=0, seat=None)` | Parts stay out of a **keep-out solid that is not a part**: a driver's corridor, a bolt's drop-in path, an RF zone. `keepout` is the solid, or the path of one a unit declared with `with_keepout`. One result per call: `value` is the least distance over the parts. Any overlap fails; `min_mm` is clearance past touching, or past the `seat`. See below. |
 | `.assert_scalar(name, value, ge=…, le=…)` | A named claim about a non-geometric scalar (friction budget, torque margin). No bounds = pure recorder. |
 | `.assert_tangent_contact(a, b, tol_mm=…)` | Parts `a` and `b` **touch**: surface gap ≤ `tol_mm` (default 1e-3, noise allowance — not a design gap) and no real overlap. A gap fails, an overlap fails. See below. |
 | `.assert_allowed_contact(a, b, max_overlap_mm3=…, min_overlap_mm3=…)` | Design-intended overlap stays within bounds (a press-fit modeled at its true interference). A gap passes unless `min_overlap_mm3` makes engagement itself the claim. See below. |
@@ -165,11 +165,10 @@ product part. Added with `with_part`, it would export and draw with the
 product. `assert_clear_of` takes the solid as a claim argument instead:
 
 ```python
-# a Ø8 drop-in path standing on the bolt seat: it touches the seat, so
-# the clamp holds it at the default 0; the housing around it gets a margin
-corridor = Pos(SEAT_X, SEAT_Y, SEAT_TOP_Z + DRIVER_L / 2) * Cylinder(DRIVER_R, DRIVER_L)
-a = a.assert_clear_of("clamp", corridor, name="m4_drop_in")
-a = a.assert_clear_of("housing", corridor, name="m4_drop_in", min_mm=0.5)
+# a Ø8 drop-in path standing on the bolt seat, the clamp's top face
+seat = Plane.XY.offset(SEAT_Z)
+corridor = Pos(SEAT_X, SEAT_Y, SEAT_Z + DRIVER_L / 2) * Cylinder(DRIVER_R, DRIVER_L)
+a = a.assert_clear_of("clamp", corridor, name="m4_drop_in", seat=seat, min_mm=0.5)
 
 # a subtree, less the part the corridor starts in (its own countersink)
 a = a.assert_clear_of("stage_1", driver, name="arc_screw",
@@ -178,19 +177,69 @@ a = a.assert_clear_of("stage_1", driver, name="arc_screw",
 
 The keep-out is declared in this assembly's frame and rides its
 placement: composed into a parent, or under a joint, it moves with the
-unit that declared it. That is a datum `Plane`'s rule too. One claim is
-emitted per selected part, named `clear_of:<name>/<part>>=<min_mm>`, so
-a failure names the part. `value` is the distance. A failing `detail`
-gives the part's point nearest the keep-out, or the centroid of the
-overlap. **Any overlap
-fails, whatever `min_mm`.** The default of 0 allows touching, which is
-what `assert_distance(min_mm=0)` could never enforce: an overlapping
-pair also reads 0 there.
+unit that declared it. That is a datum `Plane`'s rule too.
 
-The margin applies to the whole part. When the keep-out must touch one
-face of a part (its seat) but clear the rest of that part by a margin,
-put the margin into the keep-out's geometry: a corridor 2 × margin wider,
-standing on the seat, held at the default 0.
+**A keep-out holds only parts of the assembly where the claim is
+declared.** When the unit that knows the keep-out's geometry is not the
+one that has every part it must clear (a driver corridor known in a
+stage builder, reaching bodies that exist only in the machine), declare
+it by name where the geometry is known, and assert it by path where the
+parts are, as an anchor is:
+
+```python
+# declared where the screw's pose is known …
+stage = stage.with_keepout("arc_screw_driver", driver)
+# … held where every body it must clear exists
+top = top.assert_clear_of(
+    ["load_ramp", "m02_chain"], "m02_chain.s1.arc_screw_driver",
+    excluding=["m02_chain.s1.sector_2"], min_mm=0.5,
+)
+```
+
+`with_keepout(name, solid, seat=None)` declares the solid in that
+unit's frame (its own namespace; no `.` in the name). The path resolves
+through the tree at every pose, composed through placements and joints,
+so the keep-out rides the stage's joint while the parts it is held
+against stay where they are. A misspelt path raises at the
+`assert_clear_of` call.
+
+**One result per call**, named `clear_of:<name>>=<min_mm>` (the path,
+for a named keep-out, unless you pass `name=`). A second call under the
+same name at one level raises, since `khana diff` matches results by
+name: in a loop over units, put the unit in the name. `value` is the least
+distance over the selected parts, 0 when one overlaps. On a pass,
+`detail` names the nearest part (`nearest: load_ramp at 5.0000mm`). On
+a failure it lists every failing part, and only those
+(`2 of 357 parts: …`): each part's overlap volume and centroid, or its
+distance and the point nearest the keep-out. A selected part absent
+from the run skips the whole claim as `absent_part`, as any claim
+naming its parts does. **Any overlap fails, whatever `min_mm`.** The
+default of 0 allows touching, which is what `assert_distance(min_mm=0)`
+could never enforce: an overlapping pair also reads 0 there.
+
+**`seat=` keeps the headroom of a keep-out that touches a part.** A
+bolt's corridor stands on its seat, so the clamp touches it there and
+its plain distance is 0 for good. `seat` is the plane the keep-out
+stands on, normal pointing into the keep-out, in the same frame and
+composed with it. Contact at the seat is the design: the distance is
+measured from each part's material past the plane (anything within
+0.001 mm of it counts as the seat), so a collar wall 0.5 mm off the
+corridor reads 0.5, and `min_mm` is the margin. The overlap test still
+takes the whole part. A part with nothing past the seat has no
+distance; if no selected part has any, `value` is `null` and `detail`
+says so. The plane is infinite: all material on the seat's side, near
+the keep-out or not, is held only to no overlap. A seat that is not a
+plane (a countersink cone) cannot be named; exclude that part, as the
+second example does.
+
+`excluding` drops whole parts. A thin wall of the excluded part right
+beside the corridor is not held by the claim. A second keep-out that
+starts past the excluded feature can hold that part too.
+
+**Every selected part is measured, with no bounding-box pruning.** A
+consumer's whole-machine claim of 4 corridors against 357 parts (1428
+part checks) evaluated in 7.5 s on their measurement. Under a motion,
+any selected part moving re-measures the whole claim at that pose.
 
 Where the claim is declared decides when it holds. See
 `composition.md` §Where a claim lives.
