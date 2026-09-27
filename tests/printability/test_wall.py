@@ -1,4 +1,4 @@
-from math import radians, tan
+from math import cos, radians, sin, tan
 
 from build123d import (
     Align,
@@ -12,6 +12,8 @@ from build123d import (
     Mode,
     Plane,
     Polygon,
+    Pos,
+    Rot,
     extrude,
 )
 from pytest import approx
@@ -259,3 +261,53 @@ def test_blocks_touching_along_a_line_are_not_a_crease():
     part = p.part
     assert len(part.solids()) == 1
     assert min_wall(part).thickness_mm == approx(4.0, abs=0.02)
+
+
+def _spider(top: float):
+    # A 5 x 5 mm annulus (r 80.5..85.5, z 0..5) with six 33 x 26 blocks
+    # through it at r 100, z -7..top. With a block top level with the
+    # ring's or above it, nothing is thinner than the annulus: the blocks
+    # are 26 mm wide and at least 12 mm tall.
+    hub = Cylinder(85.5, 5, align=(Align.CENTER, Align.CENTER, Align.MIN)) - Cylinder(
+        80.5, 5, align=(Align.CENTER, Align.CENTER, Align.MIN)
+    )
+    blocks = [
+        Pos(100 * cos(radians(a)), 100 * sin(radians(a)), -7)
+        * Rot(0, 0, a)
+        * Box(33, 26, top + 7, align=(Align.CENTER, Align.CENTER, Align.MIN))
+        for a in (30, 90, 150, 210, 270, 330)
+    ]
+    return sum(blocks, hub)
+
+
+def test_trimmed_cylinder_facets_add_no_false_minimum():
+    # With the block tops below the ring's, the ring's outer face is
+    # trimmed into long facets tilted up to 19 deg off the true surface.
+    # Two of them fold concavely along a chord of a convex cylinder, and
+    # their fan read 0.55 mm at alignment 0.11; a facet ray along a tilted
+    # normal crossed the ring slantwise and read 2.46 mm. What is left is
+    # real: a neck between the concave edge under the ring at a block's
+    # inner face and the one where the ring's outer face meets the block
+    # top, 1.0 mm out and 3 mm up at the block's side — 3.16 mm straight
+    # across, read at the fan's 60 deg step as 3 / sin 60.
+    assert min_wall(_spider(3)).thickness_mm == approx(3 / sin(radians(60)), abs=0.02)
+
+
+def test_fan_tangent_to_a_bystander_adds_no_false_minimum():
+    # Where a block's inner face meets the ring's underside, the crease ends
+    # at the block's side face. The fan from that end runs in the side
+    # face's plane, passed as inward by rounding, and cut the ring's corner
+    # beside the block: 1.04 mm at alignment 0.95.
+    assert min_wall(_spider(5)).thickness_mm == approx(5.0, abs=0.02)
+    assert min_wall(_spider(8)).thickness_mm == approx(5.0, abs=0.02)
+
+
+def test_genuine_floor_beside_a_block_still_reads_thin():
+    # The false-negative guard for the two above: a pocket in the ring
+    # through the ring flush with a block's side face, leaving a 0.6 mm floor.
+    for top in (3, 5):
+        pocket = Pos(-15.5, 83, 0.6) * Box(
+            5, 14, 10, align=(Align.CENTER, Align.CENTER, Align.MIN)
+        )
+        sample = min_wall(_spider(top) - pocket)
+        assert sample.thickness_mm == approx(0.6, abs=0.02)

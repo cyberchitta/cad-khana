@@ -147,9 +147,12 @@ the model to fix, not to waive. Only a low alignment supports a
 Tessellate the part (mesh tolerance `TESSELLATION_TOLERANCE_MM`,
 angular tolerance `TESSELLATION_ANGULAR_TOLERANCE`, shared with the
 overhang check in `cad_khana.core.tessellation`). For every triangle,
-take its centroid and outward normal, and cast an `Axis` along the
-inward normal — from an origin backed off `BACKOFF_MM` *outside* the
-surface. Collect every crossing of the solid, classifying each by its
+project its centroid onto the B-rep face it lies on, take the face's
+outward normal there, and cast an `Axis` along the inward normal — from
+an origin backed off `BACKOFF_MM` *outside* the surface. The facet's
+own plane is only a chord: on a trimmed curved face the mesher spans
+long triangles tilted up to ~19° off the surface, and a ray along that
+tilt crosses the wall slantwise (a 5 mm ring read 2.46 mm). Collect every crossing of the solid, classifying each by its
 face's outward normal projected on the ray: negative is an **entry**
 into material, positive an **exit**. The ray's *first* crossing is its
 entry through the facet it was cast for; paired with the next exit,
@@ -161,16 +164,23 @@ sharp concave edge or point — a V-groove root, a conical pocket's apex
 — none does, and the flat face opposite is a few large facets with no
 centroid under the feature, so the thinnest material in the part would
 go unsampled from both sides. Such **creases** are found in the mesh
-(two facets sharing an edge or a corner, meeting concavely at more than
-the angular tolerance) and get rays of their own: from points along the
+(two facets sharing an edge or a corner whose surface normals meet
+concavely at more than the angular tolerance — two tilted facets can
+fold concavely along a chord of a smooth convex face, which a 5 mm ring
+read as 0.55 mm) and get rays of their own: from points along the
 crease, at most `CREASE_STEP_MM` apart, in a fan of directions between
 the two facets' inward normals, no more than the angular tolerance
 apart. Those are the rays a fillet's facets would have cast there, in
 the limit of zero radius. Convex creases get none — thickness peaks at
 a ridge, it does not dip. A fan direction is cast only if it also heads
-inward of every *other* facet at the same mesh edge or corner: where a
-groove runs out through a side face, or two blocks touch along a line,
-the pair's concavity alone does not put material in front of the ray.
+strictly inward of every *other* facet at the same mesh edge or corner:
+where a groove runs out through a side face, or two blocks touch along a
+line, the pair's concavity alone does not put material in front of the
+ray. A direction lying in such a facet's plane runs along that face and
+is not cast — where a crease ends square against a side face the whole
+fan lies in its plane, and rounding had let it through to cut the
+corner beyond the crease's end (1.04 mm at alignment 0.95 on a 5 mm ring
+meeting a block).
 
 `min_wall_mm` is the minimum over all rays, `min_wall_at` the point
 that minimum was measured from (the entry point of a facet ray, the
@@ -180,11 +190,12 @@ exit face's projection there.
 Three properties follow, and all three are deliberate:
 
 - **A reading always spans material actually traversed.** The origin
-  is backed off because a facet centroid sags into the void by up to
-  the tessellation tolerance on curved faces; a ray started at the
-  centroid re-hits the surface it came from within that distance,
-  which reads as a wall a fraction of a millimetre thick. The error
-  grows with the facet chord, so it got *worse* on larger radii — the
+  is backed off so the ray records its own entry. A facet centroid
+  sags into the void by up to the tessellation tolerance on curved
+  faces, and before pairing a ray started there re-hit the surface it
+  came from within that distance, which read as a wall a fraction of a
+  millimetre thick. The error grew with the facet chord, so it got
+  *worse* on larger radii — the
   source of the sub-0.2 mm readings on large-radius annuli that were
   historically waived as "ray-sampling artifacts". Pairing also
   removes a systematic underestimate on curved and tapered walls
@@ -197,7 +208,8 @@ Three properties follow, and all three are deliberate:
   a printability check. A thin reading is therefore always real
   material; `min_wall_alignment` tells you *what kind*.
 - **A reading is always normal to the surface it starts from** —
-  perpendicular to its facet, or within a crease's fan of normals. A
+  perpendicular to the surface under its facet, or within a crease's
+  fan of normals. A
   ray carries on for the whole depth of the part, and each later entry
   is into some *other* feature downstream, crossed at whatever oblique
   angle the originating facet happens to make with it. Those chords are

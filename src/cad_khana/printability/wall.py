@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import chain, combinations, groupby
 from math import acos, ceil, cos, sin
 
-from build123d import Axis, Part, Vector
+from build123d import Axis, Face, Part, Vector
+from OCP.BRepGProp import BRepGProp_Face
+from OCP.GeomAPI import GeomAPI_ProjectPointOnSurf
+from OCP.gp import gp_Pnt, gp_Vec
 
 from cad_khana.core.tessellation import (
     TESSELLATION_ANGULAR_TOLERANCE,
     TESSELLATION_TOLERANCE_MM,
     Triangle,
-    _tessellate,
+    _tessellate_faces,
 )
 
 BACKOFF_MM = 4 * TESSELLATION_TOLERANCE_MM
@@ -19,6 +22,7 @@ MIN_SPAN_MM = 1e-4
 WEDGE_ALIGNMENT = 0.7
 CREASE_STEP_MM = 1.0
 CREASE_NUDGE = 1e-3
+TANGENT_DOT = 1e-9
 
 Crossing = tuple[float, Vector, float]
 Corner = tuple[float, float, float]
@@ -52,6 +56,35 @@ class WallSample:
     alignment: float
 
 
+def _on_surface(face: Face, triangle: Triangle) -> Triangle:
+    """A facet re-anchored on the surface it approximates: its centroid
+    projected onto the face, carrying the face's outward normal there.
+
+    A facet's own plane is only a chord. On a trimmed curved face the mesher
+    spans long triangles between trim vertices at different heights, tilted
+    well off the surface — 19 deg on a cylinder whose trim edges sit at
+    different z. A ray along such a normal crosses the wall slantwise, and
+    two such facets can fold concavely along a chord of a convex surface,
+    which reads as a crease where the surface has none. The surface normal
+    is what makes a facet ray perpendicular to its entry face, and what a
+    crease is judged by.
+    """
+    u, v = GeomAPI_ProjectPointOnSurf(
+        triangle.centroid.to_pnt(), face.geom_adaptor()
+    ).LowerDistanceParameters()
+    point, normal = gp_Pnt(), gp_Vec()
+    BRepGProp_Face(face.wrapped).Normal(u, v, point, normal)
+    return replace(triangle, centroid=Vector(point), normal=Vector(normal).normalized())
+
+
+def _surface_facets(part: Part) -> tuple[Triangle, ...]:
+    return tuple(
+        _on_surface(face, triangle)
+        for face, triangles in zip(part.faces(), _tessellate_faces(part))
+        for triangle in triangles
+    )
+
+
 def _ray(part: Part, origin: Vector, direction: Vector) -> list[Crossing]:
     """Signed distance, point and exit alignment for every surface crossing
     on the line through `origin`, ordered along `direction`."""
@@ -71,9 +104,10 @@ def _ray(part: Part, origin: Vector, direction: Vector) -> list[Crossing]:
 def _crossings(part: Part, triangle: Triangle) -> list[Crossing]:
     """Crossings along a facet's inward normal.
 
-    The origin is backed off *outside* the surface: on curved faces a facet
-    centroid sags up to the tessellation tolerance into the void, and a ray
-    started there re-hits the very surface it came from within that distance.
+    The origin is backed off *outside* the surface, so that the ray records
+    its own entry rather than starting on the surface — or, for a centroid
+    left sagging into the void by the tessellation tolerance, re-hitting the
+    very surface it came from within that distance.
     """
     inward = -triangle.normal
     return _ray(part, triangle.centroid - inward * BACKOFF_MM, inward)
@@ -214,7 +248,13 @@ def _open_fan(
     corners: dict[Corner, tuple[int, ...]],
 ) -> tuple[Vector, ...]:
     """The part of a crease's fan that heads inward of every bystander — each
-    other facet on the same mesh edge, or at the same corner."""
+    other facet on the same mesh edge, or at the same corner.
+
+    Inward means strictly: a direction in a bystander's own plane runs along
+    that face, and rounding alone decides which side of it the ray ends up
+    on. Where a crease ends at a face square to it, the whole fan lies in
+    that face's plane; the nudged ray then starts on the neighbouring face
+    and cuts the corner beyond the crease's end."""
     bystanders = tuple(
         triangles[k]
         for k in set.intersection(*(set(corners[c]) for c in shared)) - set(pair)
@@ -222,7 +262,7 @@ def _open_fan(
     return tuple(
         direction
         for direction in _fan(triangles[pair[0]], triangles[pair[1]])
-        if all(direction.dot(t.normal) < 0 for t in bystanders)
+        if all(direction.dot(t.normal) < -TANGENT_DOT for t in bystanders)
     )
 
 
@@ -267,7 +307,7 @@ def _crease_samples(part: Part, triangles: tuple[Triangle, ...]) -> Iterator[Wal
 
 
 def min_wall(part: Part) -> WallSample | None:
-    triangles = _tessellate(part)
+    triangles = _surface_facets(part)
     facet_samples = (s for t in triangles if (s := _sample(part, t)) is not None)
     return min(
         chain(facet_samples, _crease_samples(part, triangles)),

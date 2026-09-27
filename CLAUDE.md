@@ -399,7 +399,14 @@ fillet there would have cast, in the limit of zero radius. It is a
 sampling change, not a filter: it can only add readings. A crease ray has
 no entry face, so it does not meet perpendicular; its alignment still
 reads like a facet ray's, because the fan's shortest span meets the face
-opposite most squarely. Rays are rejected only on geometric grounds — **never** by
+opposite most squarely. Facets stand for the surface, not their own
+chord: each is re-anchored at its centroid's projection onto its B-rep
+face, with that face's normal, because a trimmed curved face meshes into
+long triangles tilted far enough off it to fold concavely along a chord
+— a crease the surface does not have. And a fan direction must head
+strictly inward of every bystander facet: one lying in a bystander's
+plane runs along that face, and rounding had decided which side of it
+the ray ended up on. Rays are rejected only on geometric grounds — **never** by
 magnitude, and there is no quantile or robustness statistic, because
 hiding a genuine thin region is a worse failure than reporting a wedge
 tip.
