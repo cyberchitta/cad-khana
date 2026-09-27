@@ -47,7 +47,9 @@ def _overhang_angle_deg(normal: Vector, up: Vector) -> float:
 def _build_plate_level(part: Part, up: Vector) -> float:
     """The part's lowest point along ``up``: its bbox in a frame whose Z
     is ``up``. The world bbox's lowest corner lies below every point of
-    the part once ``up`` is oblique, so nothing matched the plate."""
+    the part once ``up`` is oblique, so nothing matched the plate. Not
+    the lowest mesh vertex: on a curved bottom that sits above the true
+    lowest point and drops the contact strip, moving axis-aligned readings."""
     frame = Plane(origin=(0, 0, 0), z_dir=up)
     return frame.to_local_coords(part).bounding_box().min.Z
 
