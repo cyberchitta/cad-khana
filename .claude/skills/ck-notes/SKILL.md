@@ -98,6 +98,16 @@ how the loop silently stops being demand-driven.
   SKILL.md doc rows. If a *kind* of override recurs often enough to earn
   standing status, that belongs in the shared `repo-research` policy, not
   here.)
+- **Sightings from one consumer count — then confirm them.** cad-khana has
+  one active client site, so most sightings come from the same repo,
+  often on the same day. Owner ruling (2026-09-27): take them seriously
+  rather than discounting them to f×1. The triage owes two more things:
+  **confirmation from the other sources** (thattuvaasal's tree, the
+  survey rows in `research/ideas.md`, older notes from a different
+  slice), and **how likely the need is to repeat**, judged once the
+  shape of the need is understood (is it a property of mechanisms in
+  general, or of this one part?). Write both into the verdict. A count
+  with no confirmation and a one-part shape stays parked.
 - **Parked ≠ waiting for a decision.** A parked note unparks on another
   occurrence, not on someone choosing. **So write the unpark condition as
   an observation only** — "a second occurrence in a separate context",
