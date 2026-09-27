@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from build123d import Location, Part, Plane, Vector
+from build123d import Location, Part, Plane, Shape, Vector
 
 from cad_khana.mechanism.diagnostics import (
     BOUND_EPSILON,
@@ -355,6 +356,66 @@ class Distance:
         )
 
 
+def _at(v: Vector) -> str:
+    return ", ".join(f"{c:.2f}" for c in v)
+
+
+def _largest(common: Shape | Iterable[Shape]) -> Shape:
+    """The overlap's largest piece: ``a & b`` is a ``ShapeList`` when an
+    input is a multi-body compound."""
+    return common if isinstance(common, Shape) else max(common, key=lambda s: s.volume)
+
+
+@dataclass(frozen=True)
+class KeepOut:
+    """Part ``a`` stays out of ``keepout`` — a solid that is not a part:
+    a driver's corridor, a bolt's drop-in path, an RF zone. Declared in
+    the asserting assembly's frame and composed through placements like
+    a datum ``Plane``. It is never exported or drawn, because it is not
+    a part.
+
+    Any overlap fails, whatever ``min_mm``: a distance of 0 cannot tell
+    touching from inside. Otherwise the minimum distance must reach
+    ``min_mm``, so the default 0 allows touching. ``value`` is that
+    distance, 0 when overlapping. A failing ``detail`` names the part's
+    point nearest the keep-out, or the centroid of the overlap."""
+
+    a: str
+    keepout: Shape
+    name: str
+    min_mm: float = 0.0
+
+    @property
+    def part_refs(self) -> tuple[str, ...]:
+        return (self.a,)
+
+    def qualified(self, prefix: str, location: Location) -> "KeepOut":
+        return replace(
+            self,
+            a=f"{prefix}.{self.a}",
+            keepout=self.keepout.moved(location),
+            name=f"{prefix}.{self.name}",
+        )
+
+    def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
+        shape = parts[self.a]
+        overlap = intersection_volume(shape, self.keepout)
+        distance = 0.0 if overlap > 0.0 else shape.distance_to(self.keepout)
+        detail = (
+            f"overlaps the keep-out by {overlap:.4f}mm^3 centred "
+            f"at ({_at(_largest(shape & self.keepout).center())})"
+            if overlap > INTERFERENCE_VOLUME_EPSILON_MM3
+            else f"distance {distance:.4f}mm below min {self.min_mm}mm "
+            f"at ({_at(shape.closest_points(self.keepout)[0])})"
+            if distance < self.min_mm - BOUND_EPSILON
+            else None
+        )
+        return AssertionResult(self.name, detail is None, detail, value=distance)
+
+    def slack(self, value: float) -> float:
+        return value - self.min_mm
+
+
 @dataclass(frozen=True)
 class ScalarClaim:
     """A named, recorded claim about a non-geometric scalar (a friction
@@ -513,6 +574,7 @@ PartAssertion = (
     | AllowedContact
     | ExpectedInterference
     | Distance
+    | KeepOut
 )
 
 

@@ -1,5 +1,5 @@
 import pytest
-from build123d import Axis, Box, BuildPart, Location, Locations, Plane
+from build123d import Axis, Box, BuildPart, Location, Locations, Plane, Pos
 
 from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
 from cad_khana.mechanism.assertions import JointWindow, evaluate
@@ -1164,3 +1164,93 @@ def test_solid_count_detail_is_a_failure_hypothesis_so_a_pass_stays_silent():
         .assert_solid_count("body", detail=hint)
     )
     assert evaluate(cut)[0].detail == f"2 solids, expected 1; {hint}"
+
+
+# --- keep-out -----------------------------------------------------------
+
+
+def _plate() -> Assembly:
+    # A 10 mm cube at the origin: its top face is at z = 5.
+    return Assembly().with_part("plate", _cube(), location=Location((0, 0, 0)))
+
+
+def _corridor(bottom_z: float):
+    # A 4×4×10 driver corridor standing on z = bottom_z over the plate.
+    return Pos(0, 0, bottom_z + 5) * Box(4, 4, 10)
+
+
+def test_a_keepout_clear_by_its_margin_passes_and_records_the_distance():
+    (result,) = evaluate(
+        _plate().assert_clear_of("plate", _corridor(10), name="m4_drop_in", min_mm=2)
+    )
+    assert result.name == "clear_of:m4_drop_in/plate>=2"
+    assert result.passed
+    assert result.value == pytest.approx(5.0)
+
+
+def test_a_keepout_closer_than_its_margin_fails_with_a_witness():
+    (result,) = evaluate(
+        _plate().assert_clear_of("plate", _corridor(10), name="m4", min_mm=6.0)
+    )
+    assert result.passed is False
+    assert result.detail.startswith("distance 5.0000mm below min 6.0mm at (")
+    assert result.detail.endswith(", 5.00)")
+
+
+def test_any_overlap_fails_even_at_a_zero_margin():
+    (result,) = evaluate(_plate().assert_clear_of("plate", _corridor(2), name="m4"))
+    assert result.passed is False
+    assert result.value == 0.0
+    assert result.detail.startswith("overlaps the keep-out by 48.0000mm^3 centred at (")
+
+
+def test_touching_a_keepout_passes_at_a_zero_margin():
+    (result,) = evaluate(_plate().assert_clear_of("plate", _corridor(5), name="m4"))
+    assert result.passed
+    assert result.value == pytest.approx(0.0)
+
+
+def _rig() -> Assembly:
+    rig = (
+        Assembly()
+        .with_part("sector", _cube(), location=Location((0, 0, 0)))
+        .with_part("skirt", _cube(), location=Location((30, 0, 0)))
+        .with_part("bowl", _cube(), location=Location((0, 30, 0)))
+    )
+    return Assembly().with_subassembly("rig", rig)
+
+
+def test_a_subtree_is_held_clear_part_by_part_less_the_excluded():
+    # The corridor starts inside the sector it drills.
+    names = [
+        r.name
+        for r in evaluate(
+            _rig().assert_clear_of(
+                "rig", _corridor(2), name="driver", excluding=["rig.sector"]
+            )
+        )
+    ]
+    assert names == ["clear_of:driver/rig.bowl>=0", "clear_of:driver/rig.skirt>=0"]
+
+
+def test_without_the_exclusion_the_drilled_part_fails():
+    results = {
+        r.name: r.passed
+        for r in evaluate(_rig().assert_clear_of("rig", _corridor(2), name="driver"))
+    }
+    assert results["clear_of:driver/rig.sector>=0"] is False
+
+
+def test_a_keepout_rides_the_placement_of_the_assembly_that_declares_it():
+    unit = _plate().assert_clear_of("plate", _corridor(10), name="m4", min_mm=5)
+    (result,) = evaluate(
+        Assembly().with_subassembly("unit", unit, location=Location((100, 0, 0)))
+    )
+    assert result.name == "unit.clear_of:m4/plate>=5"
+    assert result.passed
+    assert result.value == pytest.approx(5.0)
+
+
+def test_a_keepout_that_selects_no_part_is_an_error():
+    with pytest.raises(ValueError, match="no part left"):
+        _plate().assert_clear_of("plate", _corridor(10), name="m4", excluding=["plate"])

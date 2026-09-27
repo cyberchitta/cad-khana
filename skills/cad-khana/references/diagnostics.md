@@ -41,7 +41,7 @@ is not repeated here.
   assertion that is *always* skipped, which usually means a typo'd
   part name. `value` is the measured/claimed scalar, recorded **even on
   pass** so `khana diff` reports its drift: the distance for
-  `assert_distance`, the claimed number for `assert_scalar`, the gap in
+  `assert_distance` and `assert_clear_of` (0 when overlapping), the claimed number for `assert_scalar`, the gap in
   mm for `assert_tangent_contact`, the overlap in mm³ for
   `assert_allowed_contact`, the count for `assert_solid_count`. It is
   `null` for the boolean-only kinds — `assert_no_interference`,

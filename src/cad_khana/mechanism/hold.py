@@ -40,6 +40,7 @@ from cad_khana.mechanism.assertions import (
     Assertion,
     Contacts,
     Distance,
+    KeepOut,
     Phased,
     ScalarClaim,
     SolidCount,
@@ -135,15 +136,19 @@ class _Frame:
 
 
 def _is_absolute(claim: Assertion) -> bool:
-    return isinstance(claim, Distance) and (
-        claim.along is not None or isinstance(claim.b, Plane)
+    """A claim against something fixed in its declaring frame — a datum
+    plane, a direction, a keep-out — depends on where its part stands,
+    not only on where it stands relative to another part."""
+    return isinstance(claim, KeepOut) or (
+        isinstance(claim, Distance)
+        and (claim.along is not None or isinstance(claim.b, Plane))
     )
 
 
-def _direction_signature(claim: Distance) -> tuple[float, ...]:
+def _direction_signature(claim: Distance | KeepOut) -> tuple[float, ...]:
     return (
         ()
-        if claim.along is None
+        if isinstance(claim, KeepOut) or claim.along is None
         else tuple(round(c, PLACEMENT_DECIMALS) for c in claim.along)
     )
 
@@ -168,7 +173,9 @@ def _geometry(assertion: Assertion, frame: _Frame) -> Key:
         return ("absent",)
     if _is_absolute(claim):
         target = (
-            _signature(claim.b.location)
+            _signature(claim.keepout.location)
+            if isinstance(claim, KeepOut)
+            else _signature(claim.b.location)
             if isinstance(claim.b, Plane)
             else frame.signatures[claim.b]
         )
@@ -181,7 +188,7 @@ def _slack(assertion: Assertion, state: str, result: AssertionResult) -> float |
     return (
         claim.slack(result.value)
         if result.value is not None
-        and isinstance(claim, Distance | TangentContact | AllowedContact)
+        and isinstance(claim, Distance | KeepOut | TangentContact | AllowedContact)
         else None
     )
 

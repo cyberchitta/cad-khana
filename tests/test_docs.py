@@ -57,6 +57,7 @@ def _pair() -> Assembly:
 CLAIMS = {
     "assert_no_interference": lambda x: x.assert_no_interference("a", "b"),
     "assert_distance": lambda x: x.assert_distance("a", "b", min_mm=0.0),
+    "assert_clear_of": lambda x: x.assert_clear_of("a", _cube(), name="k"),
     "assert_scalar": lambda x: x.assert_scalar("s", 1.0),
     "assert_solid_count": lambda x: x.assert_solid_count("a"),
     "assert_tangent_contact": lambda x: x.assert_tangent_contact("a", "b"),

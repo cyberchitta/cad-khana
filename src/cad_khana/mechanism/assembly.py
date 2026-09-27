@@ -22,6 +22,7 @@ from cad_khana.mechanism.assertions import (
     AnchorsCoincident,
     Assertion,
     Distance,
+    KeepOut,
     ExpectedInterference,
     JointWindow,
     NoInterference,
@@ -729,6 +730,50 @@ class Assembly:
             grow_b_mm=grow_b_mm,
         )
         return self._asserting(assertion, during)
+
+    def assert_clear_of(
+        self,
+        parts: str | Iterable[str],
+        keepout: Shape,
+        *,
+        name: str,
+        min_mm: float = 0.0,
+        excluding: Iterable[str] = (),
+        during: During = None,
+    ) -> "Assembly":
+        """Assert that every part in ``parts`` stays out of ``keepout``:
+        a solid in this assembly's frame that is not a part (a driver's
+        corridor, a bolt's drop-in path, an RF zone), so nothing exports
+        or draws it. It rides this assembly's placement when composed.
+
+        ``parts`` is a part path, a dotted sub-assembly path (every part
+        under it), or an iterable of either; ``excluding`` drops paths
+        from that set, such as the part whose countersink the corridor
+        starts in. One claim per part, named
+        ``clear_of:<name>/<part>>=<min_mm>``, so a failure names the part.
+        Any overlap fails; ``min_mm`` is the clearance past touching.
+        """
+        dropped = set(excluding)
+        names = tuple(
+            n
+            for n in self._resolve_group((parts,) if isinstance(parts, str) else parts)
+            if n not in dropped
+        )
+        if not names:
+            raise ValueError(f"assert_clear_of({name!r}): no part left to hold clear")
+        return reduce(
+            lambda asm, n: asm._asserting(
+                KeepOut(
+                    a=n,
+                    keepout=keepout,
+                    name=f"clear_of:{name}/{n}>={min_mm:g}{_phase_label(during)}",
+                    min_mm=min_mm,
+                ),
+                during,
+            ),
+            names,
+            self,
+        )
 
     def assert_scalar(
         self,

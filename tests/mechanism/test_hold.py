@@ -1,5 +1,5 @@
 import pytest
-from build123d import Axis, Box, BuildPart, Location, Plane
+from build123d import Axis, Box, BuildPart, Location, Plane, Pos
 
 from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
 from cad_khana.mechanism.assertions import JointWindow
@@ -464,3 +464,35 @@ def test_a_phase_change_counts_as_moved():
     )
     summary = _motion_named(a, "swing_in")
     assert (summary.moved, summary.movable) == (1, 1)
+
+
+def test_a_fixed_keepout_is_held_against_the_part_at_every_pose():
+    """The swinging tip starts at (40, 0, 0) and reaches (0, 40, 0) at
+    90deg, inside a keep-out fixed there at the root. The keep-out moves
+    with nothing, so every pose that moves the tip is a new measurement."""
+    zone = Pos(0, 40, 0) * Box(4, 4, 4)
+    a = (
+        _swung()
+        .assert_clear_of("swing.tip", zone, name="zone")
+        .with_motion(_swing(90))
+    )
+    result = _only(a)
+    assert result.passed is False
+    assert result.poses.distinct == 7  # as built and the 0deg sample coincide
+    assert result.worst_at.joints_deg == {"swing": pytest.approx(90.0)}
+
+
+def test_a_keepout_under_a_driven_joint_moves_with_it():
+    arm = (
+        Assembly()
+        .with_part("tip", _cube(2), location=Location((40, 0, 0)))
+        .assert_clear_of("tip", Pos(40, 10, 0) * Box(4, 4, 4), name="zone", min_mm=5)
+    )
+    a = (
+        Assembly()
+        .with_subassembly("swing", arm, joint=RevoluteJoint(axis=Axis.Z))
+        .with_motion(_swing(90))
+    )
+    result = _only(a)
+    assert result.passed
+    assert result.value == pytest.approx(7.0)
