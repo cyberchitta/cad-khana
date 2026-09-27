@@ -144,6 +144,7 @@ its claims filtered, sorted or grouped; see `references/cli.md`.
   `features=`, `waived` joins each covering feature's reason
   (`seat: …; pin_bores: …`) and `detail` ends `— waived by feature …`;
   what the features leave is counted in `detail`, `; not waived: N
-  regions no feature waives, worst …: <why>` (see `printability.md`).
+  regions no feature waives, worst …`, naming each end of the worst with
+  the features it traces to, then every reason (see `printability.md`).
 
 - `warnings` — see `SKILL.md` §Read `warnings` on every run.

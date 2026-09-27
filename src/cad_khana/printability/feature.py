@@ -33,21 +33,34 @@ class Feature:
 class Failure:
     """One failure of a check. ``ends`` are the point sets that say which
     surfaces it lies on: one for an overhang region (its facet corners),
-    two for a wall reading (where it enters material and where it leaves)."""
+    two for a wall reading (where it enters material and where it leaves).
+    ``at`` names each end by one point — a region's centroid, a wall's
+    entry and exit — and ``label`` says what failed."""
 
     ends: tuple[tuple[Point, ...], ...]
+    at: tuple[Point, ...]
     reading: float
-    where: str
+    label: str
+
+
+@dataclass(frozen=True)
+class Refusal:
+    """A failure the features do not waive: the features each end traces
+    to (none, for an end on no declared surface) and every reason."""
+
+    failure: Failure
+    traced: tuple[tuple[str, ...], ...]
+    reasons: tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class Coverage:
     """What the features waive of one check's failures. ``uncovered``
-    pairs each failure no feature set waives with why; ``covering``
+    holds each failure no feature set waives, with where and why; ``covering``
     names the features that waived at least one; ``stale`` those whose
     waiver of this kind no failure traces to."""
 
-    uncovered: tuple[tuple[Failure, str], ...]
+    uncovered: tuple[Refusal, ...]
     covering: tuple[str, ...]
     stale: tuple[str, ...]
 
@@ -87,22 +100,30 @@ def _traced(
     )
 
 
-def _refusal(
-    ends: tuple[tuple[str, ...], ...], kind: str, features: dict[str, Feature]
-) -> str | None:
-    untraced = next((i for i, names in enumerate(ends) if not names), None)
-    refuses = next(
-        (n for names in ends for n in names if features[n].waiver(kind) is None),
-        None,
-    )
+def _untraced(ends: tuple[tuple[str, ...], ...]) -> tuple[str, ...]:
+    count = sum(1 for names in ends if not names)
     return (
-        "traces to no feature"
-        if untraced is not None and len(ends) == 1
-        else "one side traces to no feature"
-        if untraced is not None
-        else f"traces to {refuses}, which does not waive {kind}"
-        if refuses is not None
-        else None
+        ()
+        if count == 0
+        else ("traces to no feature",)
+        if len(ends) == 1
+        else ("neither side traces to a feature",)
+        if count == len(ends)
+        else ("one side traces to no feature",)
+    )
+
+
+def _refusals(
+    ends: tuple[tuple[str, ...], ...], kind: str, features: dict[str, Feature]
+) -> tuple[str, ...]:
+    refusing = tuple(
+        dict.fromkeys(
+            n for names in ends for n in names if features[n].waiver(kind) is None
+        )
+    )
+    verb = "does" if len(refusing) == 1 else "do"
+    return _untraced(ends) + (
+        (f"{', '.join(refusing)} {verb} not waive {kind}",) if refusing else ()
     )
 
 
@@ -118,7 +139,7 @@ def cover(
     surfaces = {name: _Surface.create(f.shape) for name, f in features.items()}
     traced = tuple(_traced(f, surfaces) for f in failures)
     names = tuple(frozenset(n for end in ends for n in end) for ends in traced)
-    refusals = tuple(_refusal(ends, kind, features) for ends in traced)
+    refusals = tuple(_refusals(ends, kind, features) for ends in traced)
     waiving = tuple(n for n, f in features.items() if f.waiver(kind) is not None)
     breaches = {
         n: breach
@@ -130,7 +151,7 @@ def cover(
                         tuple(
                             f
                             for f, fn, r in zip(failures, names, refusals)
-                            if r is None and n in fn
+                            if not r and n in fn
                         )
                     )
                 )
@@ -139,22 +160,20 @@ def cover(
     }
     reasons = tuple(
         r
-        if r is not None
-        else next(
-            (f"{n}'s waiver not applied: {breaches[n]}" for n in sorted(fn) if n in breaches),
-            None,
+        or tuple(
+            f"{n}'s waiver not applied: {breaches[n]}" for n in sorted(fn) if n in breaches
         )
         for fn, r in zip(names, refusals)
     )
     traced_to = frozenset(n for fn in names for n in fn)
     return Coverage(
         uncovered=tuple(
-            (f, r) for f, r in zip(failures, reasons) if r is not None
+            Refusal(f, t, r) for f, t, r in zip(failures, traced, reasons) if r
         ),
         covering=tuple(
             n
             for n in waiving
-            if any(r is None and n in fn for fn, r in zip(names, reasons))
+            if any(not r and n in fn for fn, r in zip(names, reasons))
         ),
         stale=tuple(n for n in waiving if n not in traced_to),
     )

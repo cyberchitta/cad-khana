@@ -175,10 +175,22 @@ reading, a knife edge to the two surfaces meeting there. A failure is
 waived only when every end traces to some feature and **every feature
 it traces to waives that kind**, within that waiver's bounds. The
 bounds read only the failures traced to that feature. Anything else
-counts, and `detail` says why for the worst of it: `traces to no
-feature`, `one side traces to no feature`, `traces to body, which does
-not waive wall_min`, or `seat's waiver not applied: area_mm2 430.00
-exceeds its max_area_mm2 400.0`. When everything is covered, `waived`
+counts, and `detail` names the worst of it: each end's point with the
+features it traces to in brackets (`[none]` for an end on no declared
+surface), then every reason that applies. A wall reads from its entry
+to its exit:
+
+```
+not waived: 174 readings no feature waives, worst wall 0.8000mm from (6.67, -1.67, -5.00) [none] to (6.67, -1.67, -4.20) [slot]: one side traces to no feature; slot does not waive wall_min
+```
+
+A region has one end, named by its centroid:
+`worst region 200.00mm² at (-15.00, 0.00, -7.00) [none]: traces to no feature`.
+The reasons
+are `traces to no feature`, `one side traces to no feature`, `neither
+side traces to a feature`, `body does not waive wall_min`, and — only
+when nothing else refuses — `seat's waiver not applied: area_mm2
+430.00 exceeds its max_area_mm2 400.0`. When everything is covered, `waived`
 joins each feature's reason (`seat: …; pin_bores: …`) and `detail` ends
 `— waived by feature seat (max_area_mm2 431.0, max_regions 6),
 pin_bores (max_regions 2)`.

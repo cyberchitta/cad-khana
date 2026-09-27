@@ -16,7 +16,7 @@ from cad_khana.mechanism.diagnostics import (
     BBox,
     _bbox,
 )
-from cad_khana.printability.feature import Coverage, Failure, Feature, cover
+from cad_khana.printability.feature import Coverage, Failure, Feature, Refusal, cover
 from cad_khana.printability.methods import FDM
 from cad_khana.printability.overhangs import (
     Overhang,
@@ -233,11 +233,10 @@ def _featured(
     reasons = "; ".join(f"{n}: {w.reason}" for n, w in waivers.items())
     if not coverage.uncovered:
         return replace(a, waived=reasons, detail=f"{a.detail} — waived by feature {by}")
-    worst, why = (_worst[kind])(coverage.uncovered)
     count = len(coverage.uncovered)
     left = (
         f"{count} {_noun[kind]}{'' if count == 1 else 's'} no feature waives, "
-        f"worst {worst.where}: {why}"
+        f"worst {_refused(_worst[kind](coverage.uncovered))}"
     )
     rest = replace(a, detail=f"{a.detail}; {left}")
     if body is None:
@@ -250,10 +249,21 @@ def _featured(
     )
 
 
+def _refused(r: Refusal) -> str:
+    """Each end's point and the features it traces to, then every reason:
+    ``wall 0.8000mm from (…) [pocket_b] to (…) [none]: …``."""
+    ends = tuple(
+        f"({_point(p)}) [{', '.join(names) or 'none'}]"
+        for p, names in zip(r.failure.at, r.traced)
+    )
+    place = f"from {ends[0]} to {ends[1]}" if len(ends) == 2 else f"at {ends[0]}"
+    return f"{r.failure.label} {place}: {'; '.join(r.reasons)}"
+
+
 _noun = {"overhang_max": "region", "wall_min": "reading"}
 _worst = {
-    "overhang_max": lambda u: max(u, key=lambda p: p[0].reading),
-    "wall_min": lambda u: min(u, key=lambda p: p[0].reading),
+    "overhang_max": lambda u: max(u, key=lambda r: r.failure.reading),
+    "wall_min": lambda u: min(u, key=lambda r: r.failure.reading),
 }
 
 
@@ -261,8 +271,9 @@ def _overhang_failures(part: Part, method: FDM) -> tuple[Failure, ...]:
     return tuple(
         Failure(
             ends=(tuple((p.X, p.Y, p.Z) for p in points),),
+            at=(region.centroid_mm,),
             reading=region.area_mm2,
-            where=f"region {region.area_mm2:.2f}mm² at ({_point(region.centroid_mm)})",
+            label=f"region {region.area_mm2:.2f}mm²",
         )
         for region, points in regions_with_points(
             part, up_axis=method.up_axis, angle_threshold_deg=method.overhang_max_deg
@@ -274,8 +285,9 @@ def _wall_failures(samples: tuple[WallSample, ...], method: FDM) -> tuple[Failur
     return tuple(
         Failure(
             ends=((s.at,), (s.exit_at,)),
+            at=(s.at, s.exit_at),
             reading=s.thickness_mm,
-            where=f"wall {s.thickness_mm:.4f}mm at ({_point(s.at)})",
+            label=f"wall {s.thickness_mm:.4f}mm",
         )
         for s in samples
         if s.thickness_mm < method.wall_min_mm - BOUND_EPSILON

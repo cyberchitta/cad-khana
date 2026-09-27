@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -426,6 +427,22 @@ def _two_floors():
     return _plate(40, 10, 10) - _pocket(-10, 1.0) - _pocket(10, 0.8)
 
 
+_END = r"\((-?[\d.]+), (-?[\d.]+), (-?[\d.]+)\) \[([^\]]*)\]"
+
+
+def _worst_wall(detail: str) -> tuple[str, dict[float, tuple[str, float, float]], str]:
+    """The worst unwaived wall in a detail: its thickness, each end keyed by
+    its z (the features it traces to, and its x, y), and the reasons."""
+    m = re.search(rf"worst wall (\S+) from {_END} to {_END}: (.*)$", detail)
+    g = m.groups()
+    ends = (g[1:5], g[5:9])
+    return (
+        g[0],
+        {float(z): (names, float(x), float(y)) for x, y, z, names in ends},
+        g[9],
+    )
+
+
 def _written(tmp_path: Path, name: str, kind: str) -> dict:
     data = json.loads((tmp_path / f"{name}-printability.json").read_text())
     (a,) = [a for a in data["assertions"] if a["name"].startswith(kind)]
@@ -468,7 +485,7 @@ def test_a_region_on_a_feature_that_does_not_waive_fails(tmp_path: Path):
     assert overhang["waived"] is None
     assert overhang["detail"].endswith(
         "not waived: 1 region no feature waives, worst region 200.00mm² at "
-        "(-15.00, 0.00, -7.00): traces to left, which does not waive overhang_max"
+        "(-15.00, 0.00, -7.00) [left]: left does not waive overhang_max"
     )
 
 
@@ -482,7 +499,7 @@ def test_a_region_on_no_feature_fails(tmp_path: Path):
             features={"right": Feature(_right_ledge(), waive={"overhang_max": "r"})},
         )
     assert _written(tmp_path, "ell", "overhang")["detail"].endswith(
-        "(-15.00, 0.00, -7.00): traces to no feature"
+        "worst region 200.00mm² at (-15.00, 0.00, -7.00) [none]: traces to no feature"
     )
 
 
@@ -499,7 +516,7 @@ def test_a_feature_bound_reads_only_that_features_regions(tmp_path: Path):
             ),
         )
     assert _written(tmp_path, "ell", "overhang")["detail"].endswith(
-        "(15.00, 0.00, 3.00): right's waiver not applied: area_mm2 200.00 "
+        "(15.00, 0.00, 3.00) [right]: right's waiver not applied: area_mm2 200.00 "
         "exceeds its max_area_mm2 150.0"
     )
 
@@ -580,8 +597,16 @@ def test_a_thin_wall_is_waived_only_when_both_its_sides_waive(tmp_path: Path):
         )
     wall = _written(tmp_path, "bar", "wall_min")
     assert wall["waived"] is None
-    assert "worst wall 1.0000mm" in wall["detail"]
-    assert wall["detail"].endswith("traces to pocket_a, which does not waive wall_min")
+    # The 1.0 floor spans z -5 (the bar's bottom) to -4 (pocket_a's floor).
+    thickness, ends, reasons = _worst_wall(wall["detail"])
+    assert thickness == "1.0000mm"
+    assert {z: names for z, (names, _, _) in ends.items()} == {
+        -5.0: "bar",
+        -4.0: "pocket_a",
+    }
+    assert ends[-5.0][1:] == ends[-4.0][1:]
+    assert -14 <= ends[-5.0][1] <= -6
+    assert reasons == "pocket_a does not waive wall_min"
 
 
 def test_a_wall_with_one_side_on_no_feature_fails(tmp_path: Path):
@@ -596,10 +621,63 @@ def test_a_wall_with_one_side_on_no_feature_fails(tmp_path: Path):
                 "pocket_b": Feature(_pocket(10, 0.8), waive={"wall_min": "b"}),
             },
         )
-    assert _written(tmp_path, "bar", "wall_min")["detail"].endswith(
-        "one side traces to no feature"
+    # The 0.8 floor spans z -5 (the bar's bottom, undeclared) to -4.2.
+    thickness, ends, reasons = _worst_wall(
+        _written(tmp_path, "bar", "wall_min")["detail"]
+    )
+    assert thickness == "0.8000mm"
+    assert {z: names for z, (names, _, _) in ends.items()} == {
+        -5.0: "none",
+        -4.2: "pocket_b",
+    }
+    assert 6 <= ends[-5.0][1] <= 14
+    assert reasons == "one side traces to no feature"
+
+
+def test_a_wall_on_no_feature_and_a_refusing_one_names_both(tmp_path: Path):
+    with pytest.raises(SystemExit):
+        inspect(
+            _two_floors(),
+            method=FDM(wall_min_mm=1.5),
+            out=tmp_path,
+            name="bar",
+            features={
+                "pocket_a": Feature(_pocket(-10, 1.0), waive={"wall_min": "a"}),
+                "pocket_b": Feature(_pocket(10, 0.8)),
+            },
+        )
+    detail = _written(tmp_path, "bar", "wall_min")["detail"]
+    assert re.search(r"not waived: \d+ readings no feature waives, worst", detail)
+    thickness, ends, reasons = _worst_wall(detail)
+    assert thickness == "0.8000mm"
+    assert {z: names for z, (names, _, _) in ends.items()} == {
+        -5.0: "none",
+        -4.2: "pocket_b",
+    }
+    assert reasons == (
+        "one side traces to no feature; pocket_b does not waive wall_min"
     )
 
+
+
+def test_a_wall_with_neither_side_on_a_feature_says_so(tmp_path: Path):
+    with pytest.raises(SystemExit):
+        inspect(
+            _two_floors(),
+            method=FDM(wall_min_mm=1.5),
+            out=tmp_path,
+            name="bar",
+            features={"pocket_a": Feature(_pocket(-10, 1.0), waive={"wall_min": "a"})},
+        )
+    thickness, ends, reasons = _worst_wall(
+        _written(tmp_path, "bar", "wall_min")["detail"]
+    )
+    assert thickness == "0.8000mm"
+    assert {z: names for z, (names, _, _) in ends.items()} == {
+        -5.0: "none",
+        -4.2: "none",
+    }
+    assert reasons == "neither side traces to a feature"
 
 def test_every_thin_wall_waived_by_its_features_applies(tmp_path: Path):
     result = inspect(
