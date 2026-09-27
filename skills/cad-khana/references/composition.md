@@ -50,13 +50,43 @@ m03_scanner/
 is *expressed*, not how it is run. (pytest is the proof: fixture-heavy
 and three-line tests share one runner.)
 
-**Geometry that exists only to be asserted against** — a sightline
-cone, a tool-access envelope — is an ordinary `with_part`; nothing in
-the library marks it un-manufacturable. It needs no special handling,
-because **no exporter ever imports a check module**: `khana export
-assembly.py` cannot see `check_cones.py`'s probes, and `khana check
-check_cones.py` never exports. The probe lands in that file's `parts[]`,
-which is honest — that file is a fixture run's output.
+**Geometry that exists only to be asserted against** comes in two
+forms. A **keep-out**, a volume parts must stay out of (a driver's
+corridor, a bolt's drop-in path, an RF zone), is an argument to
+`assert_clear_of` (`assertions.md` §Keep-outs). It is never a part, so it
+can sit in the product's own builder. A **probe** that other claims pair
+with, or that you want drawn (a sightline cone checked with
+`assert_no_interference`), is an ordinary `with_part` in a check module.
+Nothing in the library marks it un-manufacturable, and it needs no special
+handling, because **no exporter ever imports a check module**: `khana
+export assembly.py` cannot see `check_cones.py`'s probes, and `khana
+check check_cones.py` never exports. The probe lands in that file's
+`parts[]`, which is honest: that file is a fixture run's output.
+
+## Where a claim lives
+
+The same claim call works at three levels. No rule picks one for you;
+ask **when the claim has to hold**, and declare it where that is true.
+
+- **In the product's builder**, for a promise the product makes whenever
+  it exists: the clamp's M4 bolts drop in at every camera pose; no metal
+  sits behind the coil. It runs on the product's default `khana check`,
+  it is held over every declared motion, and it rides the unit into
+  every parent that composes it.
+- **In a check module**, for a claim about the product together with
+  something that is not in it (a fixture, probe cones, a second unit's
+  belief about a datum), or one too slow to run on every check.
+- **In a check module for one assembly step**, for a claim that is true
+  only partway through the build: a driver reaches the arc screws
+  *before* the cover goes on. Compose the parts installed by that step,
+  and declare the keep-out against them. In the finished product the
+  cover blocks the path, and should. Name the file for the step
+  (`check_step_arc_screws.py`).
+
+A claim declared at the wrong level fails in one of two ways. Declared
+in the builder, the step claim reads red on a correct design. Declared
+in a check module, a product promise goes unchecked by the product's
+default `khana check`.
 
 Verify a cone-free export by **solid count**, not by grepping part
 names: the STEP exporter writes no names.
