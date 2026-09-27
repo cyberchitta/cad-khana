@@ -353,6 +353,16 @@ def _overhang_section(old: Diag | None, new: Diag | None) -> list[str]:
     return lines
 
 
+def _method_params_section(old: Diag, new: Diag) -> list[str]:
+    """Every declared method parameter that changed — an ``up_axis``
+    flip otherwise shows only through the readings it moved."""
+    return [
+        f"  {key}: {_delta(old.get(key), new.get(key))}"
+        for key in sorted(old.keys() | new.keys())
+        if not _numbers_close(old.get(key), new.get(key))
+    ]
+
+
 def _bbox_section(old: Any, new: Any) -> list[str]:
     return ["  bbox: changed"] if old != new else []
 
@@ -415,6 +425,12 @@ def _diff_printability(old: Diag, new: Diag) -> str:
         ("status", _status_section(old, new)),
         ("name", name_section),
         ("method", method_section),
+        (
+            "method_params",
+            _method_params_section(
+                old.get("method_params", {}), new.get("method_params", {})
+            ),
+        ),
         ("bbox", _bbox_section(old.get("bbox"), new.get("bbox"))),
         (
             "volume_mm3",

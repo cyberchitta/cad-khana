@@ -50,6 +50,24 @@ def test_inspect_json_schema(tmp_path: Path):
     assert "assertions" in data
 
 
+def test_inspect_records_the_declared_method_params(tmp_path: Path):
+    method = FDM(up_axis=(0, -1, 0), wall_min_mm=1.2, overhang_max_deg=50.0)
+    inspect(_cube(10), method=method, out=tmp_path, name="cube")
+    data = json.loads((tmp_path / "cube-printability.json").read_text())
+    assert data["method"] == "FDM"
+    assert data["method_params"] == {
+        "up_axis": [0, -1, 0],
+        "wall_min_mm": 1.2,
+        "overhang_max_deg": 50.0,
+    }
+
+
+def test_up_axis_is_recorded_as_declared_not_normalised(tmp_path: Path):
+    inspect(_cube(10), method=FDM(up_axis=(0, 0, 2.5)), out=tmp_path, name="cube")
+    data = json.loads((tmp_path / "cube-printability.json").read_text())
+    assert data["method_params"]["up_axis"] == [0, 0, 2.5]
+
+
 def test_inspect_fails_when_wall_below_minimum(tmp_path: Path):
     method = FDM(wall_min_mm=5.0)
     with pytest.raises(SystemExit) as exc:

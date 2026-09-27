@@ -21,6 +21,11 @@ def _empty_printability() -> dict:
         "status": "ok",
         "name": "part",
         "method": "FDM",
+        "method_params": {
+            "up_axis": [0, 0, 1],
+            "wall_min_mm": 1.5,
+            "overhang_max_deg": 45.0,
+        },
         "bbox": {"min": [0, 0, 0], "max": [1, 1, 1]},
         "volume_mm3": 1.0,
         "surface_area_mm2": 6.0,
@@ -268,6 +273,34 @@ def test_value_drift_names_the_pose_it_came_from():
 
 def test_identical_printability_reports_no_changes():
     assert diff(_empty_printability(), _empty_printability()) == "no changes\n"
+
+
+def _with_params(**params) -> dict:
+    base = _empty_printability()
+    return base | {"method_params": base["method_params"] | params}
+
+
+def test_printability_up_axis_change_is_reported():
+    out = diff(_with_params(), _with_params(up_axis=[0, -1, 0]))
+    assert "method_params:" in out
+    assert "up_axis: [0, 0, 1] → [0, -1, 0]" in out
+
+
+def test_printability_threshold_param_change_is_reported():
+    out = diff(_with_params(), _with_params(overhang_max_deg=90.0))
+    assert "method_params:" in out
+    assert "overhang_max_deg: 45 → 90" in out
+
+
+def test_printability_param_added_or_removed_is_reported():
+    old = _empty_printability()
+    new = _with_params(nozzle_mm=0.4)
+    assert "nozzle_mm: None → 0.4" in diff(old, new)
+    assert "nozzle_mm: 0.4 → None" in diff(new, old)
+
+
+def test_equivalent_up_axis_spelled_as_float_is_no_change():
+    assert diff(_with_params(), _with_params(up_axis=[0.0, 0.0, 1.0])) == "no changes\n"
 
 
 def test_printability_volume_delta():

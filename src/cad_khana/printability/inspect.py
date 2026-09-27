@@ -59,6 +59,7 @@ class PrintabilityDiagnostics:
     status: str = "ok"
     name: str = "part"
     method: str = "FDM"
+    method_params: dict[str, object] = field(default_factory=dict)
     bbox: BBox | None = None
     volume_mm3: float = 0.0
     surface_area_mm2: float = 0.0
@@ -215,6 +216,7 @@ def inspect(
     diagnostics = PrintabilityDiagnostics(
         name=name,
         method=type(method).__name__,
+        method_params=asdict(method),
         bbox=_bbox(part),
         volume_mm3=part.volume,
         surface_area_mm2=part.area,

@@ -73,6 +73,12 @@ is not repeated here.
 
 - `kind: "printability"` — identifies the file.
 - `name`, `method` — for disambiguation when scripts inspect many parts.
+- `method_params` — every field of the method the script passed, as
+  declared: for `FDM`, `{up_axis, wall_min_mm, overhang_max_deg}`.
+  `up_axis` is the vector as written (not normalised), so this is where
+  a green says which way up it was measured — an on-its-side pass
+  (`up_axis: [0, -1, 0]`) reads differently from an as-placed one.
+  `khana diff` lists each parameter that changed under `method_params:`.
 - `volume_mm3`, `bbox` — basic part metrics.
 - `solid_count` — `1` for a part in one piece; above `1` the file also
   carries a `multi_solid` warning unless `inspect(..., solid_count=N)`

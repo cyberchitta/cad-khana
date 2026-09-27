@@ -232,7 +232,7 @@ A module the import-model verbs consume never calls `check()`,
 full design, its phases, and what is still owed:
 `_notes/draft-script-decomposition.md`.
 
-## Diagnostics JSON schemas (v0.14)
+## Diagnostics JSON schemas (v0.15)
 
 Version these from day one. Agents depend on field stability.
 
@@ -253,7 +253,7 @@ for three bumps.
 
 ```json
 {
-  "schema_version": "0.14",
+  "schema_version": "0.15",
   "status": "ok | error | assertion_failed",
   "error": null,
   "hint": "Missing .part accessor — use `with BuildPart() as p: ...; return p.part`.",
@@ -349,11 +349,12 @@ Maintainer facts behind those fields:
 
 ```json
 {
-  "schema_version": "0.14",
+  "schema_version": "0.15",
   "kind": "printability",
   "status": "ok | assertion_failed",
   "name": "housing",
   "method": "FDM",
+  "method_params": {"up_axis": [0, -1, 0], "wall_min_mm": 1.5, "overhang_max_deg": 45.0},
   "bbox": {"min": [x,y,z], "max": [x,y,z]},
   "volume_mm3": 12403.2,
   "surface_area_mm2": 3210.5,
@@ -416,6 +417,12 @@ codebase. Schema bumps are therefore free, and the rule's scope
 is exactly these two files: it does **not** extend to exported
 `.stl` / `.step` / `.glb`, which a user may keep, nor to anything
 serialized for cross-session resumption (there is none today).
+
+`method_params` is `dataclasses.asdict` of the method, so a new method
+or field serialises with no second edit, and `up_axis` reads as declared
+— never normalised — because the question it answers is "what did the
+script say" (0.15, after three consumer slices changed orientation and
+the JSON showed it only through the readings it moved).
 
 `kind` is absent on mechanism files and `"printability"` on printability
 files — that's how `diff` disambiguates.
