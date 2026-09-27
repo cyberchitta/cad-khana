@@ -5,6 +5,9 @@ Load before reading a field beyond `status`, `assertions[].passed`,
 what it means, in `SKILL.md` §Read `warnings` on every run — that list
 is not repeated here.
 
+`khana show <file>` reads either file from the shell — a summary, then
+its claims filtered, sorted or grouped; see `references/cli.md`.
+
 `mechanism.json` after every `check()`:
 
 - `status` — `"ok"`, `"error"`, or `"assertion_failed"`.

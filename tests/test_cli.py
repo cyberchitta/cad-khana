@@ -1158,3 +1158,99 @@ def test_out_root_places_error_diagnostics_and_does_not_leak(
     good = _unit_script(repo, "cad/m03")
     assert runner.invoke(app, ["run", str(good)]).exit_code == 0
     assert (repo / "cad/m03/outputs/mechanism.json").exists()
+
+
+# --- show -----------------------------------------------------------------
+
+
+def _show_json(tmp_path: Path, count: int = 3) -> Path:
+    """``count`` assertions: the second fails, the rest pass with a value."""
+    assertions = [
+        {
+            "name": f"claim_{i:02d}",
+            "passed": i != 1,
+            "detail": "too close" if i == 1 else None,
+            "value": float(count - i),
+            "waived": None,
+            "skipped": None,
+        }
+        for i in range(count)
+    ]
+    return _mech_json(tmp_path, "m.json", assertions=assertions, warnings=[])
+
+
+def test_show_prints_summary_then_rows(tmp_path: Path):
+    result = runner.invoke(app, ["show", str(_show_json(tmp_path))])
+    assert result.exit_code == 0, result.output
+    assert "3 assertions: 2 passed, 1 failed" in result.stdout
+    assert "claim_00" in result.stdout and "claim_02" in result.stdout
+
+
+def test_show_failed_lists_only_failures(tmp_path: Path):
+    result = runner.invoke(app, ["show", str(_show_json(tmp_path)), "--failed"])
+    assert result.exit_code == 0, result.output
+    rows = [l for l in result.stdout.splitlines() if "claim_" in l]
+    assert len(rows) == 1 and rows[0].startswith("FAIL")
+
+
+def test_show_limits_rows_by_default_and_says_how_many_it_left_out(tmp_path: Path):
+    path = _show_json(tmp_path, count=60)
+    result = runner.invoke(app, ["show", str(path)])
+    assert sum("claim_" in l for l in result.stdout.splitlines()) == 50
+    assert "10 more" in result.stdout
+    everything = runner.invoke(app, ["show", str(path), "--limit", "0"])
+    assert sum("claim_" in l for l in everything.stdout.splitlines()) == 60
+
+
+def test_show_sort_value_then_limit_gives_the_smallest(tmp_path: Path):
+    result = runner.invoke(
+        app, ["show", str(_show_json(tmp_path)), "--sort", "value", "--limit", "1"]
+    )
+    rows = [l for l in result.stdout.splitlines() if "claim_" in l]
+    assert len(rows) == 1 and "claim_02" in rows[0]
+
+
+def test_show_json_is_the_filtered_assertions_unlimited(tmp_path: Path):
+    path = _show_json(tmp_path, count=60)
+    result = runner.invoke(app, ["show", str(path), "--json", "--grep", "claim_0"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.stdout)
+    assert [a["name"] for a in data] == [f"claim_{i:02d}" for i in range(10)]
+
+
+def test_show_group_prints_one_line_per_group(tmp_path: Path):
+    result = runner.invoke(
+        app, ["show", str(_show_json(tmp_path, count=12)), "--group", r"claim_\d"]
+    )
+    assert result.exit_code == 0, result.output
+    lines = [l for l in result.stdout.splitlines() if l.startswith("claim_")]
+    assert lines[0].startswith("claim_0 ") and "n=10" in lines[0]
+    assert "failed=1" in lines[0] and "min=3" in lines[0]
+    assert lines[1].startswith("claim_1 ") and "n=2" in lines[1]
+
+
+def test_show_reads_an_old_schema_and_says_so(tmp_path: Path):
+    path = _mech_json(tmp_path, "old.json", schema_version="0.1")
+    result = runner.invoke(app, ["show", str(path)])
+    assert result.exit_code == 0, result.output
+    assert f"schema 0.1, current {SCHEMA_VERSION}" in result.output
+
+
+@pytest.mark.parametrize(
+    "content", ["{not json", '{"foo": 1}', "[]"], ids=["malformed", "foreign", "list"]
+)
+def test_show_unreadable_file_exits_two(tmp_path: Path, content: str):
+    path = tmp_path / "bad.json"
+    path.write_text(content)
+    result = runner.invoke(app, ["show", str(path)])
+    assert result.exit_code == 2
+
+
+def test_show_missing_file_exits_two(tmp_path: Path):
+    result = runner.invoke(app, ["show", str(tmp_path / "nope.json")])
+    assert result.exit_code == 2
+
+
+def test_show_bad_regex_exits_two(tmp_path: Path):
+    result = runner.invoke(app, ["show", str(_show_json(tmp_path)), "--grep", "("])
+    assert result.exit_code == 2

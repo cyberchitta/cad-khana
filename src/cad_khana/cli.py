@@ -1,4 +1,5 @@
 import json
+import re
 import runpy
 import sys
 import traceback
@@ -18,6 +19,7 @@ from cad_khana.export import export_assembly
 from cad_khana.mechanism.assembly import Assembly
 from cad_khana.mechanism.check import check as check_assembly
 from cad_khana.mechanism.diagnostics import Diagnostics
+from cad_khana.show import report, report_json, require_diagnostics
 from cad_khana.target import (
     Target,
     TargetError,
@@ -413,6 +415,70 @@ def diff(before: DiagArg, after: DiagArg) -> None:
     typer.echo(text, nl=False)
     if text != NO_CHANGES:
         raise typer.Exit(code=1)
+
+
+@app.command()
+def show(
+    path: DiagArg,
+    grep: Annotated[
+        str | None,
+        typer.Option("--grep", help="Regex searched in each assertion's name."),
+    ] = None,
+    failed: Annotated[
+        bool,
+        typer.Option("--failed", help="Only failed assertions (a waived failure is not one)."),
+    ] = False,
+    skipped: Annotated[
+        bool,
+        typer.Option("--skipped", help="Only skipped assertions; with --failed, either."),
+    ] = False,
+    sort: Annotated[
+        str | None,
+        typer.Option("--sort", help="`value`: ascending value, valueless claims last."),
+    ] = None,
+    limit: Annotated[
+        int | None,
+        typer.Option(
+            "--limit",
+            help="Lines to print (default 50; 0 for all). With --json, "
+            "unlimited unless given.",
+        ),
+    ] = None,
+    group: Annotated[
+        str | None,
+        typer.Option(
+            "--group",
+            help="Regex whose match (or first capture group) keys one line "
+            "per group: count, failed, waived, skipped, least value and its claim.",
+        ),
+    ] = None,
+    as_json: Annotated[
+        bool,
+        typer.Option("--json", help="Print the matching assertions (or groups) as JSON."),
+    ] = False,
+) -> None:
+    """Read a diagnostics JSON: a summary, then its assertions filtered.
+
+    Exits 0 whatever the file says; 2 when it cannot be read as a
+    diagnostics file or an option is malformed. A file at an older
+    schema_version is read as written, and the summary says so.
+    """
+    if sort not in (None, "value"):
+        typer.echo(f"error: unknown --sort {sort!r}; known: value", err=True)
+        raise typer.Exit(code=2)
+    states = frozenset(
+        s for s, on in (("failed", failed), ("skipped", skipped)) if on
+    )
+    render = report_json if as_json else report
+    try:
+        diag = require_diagnostics(json.loads(path.read_text()))
+        text = render(
+            diag, grep=grep, states=states, sort=sort, limit=limit, group_by=group
+        )
+    except (ValueError, UnicodeDecodeError, re.error) as exc:
+        typer.echo(f"error: {path}: {exc}", err=True)
+        raise typer.Exit(code=2)
+    typer.echo(text, nl=False)
 
 
 def main() -> None:

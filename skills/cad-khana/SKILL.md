@@ -62,6 +62,7 @@ khana view   <target>          # push assembly to the OCP viewer (socket)
 khana draw   <target> [--view <names>] [--part <name>] [--format png|svg|both] [--themeable]
 khana run    <script>          # execute an orchestration script
 khana diff   <before> <after>  # diff two JSON files; exit 0 identical, 1 differences, 2 error
+khana show   <json> [--grep <re>] [--failed] [--skipped] [--sort value] [--group <re>] [--json]  # read one JSON; see references/cli.md
 khana status                   # JSON probe of versions + viewer reachability; exit nonzero if degraded
 khana --version
 ```

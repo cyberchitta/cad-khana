@@ -1,10 +1,11 @@
-# CLI: targets, output, imports, viewer, families
+# CLI: targets, output, imports, viewer, families, reading the JSON
 
 Load before addressing a `:factory`, when an output file is not where
 you expected, before a run whose outputs must stay apart (a before/after
 baseline, parallel runs), when an import fails under `khana`, when
-setting up the viewer, or before writing a script that checks several
-members of a family. The verb list and exit codes are in `SKILL.md` §CLI.
+setting up the viewer, before writing a script that checks several
+members of a family, or before querying a diagnostics JSON too large to
+read whole. The verb list and exit codes are in `SKILL.md` §CLI.
 
 ## Targets: `<module-path>[:<factory>]`
 
@@ -165,3 +166,47 @@ Two things make this safe rather than a workaround:
 Name these `<family>_sweep.py`. The docstring's coverage sentence
 matters most here: `khana check` on the sibling covers exactly one
 member, and nothing signals that but the sentence.
+
+## Reading the JSON: `khana show`
+
+A top-level `mechanism.json` can hold tens of thousands of claims.
+`khana show <file>` reads one `mechanism.json` or
+`<name>-printability.json` and prints a summary — status, the counts of
+passed / failed / waived / skipped assertions (skips by class), warnings
+by kind — then one line per assertion: state (`ok`, `FAIL`, `waived`,
+`skip`), `value` (`-` when the claim records none), name, and `detail`
+cut to one line.
+
+```
+khana show outputs/mechanism.json                       # summary + the first 50 claims
+khana show outputs/mechanism.json --failed              # unwaived failures only
+khana show outputs/mechanism.json --skipped             # skipped claims, each with why
+khana show outputs/mechanism.json --grep clears --sort value --limit 5
+khana show outputs/mechanism.json --group '^[^:]+'      # one line per claim family
+khana show outputs/mechanism.json --failed --json | jq -r '.[].name'
+```
+
+- `--grep` is a regex searched in the name; `--failed` and `--skipped`
+  select by state, and together select either. A waived failure is not
+  `--failed` — it is listed with the rest, marked `waived`.
+- `--sort value` is ascending, with valueless claims last. Ascending is
+  the tight end for a distance or a clearance, and the loose end for an
+  overlap volume — read which kind you sorted.
+- Text output stops at 50 lines and says how many it left out;
+  `--limit N` changes that, `--limit 0` prints all.
+- `--group <regex>` prints one line per key instead: the regex's first
+  capture group, or its whole match when it has none; names it misses
+  share `(unmatched)`. Each line carries the count, how many failed,
+  were waived or skipped, and the least `value` with the claim that has
+  it. `--group '^[^:]+'` keys on the claim kind with its qualifier
+  (`no_interference`, `m05.f1.tangent_contact`); a claim named without
+  a kind prefix is its own group.
+- `--json` prints the matching assertions (or groups) as a JSON list,
+  unlimited unless `--limit` is given — for `jq`, not for reading.
+
+It exits 0 whatever the file says — it is a reader, not a verdict — and
+2 when the file is not a diagnostics file or an option is malformed.
+Unlike `diff`, it reads a file at an older `schema_version`, as
+written, and the summary's first line names both versions: it compares
+nothing, so there is no second schema to coerce, but a field's meaning
+is the current one only after a re-run.

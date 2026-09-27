@@ -24,7 +24,7 @@ def _delta(old: Any, new: Any) -> str:
     return f"{old} → {new}"
 
 
-def _kind(diag: Diag) -> str:
+def file_kind(diag: Diag) -> str:
     return "printability" if "kind" in diag else "mechanism"
 
 
@@ -513,8 +513,8 @@ def _diff_printability(old: Diag, new: Diag) -> str:
 
 
 def diff(old: Diag, new: Diag) -> str:
-    old_kind = _kind(old)
-    new_kind = _kind(new)
+    old_kind = file_kind(old)
+    new_kind = file_kind(new)
     if old_kind != new_kind:
         raise ValueError(
             f"cannot diff {old_kind} against {new_kind}; "

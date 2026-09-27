@@ -120,6 +120,7 @@ cad-khana/
       draw.py                 # HLR engineering drawings (PNG + SVG)
       viewer.py               # ocp_vscode push (used by `khana view`)
       diff.py                 # dispatches on file kind (mechanism/printability)
+      show.py                 # reads one diagnostics JSON: summary, filters, groups
       target.py               # <module>[:<factory>] → Assembly (import-model verbs)
       cli.py                  # typer CLI — thin dispatcher
       # mcp.py                # future: MCP server over the same primitives
@@ -208,6 +209,7 @@ khana view   <target>           # push to OCP viewer
 khana draw   <target> --format png|svg|both   # orthographic/iso HLR line-art
 khana run    <script>           # execute an orchestration script
 khana diff <old> <new>          # diff two diagnostics JSON files
+khana show <json> [--grep/--failed/--skipped/--sort/--group/--json]  # read one
 ```
 
 A target's member is the named factory called with its defaults, or —
@@ -227,6 +229,8 @@ run. Any command that imports or executes user code writes
 even on failure, so the agent can always read structured error info.
 `diff` follows the `diff`/`git diff` contract: exit 0 when the files
 are equivalent, 1 when differences are found, 2 on error.
+`show` is a reader, not a verdict: exit 0 whatever the file says, 2
+when it is not a diagnostics file.
 
 Declarations are imported by verbs; effects live at the CLI boundary.
 A module the import-model verbs consume never calls `check()`,
@@ -549,7 +553,8 @@ for end-user install, `uvx khana ...` for ephemeral use.
 ## Invariants
 
 - **Side effect isolation.** `mechanism.diagnostics`, `mechanism.assertions`,
-  `printability.wall`, `printability.overhangs`, and `diff.py` are pure —
+  `printability.wall`, `printability.overhangs`, `diff.py`, and `show.py`
+  are pure —
   take data, return data. File I/O lives in `export.py`, `draw.py`,
   `mechanism.check`, `printability.inspect`, and the CLI. Each verb
   performs its own effect at the boundary — `view` pushes, `draw`
