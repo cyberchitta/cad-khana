@@ -214,7 +214,7 @@ an LLM iterate without human review.
 - `CLAUDE.md` — operational instructions for agents working on this
   repo.
 - `skills/cad-khana/SKILL.md` — agent-facing guide to using the tool:
-  the workflow, what a green check does not mean, and which reference
+  the file kinds, what a green check does not mean, and which reference
   to load when.
 - `skills/cad-khana/references/` — the detail, loaded on demand.
 - `skills/cad-khana/references/install.md` — one-shot install steps the skill follows on first use.

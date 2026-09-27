@@ -81,9 +81,10 @@ cad-khana/
   pyproject.toml              # uv-managed, entry point: khana = cad_khana.cli:main
   skills/
     cad-khana/
-      SKILL.md                # the index: workflow, what a green does not
+      SKILL.md                # the index: file kinds, what a green does not
                               # mean, every warning kind, reference triggers
       references/             # loaded on the triggers SKILL.md names
+        workflow.md           # design order, the iteration loop, when to stop
         cli.md                # targets, output paths, imports, viewer, families
         style.md              # declaration-module layout, authoring conventions
         assertions.md         # the claim catalogue, contact claims, during=, groups
