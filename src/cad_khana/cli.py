@@ -202,7 +202,7 @@ def _run_target(
     spec: str,
     out: Path | None,
     command: str,
-    verb: Callable[[Assembly, Path], None],
+    verb: Callable[[Assembly, Path], object],
 ) -> None:
     """Import a target's module, resolve one member, run one verb.
 
