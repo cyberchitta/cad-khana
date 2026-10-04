@@ -153,7 +153,7 @@ def _check_waivers(
     """Unknown kinds, bounds on another kind, and a feature waiving a check
     no failure of which has a place are caller errors."""
     keyed = {
-        **{kind: w for kind, w in waive.items()},
+        **waive,
         **{
             f"{kind} (feature {name})": w
             for name, f in features.items()

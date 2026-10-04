@@ -184,7 +184,7 @@ def _run_script(
         typer.echo(tb, err=True)
         typer.echo(f"khana {command} failed: {type(exc).__name__}: {exc}", err=True)
         _write_error_diagnostics(out, tb)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     finally:
         failed = _failures.take()
         _paths.set_root(None)
@@ -224,7 +224,7 @@ def _run_target(
         verb(resolve(target), out_path)
     except (TargetError, SelectionError) as exc:
         typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(code=2)
+        raise typer.Exit(code=2) from None
     except SystemExit as exc:
         if exc.code:
             raise
@@ -235,7 +235,7 @@ def _run_target(
         typer.echo(tb, err=True)
         typer.echo(f"khana {command} failed: {type(exc).__name__}: {exc}", err=True)
         _write_error_diagnostics(out_path, tb)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
 
 @app.command()
@@ -458,7 +458,7 @@ def diff(before: DiagArg, after: DiagArg) -> None:
         text = compute_diff(old, new)
     except ValueError as exc:
         typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(code=2)
+        raise typer.Exit(code=2) from None
     typer.echo(text, nl=False)
     if text != NO_CHANGES:
         raise typer.Exit(code=1)
@@ -528,7 +528,7 @@ def show(
         )
     except (ValueError, UnicodeDecodeError, re.error) as exc:
         typer.echo(f"error: {path}: {exc}", err=True)
-        raise typer.Exit(code=2)
+        raise typer.Exit(code=2) from None
     typer.echo(text, nl=False)
 
 

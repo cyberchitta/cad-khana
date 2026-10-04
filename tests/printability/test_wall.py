@@ -218,9 +218,11 @@ def test_groove_root_over_a_tilted_face_reads_the_perpendicular():
         with BuildSketch(Plane.XZ), Locations((0, 4)):
             Polygon((-3, 0), (3, 0), (0, -3), align=None)
         extrude(amount=10, both=True, mode=Mode.SUBTRACT)
-        with Locations(Location((0, 0, 1), (0, 20, 0))):
-            with Locations((0, 0, -10.5)):
-                Box(80, 40, 20, mode=Mode.SUBTRACT)
+        with (
+            Locations(Location((0, 0, 1), (0, 20, 0))),
+            Locations((0, 0, -10.5)),
+        ):
+            Box(80, 40, 20, mode=Mode.SUBTRACT)
     assert min_wall(p.part).thickness_mm == approx(0.5, abs=0.01)
 
 

@@ -1240,24 +1240,24 @@ def test_show_prints_summary_then_rows(tmp_path: Path):
 def test_show_failed_lists_only_failures(tmp_path: Path):
     result = runner.invoke(app, ["show", str(_show_json(tmp_path)), "--failed"])
     assert result.exit_code == 0, result.output
-    rows = [l for l in result.stdout.splitlines() if "claim_" in l]
+    rows = [line for line in result.stdout.splitlines() if "claim_" in line]
     assert len(rows) == 1 and rows[0].startswith("FAIL")
 
 
 def test_show_limits_rows_by_default_and_says_how_many_it_left_out(tmp_path: Path):
     path = _show_json(tmp_path, count=60)
     result = runner.invoke(app, ["show", str(path)])
-    assert sum("claim_" in l for l in result.stdout.splitlines()) == 50
+    assert sum("claim_" in line for line in result.stdout.splitlines()) == 50
     assert "10 more" in result.stdout
     everything = runner.invoke(app, ["show", str(path), "--limit", "0"])
-    assert sum("claim_" in l for l in everything.stdout.splitlines()) == 60
+    assert sum("claim_" in line for line in everything.stdout.splitlines()) == 60
 
 
 def test_show_sort_value_then_limit_gives_the_smallest(tmp_path: Path):
     result = runner.invoke(
         app, ["show", str(_show_json(tmp_path)), "--sort", "value", "--limit", "1"]
     )
-    rows = [l for l in result.stdout.splitlines() if "claim_" in l]
+    rows = [line for line in result.stdout.splitlines() if "claim_" in line]
     assert len(rows) == 1 and "claim_02" in rows[0]
 
 
@@ -1274,7 +1274,7 @@ def test_show_group_prints_one_line_per_group(tmp_path: Path):
         app, ["show", str(_show_json(tmp_path, count=12)), "--group", r"claim_\d"]
     )
     assert result.exit_code == 0, result.output
-    lines = [l for l in result.stdout.splitlines() if l.startswith("claim_")]
+    lines = [line for line in result.stdout.splitlines() if line.startswith("claim_")]
     assert lines[0].startswith("claim_0 ") and "n=10" in lines[0]
     assert "failed=1" in lines[0] and "min=3" in lines[0]
     assert lines[1].startswith("claim_1 ") and "n=2" in lines[1]

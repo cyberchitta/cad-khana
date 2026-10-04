@@ -21,6 +21,8 @@ from OCP.XCAFDoc import XCAFDoc_ColorType, XCAFDoc_DocumentTool
 
 from cad_khana.mechanism.assembly import Assembly, SubAssembly
 
+IDENTITY = Location()  # a shared default; never mutated, Location ops return new
+
 _DEFAULT_LINEAR_TOLERANCE_MM = 0.1
 _DEFAULT_ANGULAR_TOLERANCE_RAD = 0.5
 _DEFAULT_DRACO_LEVEL = 7
@@ -100,7 +102,7 @@ def _joint_groups(assembly: Assembly) -> list[_JointGroup]:
 
 
 def _joint_poses(
-    assembly: Assembly, frame: Location = Location(), prefix: str = ""
+    assembly: Assembly, frame: Location = IDENTITY, prefix: str = ""
 ) -> dict[str, _JointPose]:
     """Dotted path → pose for every jointed sub-assembly — the
     frame-side mirror of ``Assembly.joint_angles``."""
