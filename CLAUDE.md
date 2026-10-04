@@ -543,6 +543,9 @@ inside internal functions.
 When in doubt, prefer elegance and functional patterns over apparent
 convenience.
 
+**Before every commit:** `uv run ruff format && uv run ruff check`.
+The rule set lives in `pyproject.toml`; a `noqa` carries its reason.
+
 ## Key dependencies
 
 - `build123d` — CAD kernel (wraps OCCT)
