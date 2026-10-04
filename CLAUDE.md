@@ -257,8 +257,8 @@ agent that doesn't already know a kind won't load a reference to find
 it. This section holds only the shapes and the maintainer's delta: the
 contract, and why things are the way they are. `tests/test_docs.py`
 derives the enumerable facts from the code — the schema version, every
-warning kind, every skip class, which claim kinds carry `value` — and
-fails when the fact's home file omits one. **A schema change edits
+warning kind, every skip class, which claim kinds carry `value`, every
+name a script calls (on `SKILL.md`'s reference table) — and fails when the fact's home file omits one. **A schema change edits
 `diagnostics.md` (and `SKILL.md` for a warning kind) and bumps
 `SCHEMA_VERSION`**; restating a field meaning here is how the two drifted
 for three bumps.
