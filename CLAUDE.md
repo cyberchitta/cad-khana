@@ -543,8 +543,12 @@ inside internal functions.
 When in doubt, prefer elegance and functional patterns over apparent
 convenience.
 
-**Before every commit:** `uv run ruff format && uv run ruff check`.
-The rule set lives in `pyproject.toml`; a `noqa` carries its reason.
+**Before every commit:** `uv run ruff format && uv run ruff check &&
+uv run basedpyright`. Rules live in `pyproject.toml`; a `noqa` carries
+its reason. Type checking is strict over `src` and `tests`, gated by
+`.basedpyright/baseline.json`: errors recorded there pass, any new one
+fails. Fixing a baselined error shrinks the file — commit it with the
+fix; never regenerate it to absorb new errors.
 
 ## Key dependencies
 
