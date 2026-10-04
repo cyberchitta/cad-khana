@@ -19,9 +19,9 @@ from OCP.TDocStd import TDocStd_Document
 from OCP.XCAFApp import XCAFApp_Application
 from OCP.XCAFDoc import XCAFDoc_ColorType, XCAFDoc_DocumentTool
 
-from cad_khana.mechanism.assembly import Assembly, SubAssembly
+from cad_khana.mechanism.assembly import Assembly, RevoluteJoint, SubAssembly
 
-IDENTITY = Location()  # a shared default; never mutated, Location ops return new
+_IDENTITY = Location()  # a shared default: never mutated, Location ops return new
 
 _DEFAULT_LINEAR_TOLERANCE_MM = 0.1
 _DEFAULT_ANGULAR_TOLERANCE_RAD = 0.5
@@ -102,22 +102,22 @@ def _joint_groups(assembly: Assembly) -> list[_JointGroup]:
 
 
 def _joint_poses(
-    assembly: Assembly, frame: Location = IDENTITY, prefix: str = ""
+    assembly: Assembly, frame: Location = _IDENTITY, prefix: str = ""
 ) -> dict[str, _JointPose]:
     """Dotted path → pose for every jointed sub-assembly — the
     frame-side mirror of ``Assembly.joint_angles``."""
 
-    def _pose(sub: SubAssembly) -> _JointPose:
-        axis_frame = frame * sub.location if sub.joint.frame == "local" else frame
+    def _pose(sub: SubAssembly, joint: RevoluteJoint) -> _JointPose:
+        axis_frame = frame * sub.location if joint.frame == "local" else frame
         return _JointPose(
             frame=frame * sub.effective_location,
-            pivot=axis_frame * Location(sub.joint.axis.position),
+            pivot=axis_frame * Location(joint.axis.position),
         )
 
     own = {
-        f"{prefix}{s.name}": _pose(s)
+        f"{prefix}{s.name}": _pose(s, joint)
         for s in assembly.subassemblies
-        if s.joint is not None
+        if (joint := s.joint) is not None
     }
     nested = {
         path: pose
