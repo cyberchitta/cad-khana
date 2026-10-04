@@ -1,7 +1,6 @@
 import json
 import re
 import runpy
-import sys
 import traceback
 from collections.abc import Callable
 from dataclasses import asdict
@@ -11,10 +10,10 @@ from typing import Annotated
 
 import typer
 
-from cad_khana import _failures, _paths, environment
+from cad_khana import _failures, _paths, environment, viewer
 from cad_khana import draw as _draw
-from cad_khana import viewer
-from cad_khana.diff import NO_CHANGES, diff as compute_diff
+from cad_khana.diff import NO_CHANGES
+from cad_khana.diff import diff as compute_diff
 from cad_khana.export import export_assembly
 from cad_khana.mechanism.assembly import Assembly
 from cad_khana.mechanism.check import check as check_assembly

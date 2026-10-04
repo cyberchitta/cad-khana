@@ -714,9 +714,8 @@ def test_a_feature_cannot_waive_a_check_with_no_place(tmp_path: Path):
 
 
 def _two_bodies():
-    with BuildPart() as p:
-        with Locations((0, 0, 0), (30, 0, 0)):
-            Box(10, 10, 10)
+    with BuildPart() as p, Locations((0, 0, 0), (30, 0, 0)):
+        Box(10, 10, 10)
     return p.part
 
 

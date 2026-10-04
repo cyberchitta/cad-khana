@@ -31,7 +31,7 @@ class Motion:
     ts: tuple[float, ...]
 
     @staticmethod
-    def over_joint(name: str, path: str, lo: float, hi: float, step: float) -> "Motion":
+    def over_joint(name: str, path: str, lo: float, hi: float, step: float) -> Motion:
         """One joint driven from ``lo`` to ``hi`` as ``t`` runs 0→1, both
         ends sampled. ``step`` is the widest gap allowed between
         adjacent samples: a range it doesn't divide gets more samples,
@@ -46,7 +46,7 @@ class Motion:
     def poses(self) -> tuple[Pose, ...]:
         return tuple(self.schedule(t) for t in self.ts)
 
-    def qualified(self, prefix: str) -> "Motion":
+    def qualified(self, prefix: str) -> Motion:
         """This motion as seen from a parent that composes its owner
         under ``prefix`` — name and joint paths gain the prefix, as an
         assertion's do."""

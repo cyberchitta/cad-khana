@@ -6,7 +6,6 @@ their shape.
 """
 
 import json
-from pathlib import Path
 
 import pytest
 from build123d import Box, BuildPart, Location

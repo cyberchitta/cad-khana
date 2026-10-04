@@ -5,7 +5,8 @@ import socket
 import sys
 from contextlib import redirect_stdout
 from dataclasses import dataclass
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 
 from cad_khana.mechanism.diagnostics import SCHEMA_VERSION
 

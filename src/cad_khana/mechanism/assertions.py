@@ -108,7 +108,7 @@ class NoInterference:
     def part_refs(self) -> tuple[str, ...]:
         return (self.a, self.b)
 
-    def qualified(self, prefix: str, location: Location) -> "NoInterference":
+    def qualified(self, prefix: str, location: Location) -> NoInterference:
         return replace(
             self,
             a=f"{prefix}.{self.a}",
@@ -142,7 +142,7 @@ class TangentContact:
     def part_refs(self) -> tuple[str, ...]:
         return (self.a, self.b)
 
-    def qualified(self, prefix: str, location: Location) -> "TangentContact":
+    def qualified(self, prefix: str, location: Location) -> TangentContact:
         return replace(
             self,
             a=f"{prefix}.{self.a}",
@@ -204,7 +204,7 @@ class AllowedContact:
     def part_refs(self) -> tuple[str, ...]:
         return (self.a, self.b)
 
-    def qualified(self, prefix: str, location: Location) -> "AllowedContact":
+    def qualified(self, prefix: str, location: Location) -> AllowedContact:
         return replace(
             self,
             a=f"{prefix}.{self.a}",
@@ -212,7 +212,7 @@ class AllowedContact:
             name=f"{prefix}.{self.name}",
         )
 
-    def forbidden(self, phase: str) -> "AllowedContact":
+    def forbidden(self, phase: str) -> AllowedContact:
         """This claim outside its phase: the band collapses to the
         interference epsilon, so any real overlap fails, with ``phase``
         (the window it fell outside) in the reason."""
@@ -300,7 +300,7 @@ class Distance:
     def part_refs(self) -> tuple[str, ...]:
         return (self.a,) if isinstance(self.b, Plane) else (self.a, self.b)
 
-    def qualified(self, prefix: str, location: Location) -> "Distance":
+    def qualified(self, prefix: str, location: Location) -> Distance:
         b = (
             f"{prefix}.{self.b}"
             if isinstance(self.b, str)
@@ -442,7 +442,7 @@ class KeepOut:
     def part_refs(self) -> tuple[str, ...]:
         return self.parts
 
-    def qualified(self, prefix: str, location: Location) -> "KeepOut":
+    def qualified(self, prefix: str, location: Location) -> KeepOut:
         return replace(
             self,
             parts=tuple(f"{prefix}.{n}" for n in self.parts),
@@ -455,7 +455,7 @@ class KeepOut:
             name=f"{prefix}.{self.name}",
         )
 
-    def bound(self, assembly: Assembly) -> "KeepOut":
+    def bound(self, assembly: Assembly) -> KeepOut:
         """This claim with a named keep-out resolved to its solid and
         seat where the assembly stands now."""
         if not isinstance(self.keepout, str):
@@ -508,7 +508,7 @@ class ScalarClaim:
     le: float | None = None
     detail: str | None = None
 
-    def qualified(self, prefix: str, location: Location) -> "ScalarClaim":
+    def qualified(self, prefix: str, location: Location) -> ScalarClaim:
         return replace(self, name=f"{prefix}.{self.name}")
 
     def evaluate(self) -> AssertionResult:
@@ -549,7 +549,7 @@ class SolidCount:
     def part_refs(self) -> tuple[str, ...]:
         return (self.part,)
 
-    def qualified(self, prefix: str, location: Location) -> "SolidCount":
+    def qualified(self, prefix: str, location: Location) -> SolidCount:
         return replace(self, part=f"{prefix}.{self.part}", name=f"{prefix}.{self.name}")
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
@@ -579,7 +579,7 @@ class ExpectedInterference:
     def part_refs(self) -> tuple[str, ...]:
         return (self.a, self.b)
 
-    def qualified(self, prefix: str, location: Location) -> "ExpectedInterference":
+    def qualified(self, prefix: str, location: Location) -> ExpectedInterference:
         return replace(
             self,
             a=f"{prefix}.{self.a}",
@@ -613,7 +613,7 @@ class AnchorsCoincident:
     tol_mm: float
     name: str
 
-    def qualified(self, prefix: str, location: Location) -> "AnchorsCoincident":
+    def qualified(self, prefix: str, location: Location) -> AnchorsCoincident:
         return replace(
             self,
             a=f"{prefix}.{self.a}",
@@ -676,7 +676,7 @@ class Phased:
     def part_refs(self) -> tuple[str, ...]:
         return self.inner.part_refs
 
-    def qualified(self, prefix: str, location: Location) -> "Phased":
+    def qualified(self, prefix: str, location: Location) -> Phased:
         return Phased(
             self.inner.qualified(prefix, location),
             tuple(replace(w, path=f"{prefix}.{w.path}") for w in self.during),

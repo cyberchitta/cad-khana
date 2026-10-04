@@ -152,9 +152,8 @@ def test_fused_box_topology_differs_from_single_box():
 
 
 def _two_bodies(offset: tuple[float, float, float]):
-    with BuildPart() as p:
-        with Locations((0, 0, 0), offset):
-            Box(10, 10, 10)
+    with BuildPart() as p, Locations((0, 0, 0), offset):
+        Box(10, 10, 10)
     return p.part
 
 

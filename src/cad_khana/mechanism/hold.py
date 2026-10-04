@@ -222,7 +222,7 @@ class _Index:
     always: frozenset[int]
 
     @staticmethod
-    def create(assertions: tuple[Assertion, ...], contacts: Contacts) -> "_Index":
+    def create(assertions: tuple[Assertion, ...], contacts: Contacts) -> _Index:
         by_part: dict[str, set[int]] = {}
         by_joint: dict[str, set[int]] = {}
         always: set[int] = set()

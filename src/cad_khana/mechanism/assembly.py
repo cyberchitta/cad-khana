@@ -22,9 +22,9 @@ from cad_khana.mechanism.assertions import (
     AnchorsCoincident,
     Assertion,
     Distance,
-    KeepOut,
     ExpectedInterference,
     JointWindow,
+    KeepOut,
     NoInterference,
     Phased,
     ScalarClaim,
@@ -204,7 +204,7 @@ class KeepOutZone:
     solid: Shape
     seat: Plane | None = None
 
-    def moved(self, location: Location) -> "KeepOutZone":
+    def moved(self, location: Location) -> KeepOutZone:
         return replace(
             self,
             solid=self.solid.moved(location),
@@ -247,7 +247,7 @@ class RevoluteJoint:
                 f"RevoluteJoint frame must be 'parent' or 'local', got {self.frame!r}"
             )
 
-    def with_angle(self, angle_deg: float) -> "RevoluteJoint":
+    def with_angle(self, angle_deg: float) -> RevoluteJoint:
         return replace(self, angle_deg=angle_deg)
 
     @property
@@ -287,7 +287,7 @@ class SubAssembly:
     """
 
     name: str
-    assembly: "Assembly"
+    assembly: Assembly
     location: Location = Location()
     joint: RevoluteJoint | None = None
 
@@ -346,7 +346,7 @@ class Assembly:
         location: Location | None = None,
         color: Color | None = None,
         material: str | None = None,
-    ) -> "Assembly":
+    ) -> Assembly:
         if not isinstance(part, Shape):
             # Boundary check: builders can silently hand back a
             # `ShapeList` (a `+` of disjoint pieces, an extrusion on a
@@ -370,10 +370,10 @@ class Assembly:
     def with_subassembly(
         self,
         name: str,
-        assembly: "Assembly",
+        assembly: Assembly,
         location: Location | None = None,
         joint: RevoluteJoint | None = None,
-    ) -> "Assembly":
+    ) -> Assembly:
         if "." in name:
             raise ValueError(
                 f"sub-assembly name {name!r} contains '.' — reserved "
@@ -388,7 +388,7 @@ class Assembly:
         )
         return replace(self, subassemblies=self.subassemblies + (sub,))
 
-    def with_anchor(self, name: str, location: Location) -> "Assembly":
+    def with_anchor(self, name: str, location: Location) -> Assembly:
         """Declare a named datum ``Location`` in this assembly's local
         frame (see ``Anchor``). Names cannot contain ``.`` (reserved as
         the tree-path separator) and must be unique among this level's
@@ -425,7 +425,7 @@ class Assembly:
 
     def with_keepout(
         self, name: str, solid: Shape, *, seat: Plane | None = None
-    ) -> "Assembly":
+    ) -> Assembly:
         """Declare a named keep-out solid in this assembly's local frame
         (see ``KeepOutZone``), for a parent to hold its parts out of by
         path. ``seat`` is the plane the keep-out stands on, normal
@@ -483,7 +483,7 @@ class Assembly:
                 return p
         raise KeyError(f"no part named {head!r}")
 
-    def with_joint(self, path: str, joint: RevoluteJoint) -> "Assembly":
+    def with_joint(self, path: str, joint: RevoluteJoint) -> Assembly:
         """Set the joint on the named sub-assembly. The joint's axis is
         interpreted in the owning parent Assembly's frame. ``path`` is
         either a single sub-assembly name or a dotted path
@@ -507,7 +507,7 @@ class Assembly:
             raise KeyError(f"no sub-assembly named {head!r}")
         return replace(self, subassemblies=tuple(updated))
 
-    def with_joint_angle(self, path: str, angle_deg: float) -> "Assembly":
+    def with_joint_angle(self, path: str, angle_deg: float) -> Assembly:
         """Animation hook — update the angle on the named sub-assembly's
         joint. ``path`` accepts the same dotted-path form as
         ``with_joint`` for reaching nested joints. Raises ``KeyError``
@@ -536,7 +536,7 @@ class Assembly:
             raise KeyError(f"no sub-assembly named {head!r}")
         return replace(self, subassemblies=tuple(updated))
 
-    def posed(self, pose: Pose) -> "Assembly":
+    def posed(self, pose: Pose) -> Assembly:
         """This assembly at ``pose`` — every named joint set to its
         value (``with_joint_angle`` in bulk), every other joint left as
         built. Keys are the dotted joint paths ``joint_angles`` reports.
@@ -544,7 +544,7 @@ class Assembly:
         joint."""
         return reduce(lambda a, item: a.with_joint_angle(*item), pose.items(), self)
 
-    def with_motion(self, motion: Motion) -> "Assembly":
+    def with_motion(self, motion: Motion) -> Assembly:
         """Declare a motion this assembly goes through. ``check()``
         holds every assertion over it — at the as-built pose and at
         each of the motion's samples — so a claim is no longer about
@@ -561,7 +561,7 @@ class Assembly:
             raise ValueError(f"duplicate motion name {motion.name!r}")
         return replace(self, motions=self.motions + (motion,))
 
-    def with_materials(self, mapping: dict[str, str]) -> "Assembly":
+    def with_materials(self, mapping: dict[str, str]) -> Assembly:
         """Return a copy with each named part's material replaced by the
         value in ``mapping``. Keys are qualified tree paths — the same
         names ``placed_parts`` reports (``"turret.rotor.arm.spider"``;
@@ -574,7 +574,7 @@ class Assembly:
         """
         return self._with_materials(mapping, "")
 
-    def _with_materials(self, mapping: dict[str, str], prefix: str) -> "Assembly":
+    def _with_materials(self, mapping: dict[str, str], prefix: str) -> Assembly:
         new_parts = tuple(
             replace(p, material=mapping.get(f"{prefix}{p.name}", p.material))
             for p in self.parts
@@ -589,8 +589,8 @@ class Assembly:
         return replace(self, parts=new_parts, subassemblies=new_subs)
 
     def with_detailed_geometry(
-        self, mapping: dict[str, "DetailOverride | Part"]
-    ) -> "Assembly":
+        self, mapping: dict[str, DetailOverride | Part]
+    ) -> Assembly:
         """Return a copy with detailed geometry swapped or appended.
 
         Keys are qualified tree paths (the names ``placed_parts``
@@ -632,7 +632,7 @@ class Assembly:
             swapped,
         )
 
-    def _with_addition(self, path: str, ov: "DetailOverride") -> "Assembly":
+    def _with_addition(self, path: str, ov: DetailOverride) -> Assembly:
         head, _, rest = path.partition(".")
         if not rest:
             return self.with_part(head, ov.part, ov.location, ov.color, ov.material)
@@ -649,8 +649,8 @@ class Assembly:
         )
 
     def _swap_detail(
-        self, overrides: dict[str, "DetailOverride"], prefix: str
-    ) -> "Assembly":
+        self, overrides: dict[str, DetailOverride], prefix: str
+    ) -> Assembly:
         new_parts = tuple(
             replace(
                 p,
@@ -691,7 +691,7 @@ class Assembly:
             )
         }
 
-    def _asserting(self, assertion: Assertion, during: During) -> "Assembly":
+    def _asserting(self, assertion: Assertion, during: During) -> Assembly:
         return replace(self, assertions=self.assertions + (_phased(assertion, during),))
 
     def assert_no_interference(
@@ -701,7 +701,7 @@ class Assembly:
         name: str | None = None,
         *,
         during: During = None,
-    ) -> "Assembly":
+    ) -> Assembly:
         """``during`` — here and on every part-referencing ``assert_*``
         — holds the claim only in a kinematic phase: one ``JointWindow``
         or a tuple that must all hold (see ``Phased``). Outside it a
@@ -726,7 +726,7 @@ class Assembly:
         grow_b_mm: float = 0.0,
         name: str | None = None,
         during: During = None,
-    ) -> "Assembly":
+    ) -> Assembly:
         """Assert a bounded distance from part ``a`` to ``b`` — another
         part, or a datum ``Plane`` declared in this assembly's frame.
 
@@ -777,7 +777,7 @@ class Assembly:
         seat: Plane | None = None,
         excluding: Iterable[str] = (),
         during: During = None,
-    ) -> "Assembly":
+    ) -> Assembly:
         """Assert that every part in ``parts`` stays out of ``keepout``,
         a volume that is not a part (a driver's corridor, a bolt's
         drop-in path, an RF zone), so nothing exports or draws it.
@@ -851,7 +851,7 @@ class Assembly:
         ge: float | None = None,
         le: float | None = None,
         detail: str | None = None,
-    ) -> "Assembly":
+    ) -> Assembly:
         """Record a named claim about a non-geometric scalar (a
         friction budget, a torque margin). The value lands in
         ``mechanism.json`` and diff either way; ``ge`` / ``le`` bounds
@@ -867,7 +867,7 @@ class Assembly:
         eq: int = 1,
         detail: str | None = None,
         name: str | None = None,
-    ) -> "Assembly":
+    ) -> Assembly:
         """Assert ``part`` is exactly ``eq`` solids. Connectivity is a
         claim no other assertion makes: a cut that severs a part leaves
         its volume, bbox and every clearance plausible, and every
@@ -897,7 +897,7 @@ class Assembly:
         tol_mm: float = 1e-3,
         name: str | None = None,
         during: During = None,
-    ) -> "Assembly":
+    ) -> Assembly:
         """Assert ``a`` and ``b`` touch: surface gap ≤ ``tol_mm`` and
         no real overlap. The required-contact claim for tangent rests
         (foot-on-rail, plate-on-flange) — ``assert_no_interference``
@@ -923,7 +923,7 @@ class Assembly:
         reason: str | None = None,
         during: During = None,
         name: str | None = None,
-    ) -> "Assembly":
+    ) -> Assembly:
         """Assert any overlap between ``a`` and ``b`` stays within
         bounds — declare design-intended contact (a press-fit modeled
         at its true interference) instead of fudging the model to
@@ -969,7 +969,7 @@ class Assembly:
         name: str | None = None,
         *,
         during: During = None,
-    ) -> "Assembly":
+    ) -> Assembly:
         """Assert that `a` and `b` DO interfere — a regression alarm
         for a known, accepted overlap. Fails if the overlap disappears
         (volume ≤ epsilon), which forces this assertion to be removed
@@ -991,7 +991,7 @@ class Assembly:
         b: str,
         tol_mm: float = 1e-6,
         name: str | None = None,
-    ) -> "Assembly":
+    ) -> Assembly:
         """Assert the anchors at dotted paths ``a`` and ``b`` resolve to
         the same position (within ``tol_mm``; orientation is ignored).
 
@@ -1051,7 +1051,7 @@ class Assembly:
         known_overlaps: Iterable[tuple[str, str, str]] = (),
         suppressed: Iterable[tuple[str, str]] = (),
         during: During = None,
-    ) -> "Assembly":
+    ) -> Assembly:
         """Assert no interference for every cross pair ``(a, b)`` with
         ``a`` from ``group_a`` and ``b`` from ``group_b``.
 
@@ -1111,7 +1111,7 @@ class Assembly:
         known_overlaps: Iterable[tuple[str, str, str]] = (),
         suppressed: Iterable[tuple[str, str]] = (),
         during: During = None,
-    ) -> "Assembly":
+    ) -> Assembly:
         """Assert no interference for every unordered pair within
         ``group`` (pair order follows the group's order: ``(names[i],
         names[j])`` for ``i < j``). Group selectors, ``known_overlaps``,

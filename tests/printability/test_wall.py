@@ -176,9 +176,8 @@ def _grooved_plate(angle_deg: float, depth: float, length: float = 30):
     half = depth * tan(radians(angle_deg / 2))
     with BuildPart() as p:
         Box(20, 20, 4)
-        with BuildSketch(Plane.XZ):
-            with Locations((0, 2)):
-                Polygon((-half, 0), (half, 0), (0, -depth), align=None)
+        with BuildSketch(Plane.XZ), Locations((0, 2)):
+            Polygon((-half, 0), (half, 0), (0, -depth), align=None)
         extrude(amount=length / 2, both=True, mode=Mode.SUBTRACT)
     return p.part
 
@@ -216,9 +215,8 @@ def test_groove_root_over_a_tilted_face_reads_the_perpendicular():
     # groove's bisector, which would read 0.5 / cos 20 = 0.532.
     with BuildPart() as p:
         Box(12, 20, 8)
-        with BuildSketch(Plane.XZ):
-            with Locations((0, 4)):
-                Polygon((-3, 0), (3, 0), (0, -3), align=None)
+        with BuildSketch(Plane.XZ), Locations((0, 4)):
+            Polygon((-3, 0), (3, 0), (0, -3), align=None)
         extrude(amount=10, both=True, mode=Mode.SUBTRACT)
         with Locations(Location((0, 0, 1), (0, 20, 0))):
             with Locations((0, 0, -10.5)):

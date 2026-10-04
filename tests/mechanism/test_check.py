@@ -278,9 +278,8 @@ def test_check_holds_assertions_over_a_declared_motion(tmp_path: Path, capsys):
 
 
 def _two_bodies():
-    with BuildPart() as p:
-        with Locations((0, 0, 0), (30, 0, 0)):
-            Box(10, 10, 10)
+    with BuildPart() as p, Locations((0, 0, 0), (30, 0, 0)):
+        Box(10, 10, 10)
     return p.part
 
 

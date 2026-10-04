@@ -5,7 +5,6 @@ from build123d import (
     BuildPart,
     BuildSketch,
     Cylinder,
-    Location,
     Locations,
     Mode,
     Plane,

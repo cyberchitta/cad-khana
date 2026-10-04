@@ -318,8 +318,9 @@ def test_anchors_coincident_tolerance_is_respected():
 def test_anchors_coincident_honors_joint_angle_applied_after_declaration():
     # The assertion re-resolves at evaluate time: declaring at angle 0
     # then rotating the jointed subtree moves its anchor off target.
-    from cad_khana.mechanism.assembly import RevoluteJoint
     from build123d import Axis
+
+    from cad_khana.mechanism.assembly import RevoluteJoint
 
     unit = Assembly().with_anchor("tip", Location((10, 0, 0)))
     top = (
@@ -1103,9 +1104,8 @@ def test_phased_group_pair_still_yields_to_a_declared_contact():
 
 
 def _two_bodies():
-    with BuildPart() as p:
-        with Locations((0, 0, 0), (30, 0, 0)):
-            Box(10, 10, 10)
+    with BuildPart() as p, Locations((0, 0, 0), (30, 0, 0)):
+        Box(10, 10, 10)
     return p.part
 
 

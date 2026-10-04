@@ -3,9 +3,9 @@ from __future__ import annotations
 import shutil
 import struct
 import subprocess
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Sequence
 
 from build123d import Location, Rot, export_step, export_stl
 from OCP.BRepMesh import BRepMesh_IncrementalMesh
