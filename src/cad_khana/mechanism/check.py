@@ -102,8 +102,7 @@ def check(
     # nothing read exactly like one that tested everything.
     for m in held.motions:
         print(
-            f"{m.name}: {m.samples} poses, "
-            f"moved {m.moved} of {m.movable} claims",
+            f"{m.name}: {m.samples} poses, moved {m.moved} of {m.movable} claims",
             file=sys.stderr,
         )
     if warnings:

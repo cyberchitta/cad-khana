@@ -49,12 +49,12 @@ def test_down_facing_ledge_is_flagged():
     assert overhang.max_angle_deg == approx(90.0, abs=0.01)
 
 
-
 def test_vertical_walls_are_not_an_overhang():
     # Tessellated cylinder walls carry ~1e-16° of solver noise.
     with BuildPart() as p:
         Cylinder(10, 30)
     assert detect_overhang(p.part) is None
+
 
 def test_up_axis_rotates_what_counts_as_down():
     # With up_axis along +X, the cube's -X face becomes the build-plate

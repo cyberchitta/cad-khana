@@ -21,9 +21,7 @@ def claims(names: tuple[str, ...], patterns: tuple[str, ...]) -> tuple[bool, ...
     """Which of ``names`` match any of ``patterns`` (``fnmatch`` globs,
     case-sensitive). Every pattern must match at least one name, so one
     typo among several is caught rather than silently evaluating less."""
-    unmatched = tuple(
-        p for p in patterns if not any(fnmatchcase(n, p) for n in names)
-    )
+    unmatched = tuple(p for p in patterns if not any(fnmatchcase(n, p) for n in names))
     if unmatched:
         raise SelectionError(
             f"no assertion matches {', '.join(map(repr, unmatched))} "

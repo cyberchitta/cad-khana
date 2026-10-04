@@ -48,11 +48,7 @@ def test_no_motion_is_one_pose():
 
 
 def test_a_claim_green_as_built_fails_over_the_motion_that_breaks_it():
-    a = (
-        _swung()
-        .assert_no_interference("post", "swing.arm")
-        .with_motion(_swing(90))
-    )
+    a = _swung().assert_no_interference("post", "swing.arm").with_motion(_swing(90))
     result = _only(a)
     assert result.passed is False
     assert result.poses.evaluated == 8  # as built + 7 samples
@@ -63,11 +59,7 @@ def test_a_claim_green_as_built_fails_over_the_motion_that_breaks_it():
 
 
 def test_a_claim_the_motion_never_moves_is_evaluated_once():
-    a = (
-        _swung()
-        .assert_no_interference("post", "base")
-        .with_motion(_swing(90))
-    )
+    a = _swung().assert_no_interference("post", "base").with_motion(_swing(90))
     result = _only(a)
     assert result.passed
     assert result.poses == PoseCounts(evaluated=8, distinct=1, in_phase=8, failed=0)
@@ -89,9 +81,7 @@ def test_a_pose_met_twice_is_evaluated_once():
         .with_motion(Motion.over_joint("turn", "swing", 0.0, 360.0, step=90.0))
     )
     # as built, 0, 90, 180, 270, 360 — three of them the same pose
-    assert _only(a).poses == PoseCounts(
-        evaluated=6, distinct=4, in_phase=6, failed=0
-    )
+    assert _only(a).poses == PoseCounts(evaluated=6, distinct=4, in_phase=6, failed=0)
 
 
 def test_value_is_the_worst_over_the_motion_and_says_where():
@@ -122,9 +112,7 @@ def test_worst_is_the_as_built_pose_when_the_motion_only_helps():
 def test_a_phased_requirement_counts_only_its_phase():
     a = (
         _swung()
-        .assert_no_interference(
-            "post", "swing.arm", during=JointWindow("swing", 0, 30)
-        )
+        .assert_no_interference("post", "swing.arm", during=JointWindow("swing", 0, 30))
         .with_motion(_swing(90))
     )
     result = _only(a)
@@ -154,7 +142,9 @@ def test_a_permission_forbids_the_contact_outside_its_window():
     a = (
         _swung()
         .assert_allowed_contact(
-            "post", "swing.arm", max_overlap_mm3=2000,
+            "post",
+            "swing.arm",
+            max_overlap_mm3=2000,
             during=JointWindow("swing", 80, 100),
         )
         .with_motion(_swing(90))
@@ -173,7 +163,9 @@ def test_a_window_on_a_joint_that_moves_neither_part_is_still_held():
         _swung()
         .with_part("block", _cube(), location=Location((5, 20, 0)))
         .assert_allowed_contact(
-            "post", "block", max_overlap_mm3=2000,
+            "post",
+            "block",
+            max_overlap_mm3=2000,
             during=JointWindow("swing", 0, 10),
         )
         .with_motion(_swing(90))
@@ -187,11 +179,15 @@ def test_layered_permissions_partition_the_motion():
     a = (
         _swung()
         .assert_allowed_contact(
-            "post", "swing.arm", max_overlap_mm3=5,
+            "post",
+            "swing.arm",
+            max_overlap_mm3=5,
             during=JointWindow("swing", 0, 50),
         )
         .assert_allowed_contact(
-            "post", "swing.arm", max_overlap_mm3=2000,
+            "post",
+            "swing.arm",
+            max_overlap_mm3=2000,
             during=JointWindow("swing", 50, 100),
         )
         .with_motion(_swing(90))
@@ -200,11 +196,7 @@ def test_layered_permissions_partition_the_motion():
 
 
 def test_a_units_motion_is_held_at_the_root_that_composes_it():
-    unit = (
-        _swung()
-        .assert_no_interference("post", "swing.arm")
-        .with_motion(_swing(90))
-    )
+    unit = _swung().assert_no_interference("post", "swing.arm").with_motion(_swing(90))
     held = hold(Assembly().with_subassembly("m05", unit))
     (result,) = held.assertions
     assert result.passed is False
@@ -219,9 +211,7 @@ def test_a_datum_plane_under_a_driven_joint_moves_with_it():
     arm = (
         Assembly()
         .with_part("tip", _cube(2), location=Location((40, 0, 0)))
-        .assert_distance(
-            "tip", Plane(origin=(0, 10, 0), z_dir=(0, 1, 0)), min_mm=5.0
-        )
+        .assert_distance("tip", Plane(origin=(0, 10, 0), z_dir=(0, 1, 0)), min_mm=5.0)
     )
     a = (
         Assembly()
@@ -296,9 +286,7 @@ def test_motion_summary_says_how_much_was_looked_at():
 
 
 def test_a_joint_no_motion_drives_is_warned():
-    assert {"kind": "joint_never_driven", "joint": "swing"} in hold(
-        _swung()
-    ).warnings
+    assert {"kind": "joint_never_driven", "joint": "swing"} in hold(_swung()).warnings
     assert not any(
         w["kind"] == "joint_never_driven"
         for w in hold(_swung().with_motion(_swing(90))).warnings
@@ -312,11 +300,7 @@ def test_rest_pose_only_interferences_are_marked_once_a_motion_is_declared():
 
 
 def test_absence_is_not_a_pose_count():
-    a = (
-        _swung()
-        .assert_no_interference("post", "swing.bolt")
-        .with_motion(_swing(90))
-    )
+    a = _swung().assert_no_interference("post", "swing.bolt").with_motion(_swing(90))
     result = _only(a)
     assert result.skipped == "absent_part"
     assert result.poses == PoseCounts(evaluated=0, distinct=0, in_phase=0, failed=0)
@@ -349,11 +333,7 @@ def _motion_named(assembly: Assembly, name: str):
 
 
 def test_a_motion_that_moves_a_claim_counts_it():
-    a = (
-        _swung()
-        .assert_no_interference("post", "swing.arm")
-        .with_motion(_swing(90))
-    )
+    a = _swung().assert_no_interference("post", "swing.arm").with_motion(_swing(90))
     summary = _motion_named(a, "swing_in")
     assert (summary.moved, summary.movable) == (1, 1)
     assert not [w for w in hold(a).warnings if w["kind"] == VACUOUS]
@@ -362,11 +342,7 @@ def test_a_motion_that_moves_a_claim_counts_it():
 def test_a_motion_no_claim_rides_is_warned_with_both_counts():
     """The tower case: a declared motion whose joint moves nothing any
     claim references. Every number is right and the run reads green."""
-    a = (
-        _swung()
-        .assert_no_interference("post", "base")
-        .with_motion(_swing(90))
-    )
+    a = _swung().assert_no_interference("post", "base").with_motion(_swing(90))
     summary = _motion_named(a, "swing_in")
     assert (summary.moved, summary.movable) == (0, 1)
     assert {
@@ -410,11 +386,7 @@ def test_movable_counts_only_the_pose_variant_claims():
 
 def test_an_absent_claim_is_not_movable():
     """It was never held, so it is not a claim this run could move."""
-    a = (
-        _swung()
-        .assert_no_interference("post", "swing.bolt")
-        .with_motion(_swing(90))
-    )
+    a = _swung().assert_no_interference("post", "swing.bolt").with_motion(_swing(90))
     summary = _motion_named(a, "swing_in")
     assert (summary.moved, summary.movable) == (0, 0)
 
@@ -446,9 +418,7 @@ def test_each_motion_is_counted_on_its_own():
     by_name = {m.name: m for m in held.motions}
     assert (by_name["swing_in"].moved, by_name["swing_in"].movable) == (1, 1)
     assert (by_name["nudge"].moved, by_name["nudge"].movable) == (0, 1)
-    assert [w["motion"] for w in held.warnings if w["kind"] == VACUOUS] == [
-        "nudge"
-    ]
+    assert [w["motion"] for w in held.warnings if w["kind"] == VACUOUS] == ["nudge"]
 
 
 def test_a_phase_change_counts_as_moved():
@@ -457,9 +427,7 @@ def test_a_phase_change_counts_as_moved():
     hardest, and a geometry-only definition would have missed it."""
     a = (
         _swung()
-        .assert_no_interference(
-            "post", "base", during=JointWindow("swing", 0.0, 40.0)
-        )
+        .assert_no_interference("post", "base", during=JointWindow("swing", 0.0, 40.0))
         .with_motion(_swing(90))
     )
     summary = _motion_named(a, "swing_in")
@@ -471,11 +439,7 @@ def test_a_fixed_keepout_is_held_against_the_part_at_every_pose():
     90deg, inside a keep-out fixed there at the root. The keep-out moves
     with nothing, so every pose that moves the tip is a new measurement."""
     zone = Pos(0, 40, 0) * Box(4, 4, 4)
-    a = (
-        _swung()
-        .assert_clear_of("swing.tip", zone, name="zone")
-        .with_motion(_swing(90))
-    )
+    a = _swung().assert_clear_of("swing.tip", zone, name="zone").with_motion(_swing(90))
     result = _only(a)
     assert result.passed is False
     assert result.poses.distinct == 7  # as built and the 0deg sample coincide
@@ -567,11 +531,17 @@ def test_only_keeps_the_phase_its_unselected_siblings_give_a_contact_claim():
     a = (
         _swung()
         .assert_allowed_contact(
-            "post", "swing.arm", max_overlap_mm3=5, name="low",
+            "post",
+            "swing.arm",
+            max_overlap_mm3=5,
+            name="low",
             during=JointWindow("swing", 0, 50),
         )
         .assert_allowed_contact(
-            "post", "swing.arm", max_overlap_mm3=2000, name="high",
+            "post",
+            "swing.arm",
+            max_overlap_mm3=2000,
+            name="high",
             during=JointWindow("swing", 50, 100),
         )
         .with_motion(_swing(90))

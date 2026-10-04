@@ -55,9 +55,7 @@ def _factory(t: float) -> Assembly:
         .with_subassembly(
             "door",
             door,
-            joint=RevoluteJoint(
-                axis=Axis((100, -80, 0), (0, 0, 1)), angle_deg=-60 * t
-            ),
+            joint=RevoluteJoint(axis=Axis((100, -80, 0), (0, 0, 1)), angle_deg=-60 * t),
         )
     )
 
@@ -181,7 +179,9 @@ def test_poses_between_keyframes_stay_on_the_arc(scene: _Scene, t: float):
 
 
 def test_revolute_groups_carry_no_translation_channel(scene: _Scene):
-    groups = [n.name for n in scene.gltf.nodes if (n.name or "").startswith("animgroup_")]
+    groups = [
+        n.name for n in scene.gltf.nodes if (n.name or "").startswith("animgroup_")
+    ]
     assert len(groups) == 3
     assert all(scene.channels(g) == {"rotation"} for g in groups)
 

@@ -115,9 +115,7 @@ def _wall_assertion(wall: WallSample | None, method: FDM) -> AssertionResult:
     return AssertionResult(name, passed, detail)
 
 
-def _overhang_assertion(
-    overhang: Overhang | None, method: FDM
-) -> AssertionResult:
+def _overhang_assertion(overhang: Overhang | None, method: FDM) -> AssertionResult:
     name = f"overhang_max:{method.overhang_max_deg}"
     if overhang is None:
         return AssertionResult(name, True, None)
@@ -323,7 +321,10 @@ def _coverages(
     waived = {k for f in features.values() for k in f.waive}
     traced = {
         "overhang_max": lambda: cover(
-            "overhang_max", _overhang_failures(part, method), features, _overhang_readings
+            "overhang_max",
+            _overhang_failures(part, method),
+            features,
+            _overhang_readings,
         ),
         "wall_min": lambda: cover(
             "wall_min", _wall_failures(samples, method), features, _wall_readings
@@ -376,10 +377,7 @@ def _warnings(
         for a in assertions
         for name, f in features.items()
         if (waiver := f.waiver(kind := _assertion_kind(a.name))) is not None
-        and (
-            a.passed is True
-            or (kind in coverages and name in coverages[kind].stale)
-        )
+        and (a.passed is True or (kind in coverages and name in coverages[kind].stale))
     )
     return waived + stale + stale_features
 
@@ -430,11 +428,7 @@ def inspect(
     checked = (
         _wall_assertion(wall, method),
         _overhang_assertion(overhang, method),
-    ) + (
-        ()
-        if solid_count is None
-        else (_solid_count_assertion(solids, solid_count),)
-    )
+    ) + (() if solid_count is None else (_solid_count_assertion(solids, solid_count),))
     _check_waivers({_assertion_kind(a.name) for a in checked}, waivers, features)
     coverages = _coverages(checked, features, part, samples, method)
     assertions = _apply_waivers(

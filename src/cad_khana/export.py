@@ -219,9 +219,7 @@ def _gltf_transform(args: list[str]) -> None:
             "gltf-transform not on PATH (install with "
             "`bun install -g @gltf-transform/cli`)."
         )
-    result = subprocess.run(
-        [tool, *args], capture_output=True, text=True
-    )
+    result = subprocess.run([tool, *args], capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(
             f"gltf-transform {args[0]} failed (exit {result.returncode}):\n"
@@ -240,8 +238,10 @@ def _gltf_transform_join(glb_path: Path) -> None:
             "join",
             str(glb_path),
             str(glb_path),
-            "--keepMeshes", "true",
-            "--keepNamed", "true",
+            "--keepMeshes",
+            "true",
+            "--keepNamed",
+            "true",
         ]
     )
 
@@ -254,8 +254,10 @@ def _gltf_transform_draco(glb_path: Path, level: int) -> None:
             "draco",
             str(glb_path),
             str(glb_path),
-            "--encode-speed", str(10 - level),
-            "--decode-speed", "5",
+            "--encode-speed",
+            str(10 - level),
+            "--decode-speed",
+            "5",
         ]
     )
 
@@ -328,8 +330,12 @@ def export_animated_glb(
         pr, pp = l_ref.position, l_probe.position
         orr, op = l_ref.orientation, l_probe.orientation
         return (
-            abs(pr.X - pp.X) > tol or abs(pr.Y - pp.Y) > tol or abs(pr.Z - pp.Z) > tol
-            or abs(orr.X - op.X) > tol or abs(orr.Y - op.Y) > tol or abs(orr.Z - op.Z) > tol
+            abs(pr.X - pp.X) > tol
+            or abs(pr.Y - pp.Y) > tol
+            or abs(pr.Z - pp.Z) > tol
+            or abs(orr.X - op.X) > tol
+            or abs(orr.Y - op.Y) > tol
+            or abs(orr.Z - op.Z) > tol
         )
 
     ref_placed = ref_assembly.placed_parts
@@ -337,7 +343,8 @@ def export_animated_glb(
     probe = factory(ts_list[len(ts_list) // 2])
     probe_placed = probe.placed_parts
     dynamic = {
-        p.name for p in probe_placed
+        p.name
+        for p in probe_placed
         if p.name in ref_locs and _moved(ref_locs[p.name], p.location)
     }
     violators = [
@@ -493,7 +500,10 @@ def _group_tracks(
         return [
             Location()
             if path is None
-            else to_world * f[path].frame * first[path].frame.inverse() * to_world.inverse()
+            else to_world
+            * f[path].frame
+            * first[path].frame.inverse()
+            * to_world.inverse()
             for f in poses
         ]
 
@@ -507,7 +517,12 @@ def _group_tracks(
             for up, own in zip(_drift(group.parent), _drift(group.path))
         ]
         trs = [
-            (tuple(p + rc - s for p, rc, s in zip(pos, _quat_rotate(q, pivot), seat)), q)
+            (
+                tuple(
+                    p + rc - s for p, rc, s in zip(pos, _quat_rotate(q, pivot), seat)
+                ),
+                q,
+            )
             for pos, q in local
         ]
         _align_quaternion_hemispheres(trs)
@@ -558,9 +573,7 @@ def _inject_animation_into_glb(
 
     def _add_buffer_view(offset: int, length: int) -> int:
         gltf.bufferViews.append(
-            pygltflib.BufferView(
-                buffer=0, byteOffset=offset, byteLength=length
-            )
+            pygltflib.BufferView(buffer=0, byteOffset=offset, byteLength=length)
         )
         return len(gltf.bufferViews) - 1
 
@@ -634,10 +647,13 @@ def _inject_animation_into_glb(
         for member_id in member_ids:
             member = gltf.nodes[member_id]
             member.translation = [
-                t - c for t, c in zip(member.translation or [0.0, 0.0, 0.0], track.pivot)
+                t - c
+                for t, c in zip(member.translation or [0.0, 0.0, 0.0], track.pivot)
             ]
         nested_ids = [
-            group_node[t.group.path] for t in tracks if t.group.parent == track.group.path
+            group_node[t.group.path]
+            for t in tracks
+            if t.group.parent == track.group.path
         ]
         gltf.nodes.append(
             pygltflib.Node(
@@ -654,7 +670,10 @@ def _inject_animation_into_glb(
 
         _add_sampler_channel(
             [c for _, q in track.trs for c in q],
-            node_idx, "rotation", pygltflib.VEC4, 4,
+            node_idx,
+            "rotation",
+            pygltflib.VEC4,
+            4,
         )
         p0 = track.trs[0][0]
         moves_trans = any(
@@ -663,7 +682,10 @@ def _inject_animation_into_glb(
         if moves_trans:
             _add_sampler_channel(
                 [c for p, _ in track.trs for c in p],
-                node_idx, "translation", pygltflib.VEC3, 3,
+                node_idx,
+                "translation",
+                pygltflib.VEC3,
+                3,
             )
 
     gltf.scenes[0].nodes = scene_root_ids
@@ -680,28 +702,31 @@ def _inject_animation_into_glb(
             abs(p[k] - p0[k]) > _EPS_POS_MM for p, _ in ss[1:] for k in range(3)
         )
         moves_rot = any(
-            sum((q[k] - q0[k]) ** 2 for k in range(4)) > _EPS_QUAT
-            for _, q in ss[1:]
+            sum((q[k] - q0[k]) ** 2 for k in range(4)) > _EPS_QUAT for _, q in ss[1:]
         )
 
         if moves_trans:
             _add_sampler_channel(
                 [c for pos, _ in ss for c in pos],
-                node_idx, "translation", pygltflib.VEC3, 3,
+                node_idx,
+                "translation",
+                pygltflib.VEC3,
+                3,
             )
         if moves_rot:
             _add_sampler_channel(
                 [c for _, q in ss for c in q],
-                node_idx, "rotation", pygltflib.VEC4, 4,
+                node_idx,
+                "rotation",
+                pygltflib.VEC4,
+                4,
             )
 
     if not samplers:
         return
 
     gltf.animations.append(
-        pygltflib.Animation(
-            samplers=samplers, channels=channels, name=animation_name
-        )
+        pygltflib.Animation(samplers=samplers, channels=channels, name=animation_name)
     )
     gltf.buffers[0].byteLength = len(blob)
     gltf.set_binary_blob(bytes(blob))

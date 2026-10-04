@@ -146,7 +146,9 @@ def cover(
         for n in waiving
         if (
             breach := "; ".join(
-                features[n].waiver(kind).breaches(
+                features[n]
+                .waiver(kind)
+                .breaches(
                     readings(
                         tuple(
                             f
@@ -161,7 +163,9 @@ def cover(
     reasons = tuple(
         r
         or tuple(
-            f"{n}'s waiver not applied: {breaches[n]}" for n in sorted(fn) if n in breaches
+            f"{n}'s waiver not applied: {breaches[n]}"
+            for n in sorted(fn)
+            if n in breaches
         )
         for fn, r in zip(names, refusals)
     )

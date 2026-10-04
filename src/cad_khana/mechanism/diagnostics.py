@@ -157,9 +157,7 @@ class AssertionResult:
 def skipped_counts(results: tuple[AssertionResult, ...]) -> dict[str, int]:
     """Skipped assertions per class — every class listed, zeros
     included, so the shape is stable under ``khana diff``."""
-    return {
-        kind: sum(r.skipped == kind for r in results) for kind in SKIP_CLASSES
-    }
+    return {kind: sum(r.skipped == kind for r in results) for kind in SKIP_CLASSES}
 
 
 @dataclass(frozen=True)
@@ -182,9 +180,7 @@ class Diagnostics:
     error: str | None = None
     hint: str | None = None
     selection: Selection | None = None
-    skipped_counts: dict[str, int] = field(
-        default_factory=lambda: skipped_counts(())
-    )
+    skipped_counts: dict[str, int] = field(default_factory=lambda: skipped_counts(()))
     motions: tuple[MotionSummary, ...] = ()
     parts: dict[str, PartDiagnostics] = field(default_factory=dict)
     interferences: tuple[Interference, ...] | None = ()
@@ -294,9 +290,7 @@ def compute(assembly: Assembly, pairs: bool = True) -> Diagnostics:
     """Part diagnostics, and with ``pairs`` the all-pairs interference
     pass; without it ``interferences`` is ``None`` — not computed, which
     ``[]`` (computed, none found) must never be mistaken for."""
-    parts = {
-        p.name: _part_diagnostics(_placed(p)) for p in assembly.placed_parts
-    }
+    parts = {p.name: _part_diagnostics(_placed(p)) for p in assembly.placed_parts}
     return Diagnostics(
         parts=parts, interferences=interferences(assembly) if pairs else None
     )

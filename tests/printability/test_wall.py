@@ -243,7 +243,9 @@ def test_crease_running_out_at_a_mixed_corner_adds_no_false_minimum():
     # fanned from that corner left through the end face microns away.
     with BuildPart() as p:
         Box(40, 40, 6, align=(Align.CENTER, Align.CENTER, Align.MAX))
-        Box(20, 20, 6, align=(Align.CENTER, Align.CENTER, Align.MAX), mode=Mode.SUBTRACT)
+        Box(
+            20, 20, 6, align=(Align.CENTER, Align.CENTER, Align.MAX), mode=Mode.SUBTRACT
+        )
         with Locations((0, -13, 0)):
             Box(20, 6, 30, align=(Align.CENTER, Align.CENTER, Align.MIN))
     assert min_wall(p.part).thickness_mm == approx(6.0, abs=0.02)

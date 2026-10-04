@@ -20,9 +20,7 @@ if TYPE_CHECKING:
 def _with_reason(failure: str | None, reason: str | None) -> str | None:
     """A contact claim's ``detail``: the failure if any, then the reason,
     which is recorded on a pass as well."""
-    return "; ".join(
-        s for s in (failure, reason and f"reason: {reason}") if s
-    ) or None
+    return "; ".join(s for s in (failure, reason and f"reason: {reason}") if s) or None
 
 
 def _extent(shape: Part, d: Vector) -> tuple[float, float]:
@@ -76,9 +74,7 @@ class JointWindow:
     max_deg: float | None = None
 
     def contains(self, angle_deg: float) -> bool:
-        return (
-            self.min_deg is None or angle_deg >= self.min_deg - BOUND_EPSILON
-        ) and (
+        return (self.min_deg is None or angle_deg >= self.min_deg - BOUND_EPSILON) and (
             self.max_deg is None or angle_deg <= self.max_deg + BOUND_EPSILON
         )
 
@@ -225,9 +221,7 @@ class AllowedContact:
             max_overlap_mm3=INTERFERENCE_VOLUME_EPSILON_MM3,
             min_overlap_mm3=None,
             reason="; ".join(
-                s
-                for s in (self.reason, f"contact declared only during {phase}")
-                if s
+                s for s in (self.reason, f"contact declared only during {phase}") if s
             ),
         )
 
@@ -313,9 +307,7 @@ class Distance:
             else _qualified_plane(self.b, location)
         )
         along = (
-            None
-            if self.along is None
-            else _qualified_direction(self.along, location)
+            None if self.along is None else _qualified_direction(self.along, location)
         )
         return replace(
             self,
@@ -345,9 +337,7 @@ class Distance:
             if above
             else None
         )
-        return AssertionResult(
-            self.name, not (below or above), detail, value=measured
-        )
+        return AssertionResult(self.name, not (below or above), detail, value=measured)
 
     def slack(self, value: float) -> float:
         return min(
@@ -560,19 +550,13 @@ class SolidCount:
         return (self.part,)
 
     def qualified(self, prefix: str, location: Location) -> "SolidCount":
-        return replace(
-            self, part=f"{prefix}.{self.part}", name=f"{prefix}.{self.name}"
-        )
+        return replace(self, part=f"{prefix}.{self.part}", name=f"{prefix}.{self.name}")
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
         count = len(parts[self.part].solids())
         passed = count == self.eq
         failure = f"{count} solids, expected {self.eq}"
-        detail = (
-            None
-            if passed
-            else "; ".join(s for s in (failure, self.detail) if s)
-        )
+        detail = None if passed else "; ".join(s for s in (failure, self.detail) if s)
         return AssertionResult(self.name, passed, detail, value=float(count))
 
 
@@ -585,6 +569,7 @@ class ExpectedInterference:
     this only when a real-world design constraint leaves a documented
     overlap that hasn't been resolved yet.
     """
+
     a: str
     b: str
     name: str
@@ -610,9 +595,7 @@ class ExpectedInterference:
             if passed
             else f"expected interference absent (volume {volume:.4f}mm^3)"
         )
-        return AssertionResult(
-            self.name, passed, _with_reason(failure, self.reason)
-        )
+        return AssertionResult(self.name, passed, _with_reason(failure, self.reason))
 
 
 @dataclass(frozen=True)
@@ -711,14 +694,10 @@ class Phased:
     def state(self, values: dict[str, float]) -> str:
         """Where the joints stand against the windows, for a detail
         line: ``"swing at 90deg"``."""
-        return ", ".join(
-            f"{w.path} at {values[w.path]:g}deg" for w in self.during
-        )
+        return ", ".join(f"{w.path} at {values[w.path]:g}deg" for w in self.during)
 
 
-Assertion = (
-    PartAssertion | Phased | AnchorsCoincident | ScalarClaim | SolidCount
-)
+Assertion = PartAssertion | Phased | AnchorsCoincident | ScalarClaim | SolidCount
 
 # Where a claim stands at one pose. ``FORBID`` is a permission outside
 # its phase with no sibling permission in force; ``OUT`` is a lapsed
@@ -789,9 +768,7 @@ def _in_force(claim: Assertion, values: dict[str, float]) -> bool:
     )
 
 
-def phase(
-    assertion: Assertion, values: dict[str, float], contacts: Contacts
-) -> str:
+def phase(assertion: Assertion, values: dict[str, float], contacts: Contacts) -> str:
     if not isinstance(assertion, Phased):
         return IN
     if assertion.absent_joints(values):
@@ -890,6 +867,4 @@ def evaluate(assembly: Assembly) -> tuple[AssertionResult, ...]:
     values = assembly.joint_angles
     assertions = assembly.all_assertions
     contacts = contact_claims(assertions)
-    return tuple(
-        evaluate_one(a, assembly, parts, values, contacts) for a in assertions
-    )
+    return tuple(evaluate_one(a, assembly, parts, values, contacts) for a in assertions)

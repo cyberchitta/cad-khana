@@ -133,10 +133,7 @@ class _Frame:
 
     @cached_property
     def parts(self) -> dict[str, Part]:
-        return {
-            p.name: p.part.moved(p.location)
-            for p in self.assembly.placed_parts
-        }
+        return {p.name: p.part.moved(p.location) for p in self.assembly.placed_parts}
 
     @cached_property
     def values(self) -> dict[str, float]:
@@ -244,11 +241,7 @@ class _Index:
         )
 
     def affected(self, rest: _Frame, frame: _Frame) -> tuple[int, ...]:
-        moved = (
-            n
-            for n, sig in frame.signatures.items()
-            if rest.signatures[n] != sig
-        )
+        moved = (n for n, sig in frame.signatures.items() if rest.signatures[n] != sig)
         turned = (j for j, v in frame.values.items() if rest.values[j] != v)
         return tuple(
             sorted(
@@ -271,9 +264,7 @@ def _phase_joints(assertion: Assertion, contacts: Contacts) -> set[str]:
         if isinstance(assertion.inner, AllowedContact)
         else (assertion,)
     )
-    return {
-        w.path for c in claims if isinstance(c, Phased) for w in c.during
-    }
+    return {w.path for c in claims if isinstance(c, Phased) for w in c.during}
 
 
 def _rank(visit: _Visit) -> tuple[int, float, int]:
@@ -374,9 +365,7 @@ def _summary(
             path: JointRange(
                 min=min(vs),
                 max=max(vs),
-                max_step=max(
-                    (abs(b - a) for a, b in zip(vs, vs[1:])), default=0.0
-                ),
+                max_step=max((abs(b - a) for a, b in zip(vs, vs[1:])), default=0.0),
             )
             for path, vs in series.items()
         },
@@ -394,9 +383,7 @@ def _warnings(
     driven = {path for s in summaries for path in s.joints_deg}
     return (
         tuple(
-            {"kind": "joint_never_driven", "joint": j}
-            for j in rest
-            if j not in driven
+            {"kind": "joint_never_driven", "joint": j} for j in rest if j not in driven
         )
         + tuple(
             {"kind": "never_in_phase", "assertion": r.name}
@@ -435,11 +422,7 @@ def hold(assembly: Assembly, only: tuple[str, ...] = ()) -> Held:
     samples = (_Sample(0, None, None, {}),) + tuple(
         _Sample(order, m.name, t, pose)
         for order, (m, t, pose) in enumerate(
-            (
-                (m, t, pose)
-                for m, poses in schedules
-                for t, pose in zip(m.ts, poses)
-            ),
+            ((m, t, pose) for m, poses in schedules for t, pose in zip(m.ts, poses)),
             start=1,
         )
     )
@@ -481,8 +464,7 @@ def hold(assembly: Assembly, only: tuple[str, ...] = ()) -> Held:
             later.setdefault(i, []).append(visit(i, frame))
 
     results = tuple(
-        _rolled(v, tuple(later.get(i, ())), len(samples))
-        for i, v in enumerate(at_rest)
+        _rolled(v, tuple(later.get(i, ())), len(samples)) for i, v in enumerate(at_rest)
     )
     movable = tuple(
         not _pose_invariant(a) and v.result.skipped not in ABSENCES

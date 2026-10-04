@@ -35,11 +35,7 @@ def test_joint_groups_one_group_per_top_level_joint():
 def test_joint_groups_nested_joints_produce_non_overlapping_groups():
     # rotor → platform_dump (nested joint). Each part must appear in
     # exactly one group — the innermost jointed ancestor's group.
-    platform = (
-        Assembly()
-        .with_part("acrylic", _cube())
-        .with_part("frame", _cube())
-    )
+    platform = Assembly().with_part("acrylic", _cube()).with_part("frame", _cube())
     rotor = (
         Assembly()
         .with_part("hub", _cube())
@@ -74,8 +70,8 @@ def test_joint_groups_nested_joints_produce_non_overlapping_groups():
 def test_joint_groups_non_jointed_subassembly_is_absorbed():
     # A non-jointed sub-assembly's parts belong to the nearest jointed
     # ancestor; they are NOT a separate group.
-    static_wrapper = Assembly().with_part("inner_a", _cube()).with_part(
-        "inner_b", _cube()
+    static_wrapper = (
+        Assembly().with_part("inner_a", _cube()).with_part("inner_b", _cube())
     )
     rotor = (
         Assembly()

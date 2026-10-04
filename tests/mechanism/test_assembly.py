@@ -238,9 +238,7 @@ def test_placed_parts_flattens_root_only_assembly():
 
 def test_placed_parts_composes_subassembly_location():
     leaf = Assembly().with_part("inner", _cube(), location=Location((1, 0, 0)))
-    parent = Assembly().with_subassembly(
-        "group", leaf, location=Location((10, 0, 0))
-    )
+    parent = Assembly().with_subassembly("group", leaf, location=Location((10, 0, 0)))
     placed = parent.placed_parts
     assert len(placed) == 1
     assert placed[0].name == "group.inner"
@@ -290,9 +288,7 @@ def test_revolute_joint_transform_about_offset_x_axis_tilts_outer_edge_down():
     # +30°. Point at (0, -185, 0) — the platform's far outer edge —
     # should tip in (Y less negative) and DOWN (Z negative); the
     # screw-form Location would put it nowhere near.
-    j = RevoluteJoint(
-        axis=Axis((0, -65, -22.5), (1, 0, 0)), angle_deg=30.0
-    )
+    j = RevoluteJoint(axis=Axis((0, -65, -22.5), (1, 0, 0)), angle_deg=30.0)
     p = Pos(0, -185, 0) * _cube()
     bb = p.moved(j.transform).bounding_box()
     # Expected from T·R·T⁻¹ closed-form:
@@ -381,9 +377,7 @@ def test_with_joint_angle_dotted_path_missing_segment_raises():
 
 
 def test_joint_rotates_subassembly_parts_in_placed_parts():
-    leaf = Assembly().with_part(
-        "inner", _cube(), location=Location((10, 0, 0))
-    )
+    leaf = Assembly().with_part("inner", _cube(), location=Location((10, 0, 0)))
     parent = Assembly().with_subassembly(
         "group", leaf, joint=RevoluteJoint(axis=Axis.Z, angle_deg=90.0)
     )
@@ -401,9 +395,7 @@ def test_with_materials_recurses_into_subassemblies():
         .with_part("outer", _cube(), material="plastic_matte")
         .with_subassembly("group", leaf)
     )
-    overridden = parent.with_materials(
-        {"group.inner": "steel", "outer": "aluminium"}
-    )
+    overridden = parent.with_materials({"group.inner": "steel", "outer": "aluminium"})
     assert overridden.parts[0].material == "aluminium"
     assert overridden.subassemblies[0].assembly.parts[0].material == "steel"
 
@@ -471,9 +463,7 @@ def test_between_suppressed_skips_order_independent():
 
 def test_between_overlapping_groups_dedupes_and_skips_same_name():
     base = _three_part_assembly()
-    grouped = base.assert_no_interference_between(
-        ("a1", "a2"), ("a2", "a1", "b1")
-    )
+    grouped = base.assert_no_interference_between(("a1", "a2"), ("a2", "a1", "b1"))
     assert [a.name for a in grouped.assertions] == [
         "no_interference:a1/a2",
         "no_interference:a1/b1",
@@ -514,9 +504,7 @@ def test_between_skips_pair_carrying_an_allowed_contact():
         "b1", "a1", max_overlap_mm3=5, reason="press fit"
     )
     grouped = base.assert_no_interference_between(("a1", "a2"), ("b1",))
-    assert [a.name for a in grouped.all_assertions[1:]] == [
-        "no_interference:a2/b1"
-    ]
+    assert [a.name for a in grouped.all_assertions[1:]] == ["no_interference:a2/b1"]
 
 
 def test_within_skips_phased_allowed_contact_pair():
@@ -545,9 +533,7 @@ def test_group_skips_contact_declared_in_a_subassembly():
         .with_subassembly("unit", sub)
         .with_part("outside", _cube(), location=Location((0, 0, 40)))
     )
-    grouped = top.assert_no_interference_within(
-        ("unit.pad", "unit.block", "outside")
-    )
+    grouped = top.assert_no_interference_within(("unit.pad", "unit.block", "outside"))
     assert [a.name for a in grouped.all_assertions] == [
         "no_interference:unit.pad/outside",
         "no_interference:unit.block/outside",
@@ -578,15 +564,15 @@ def test_group_skip_honors_a_contact_declared_a_level_above():
         .with_part("block", _cube(), location=Location((0, 0, 20)))
         .assert_no_interference_within(("pad", "block"))
     )
-    top = Assembly().with_subassembly("unit", sub).assert_allowed_contact(
-        "unit.pad", "unit.block", max_overlap_mm3=5
+    top = (
+        Assembly()
+        .with_subassembly("unit", sub)
+        .assert_allowed_contact("unit.pad", "unit.block", max_overlap_mm3=5)
     )
     assert [a.name for a in top.all_assertions] == [
         "allowed_contact:unit.pad/unit.block<=5"
     ]
-    assert [a.name for a in sub.all_assertions] == [
-        "no_interference:pad/block"
-    ]
+    assert [a.name for a in sub.all_assertions] == ["no_interference:pad/block"]
 
 
 def test_hand_written_no_interference_is_not_dropped_by_a_contact():
@@ -605,15 +591,11 @@ def test_hand_written_no_interference_is_not_dropped_by_a_contact():
 
 
 def test_known_overlap_overrides_the_allowed_contact_skip():
-    base = _three_part_assembly().assert_allowed_contact(
-        "a1", "b1", max_overlap_mm3=5
-    )
+    base = _three_part_assembly().assert_allowed_contact("a1", "b1", max_overlap_mm3=5)
     grouped = base.assert_no_interference_between(
         ("a1",), ("b1",), known_overlaps=(("a1", "b1", "also alarmed"),)
     )
-    assert [a.name for a in grouped.all_assertions[1:]] == [
-        "interference:a1/b1"
-    ]
+    assert [a.name for a in grouped.all_assertions[1:]] == ["interference:a1/b1"]
 
 
 def test_group_list_expands_a_subtree_entry_in_place():
@@ -704,12 +686,16 @@ def test_local_axis_equals_parent_axis_through_location():
     sub = Assembly().with_part("tip", _cube(), location=Location((0, 0, 30)))
     place = Location((50, 0, 0), (0, 0, 1), 90)
     local = Assembly().with_subassembly(
-        "u", sub, location=place,
+        "u",
+        sub,
+        location=place,
         joint=RevoluteJoint(axis=Axis.X, angle_deg=35.0, frame="local"),
     )
     parent_axis = Axis((50, 0, 0), (0, 1, 0))
     parent = Assembly().with_subassembly(
-        "u", sub, location=place,
+        "u",
+        sub,
+        location=place,
         joint=RevoluteJoint(axis=parent_axis, angle_deg=35.0, frame="parent"),
     )
     lp = _placed_position(local, "u.tip")
@@ -728,11 +714,7 @@ def test_joint_frame_validated():
 def test_placed_parts_qualifies_names_at_depth():
     leaf = Assembly().with_part("frame", _cube())
     mid = Assembly().with_subassembly("platform_image", leaf)
-    top = (
-        Assembly()
-        .with_part("bench", _cube())
-        .with_subassembly("rotor", mid)
-    )
+    top = Assembly().with_part("bench", _cube()).with_subassembly("rotor", mid)
     assert [p.name for p in top.placed_parts] == [
         "bench",
         "rotor.platform_image.frame",
@@ -749,16 +731,12 @@ def test_same_leaf_name_in_two_subtrees_does_not_shadow():
     top = (
         Assembly()
         .with_subassembly("platform_image", cartridge())
-        .with_subassembly(
-            "platform_dump", cartridge(), location=Location((100, 0, 0))
-        )
+        .with_subassembly("platform_dump", cartridge(), location=Location((100, 0, 0)))
     )
     names = [p.name for p in top.placed_parts]
     assert names == ["platform_image.frame", "platform_dump.frame"]
     # And a group assertion across the two paths evaluates both parts.
-    checked = top.assert_no_interference_between(
-        "platform_image", "platform_dump"
-    )
+    checked = top.assert_no_interference_between("platform_image", "platform_dump")
     results = evaluate(checked)
     assert len(results) == 1
     assert results[0].passed
@@ -769,9 +747,7 @@ def test_with_materials_keys_on_path_at_depth():
     top = Assembly().with_subassembly(
         "rotor", Assembly().with_subassembly("platform_image", leaf)
     )
-    overridden = top.with_materials(
-        {"rotor.platform_image.frame": "steel"}
-    )
+    overridden = top.with_materials({"rotor.platform_image.frame": "steel"})
     placed = overridden.placed_parts
     assert placed[0].material == "steel"
     # A bare leaf name no longer matches a nested part.
@@ -837,26 +813,20 @@ def test_with_detailed_geometry_dotted_addition_evaluates_the_units_claim():
         .with_part("bracket", _cube(10))
         .assert_no_interference("bolt", "bracket")
     )
-    top = Assembly().with_subassembly(
-        "unit", unit, location=Location((100, 0, 0))
-    )
+    top = Assembly().with_subassembly("unit", unit, location=Location((100, 0, 0)))
     assert [r.passed for r in evaluate(top)] == [None]
     detailed = top.with_detailed_geometry({"unit.bolt": _bolt_at(5)})
     assert [r.passed for r in evaluate(detailed)] == [False]
 
 
 def test_with_detailed_geometry_addition_under_unknown_prefix_raises():
-    top = Assembly().with_subassembly(
-        "unit", Assembly().with_part("rail", _cube(10))
-    )
+    top = Assembly().with_subassembly("unit", Assembly().with_part("rail", _cube(10)))
     with pytest.raises(KeyError, match="nope"):
         top.with_detailed_geometry({"nope.bolt": _bolt_at(5)})
 
 
 def test_with_detailed_geometry_addition_named_like_a_sibling_raises():
-    top = Assembly().with_subassembly(
-        "unit", Assembly().with_part("rail", _cube(10))
-    )
+    top = Assembly().with_subassembly("unit", Assembly().with_part("rail", _cube(10)))
     with pytest.raises(ValueError, match="duplicate sibling name"):
         top.with_detailed_geometry({"unit": _bolt_at(5)})
 
@@ -950,9 +920,7 @@ def test_with_anchor_and_root_resolution():
 
 def test_anchor_resolves_through_subassembly_placement():
     unit = Assembly().with_anchor("datum", Location((10, 0, 0)))
-    top = Assembly().with_subassembly(
-        "m05", unit, location=Location((100, 0, 5))
-    )
+    top = Assembly().with_subassembly("m05", unit, location=Location((100, 0, 5)))
     pos = top.anchor("m05.datum").position
     assert abs(pos.X - 110) < 1e-9
     assert abs(pos.Z - 5) < 1e-9

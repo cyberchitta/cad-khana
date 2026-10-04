@@ -46,9 +46,7 @@ def test_view_pushes_named_parts_to_viewer(
     assert calls == [{"count": 2, "names": ["big", "small"]}]
 
 
-def test_check_does_not_push_to_viewer(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_check_does_not_push_to_viewer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Each verb performs its own effect: pushing is `khana view`."""
     calls: list[None] = []
     monkeypatch.setattr(viewer, "show", lambda *a, **kw: calls.append(None))
@@ -91,14 +89,19 @@ def test_draw_writes_png_views(tmp_path: Path):
     views = tmp_path / "views"
     module = tmp_path / "asm.py"
     module.write_text(_cube_module())
-    result = runner.invoke(
-        app, ["draw", str(module), "--views-dir", str(views)]
-    )
+    result = runner.invoke(app, ["draw", str(module), "--views-dir", str(views)])
     assert result.exit_code == 0, result.output
     expected = {
-        "top.png", "bottom.png", "front.png", "back.png",
-        "left.png", "right.png",
-        "iso_ne.png", "iso_nw.png", "iso_se.png", "iso_sw.png",
+        "top.png",
+        "bottom.png",
+        "front.png",
+        "back.png",
+        "left.png",
+        "right.png",
+        "iso_ne.png",
+        "iso_nw.png",
+        "iso_se.png",
+        "iso_sw.png",
     }
     assert expected == {p.name for p in views.iterdir()}
 
@@ -238,9 +241,16 @@ def test_draw_svg_format_writes_svg_views(tmp_path: Path):
     )
     assert result.exit_code == 0, result.output
     expected = {
-        "top.svg", "bottom.svg", "front.svg", "back.svg",
-        "left.svg", "right.svg",
-        "iso_ne.svg", "iso_nw.svg", "iso_se.svg", "iso_sw.svg",
+        "top.svg",
+        "bottom.svg",
+        "front.svg",
+        "back.svg",
+        "left.svg",
+        "right.svg",
+        "iso_ne.svg",
+        "iso_nw.svg",
+        "iso_se.svg",
+        "iso_sw.svg",
     }
     actual = {p.name for p in views.iterdir()}
     assert expected == actual
@@ -270,8 +280,16 @@ def test_draw_both_format_writes_png_and_svg(tmp_path: Path):
     assert result.exit_code == 0, result.output
     names = {p.name for p in views.iterdir()}
     for view in (
-        "top", "bottom", "front", "back", "left", "right",
-        "iso_ne", "iso_nw", "iso_se", "iso_sw",
+        "top",
+        "bottom",
+        "front",
+        "back",
+        "left",
+        "right",
+        "iso_ne",
+        "iso_nw",
+        "iso_se",
+        "iso_sw",
     ):
         assert f"{view}.png" in names
         assert f"{view}.svg" in names
@@ -281,9 +299,7 @@ def test_draw_default_format_unchanged(tmp_path: Path):
     views = tmp_path / "views"
     module = tmp_path / "asm.py"
     module.write_text(_cube_module())
-    result = runner.invoke(
-        app, ["draw", str(module), "--views-dir", str(views)]
-    )
+    result = runner.invoke(app, ["draw", str(module), "--views-dir", str(views)])
     assert result.exit_code == 0, result.output
     names = {p.name for p in views.iterdir()}
     assert any(n.endswith(".png") for n in names)
@@ -296,8 +312,15 @@ def test_draw_svg_themeable_adds_classes(tmp_path: Path):
     module.write_text(_cube_module())
     result = runner.invoke(
         app,
-        ["draw", str(module), "--views-dir", str(views),
-         "--format", "svg", "--themeable"],
+        [
+            "draw",
+            str(module),
+            "--views-dir",
+            str(views),
+            "--format",
+            "svg",
+            "--themeable",
+        ],
     )
     assert result.exit_code == 0, result.output
     svg = (views / "front.svg").read_text()
@@ -395,11 +418,18 @@ def test_draw_svg_cylinder_themeable_classes_on_paths(tmp_path: Path):
     module.write_text(_cylinder_module())
     runner.invoke(
         app,
-        ["draw", str(module), "--views-dir", str(views),
-         "--format", "svg", "--themeable"],
+        [
+            "draw",
+            str(module),
+            "--views-dir",
+            str(views),
+            "--format",
+            "svg",
+            "--themeable",
+        ],
     )
     svg = (views / "iso_se.svg").read_text()
-    assert '<path' in svg
+    assert "<path" in svg
     import re
 
     for path_tag in re.findall(r"<path[^/]*/>", svg):
@@ -460,13 +490,31 @@ def test_draw_part_scopes_to_named_part(tmp_path: Path):
 
     runner.invoke(
         app,
-        ["draw", str(module), "--views-dir", str(views_all),
-         "--format", "svg", "--view", "front"],
+        [
+            "draw",
+            str(module),
+            "--views-dir",
+            str(views_all),
+            "--format",
+            "svg",
+            "--view",
+            "front",
+        ],
     )
     result = runner.invoke(
         app,
-        ["draw", str(module), "--views-dir", str(views_part),
-         "--format", "svg", "--view", "front", "--part", "small"],
+        [
+            "draw",
+            str(module),
+            "--views-dir",
+            str(views_part),
+            "--format",
+            "svg",
+            "--view",
+            "front",
+            "--part",
+            "small",
+        ],
     )
     assert result.exit_code == 0, result.output
     # Both runs produce a front.svg; the two SVGs must differ in their
@@ -498,8 +546,13 @@ def test_status_emits_required_keys(monkeypatch: pytest.MonkeyPatch):
     result = runner.invoke(app, ["status"])
     data = json.loads(result.stdout)
     assert {
-        "cad_khana", "python", "build123d", "bd_warehouse",
-        "ocp_vscode", "schema_version", "status",
+        "cad_khana",
+        "python",
+        "build123d",
+        "bd_warehouse",
+        "ocp_vscode",
+        "schema_version",
+        "status",
     } <= data.keys()
     assert data["status"] in {"ok", "degraded"}
     assert {"importable", "reachable", "error"} == data["ocp_vscode"].keys()
@@ -658,10 +711,7 @@ def test_package_member_failure_writes_error_diagnostics(
     monkeypatch.chdir(elsewhere)
 
     bad = root / "pkgbad" / "unit" / "bad.py"
-    bad.write_text(
-        "from .params import SIZE\n"
-        "raise RuntimeError(f'kaboom {SIZE}')\n"
-    )
+    bad.write_text("from .params import SIZE\nraise RuntimeError(f'kaboom {SIZE}')\n")
     result = runner.invoke(app, ["run", str(bad)])
     assert result.exit_code == 1
     data = json.loads((bad.parent / "outputs" / "mechanism.json").read_text())
@@ -830,7 +880,9 @@ def test_default_out_separates_co_located_targets(tmp_path: Path):
         "assembly = Assembly().with_part('cone', Box(1, 1, 1))\n",
     )
     assert runner.invoke(app, ["check", str(tmp_path / "assembly.py")]).exit_code == 0
-    assert runner.invoke(app, ["check", str(tmp_path / "check_cones.py")]).exit_code == 0
+    assert (
+        runner.invoke(app, ["check", str(tmp_path / "check_cones.py")]).exit_code == 0
+    )
     product = json.loads((tmp_path / "outputs" / "mechanism.json").read_text())
     fixture = json.loads(
         (tmp_path / "outputs" / "check_cones" / "mechanism.json").read_text()
@@ -968,8 +1020,7 @@ def test_failing_part_does_not_abort_the_rest_of_the_sweep(tmp_path: Path):
 
     assert result.exit_code == 1
     written = {
-        p.stem: json.loads(p.read_text())
-        for p in tmp_path.glob("*-printability.json")
+        p.stem: json.loads(p.read_text()) for p in tmp_path.glob("*-printability.json")
     }
     assert set(written) == {"p0-printability", "p1-printability", "p2-printability"}
     assert written["p0-printability"]["status"] == "assertion_failed"
@@ -1127,9 +1178,7 @@ def test_out_root_absent_keeps_out_beside_the_script(
     assert (repo / "cad/m02/outputs/cube-printability.json").exists()
 
 
-def test_out_root_from_environment(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+def test_out_root_from_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     repo, root = tmp_path / "repo", tmp_path / "root"
     script = _unit_script(repo, "cad/m02")
     monkeypatch.chdir(repo)
@@ -1151,9 +1200,10 @@ def test_out_root_places_error_diagnostics_and_does_not_leak(
     monkeypatch.chdir(repo)
     result = runner.invoke(app, ["run", str(bad), "--out-root", str(root)])
     assert result.exit_code == 1
-    assert "kaboom" in json.loads(
-        (root / "cad/m02/outputs/mechanism.json").read_text()
-    )["error"]
+    assert (
+        "kaboom"
+        in json.loads((root / "cad/m02/outputs/mechanism.json").read_text())["error"]
+    )
     assert not (repo / "cad/m02/outputs").exists()
 
     good = _unit_script(repo, "cad/m03")
@@ -1299,7 +1349,16 @@ def test_check_only_is_repeatable_and_goes_red_on_a_selected_failure(tmp_path: P
     out = tmp_path / "out"
     result = runner.invoke(
         app,
-        ["check", str(module), "--out", str(out), "--only", "gap_*", "--only", "clear_a_b"],
+        [
+            "check",
+            str(module),
+            "--out",
+            str(out),
+            "--only",
+            "gap_*",
+            "--only",
+            "clear_a_b",
+        ],
     )
     assert result.exit_code == 1, result.output
     data = json.loads((out / "mechanism.json").read_text())
@@ -1385,7 +1444,9 @@ def test_view_nesting_is_the_tree_ocp_converts(
 
     def walk(g) -> list[str]:
         kids = getattr(g, "objects", None) or []
-        return [g.name] if not kids else [f"{g.name}/{w}" for k in kids for w in walk(k)]
+        return (
+            [g.name] if not kids else [f"{g.name}/{w}" for k in kids for w in walk(k)]
+        )
 
     leaves = [w.split("/", 1)[1] for w in walk(group)]
     assert leaves == ["frame", "s1/hub", "s1/arm/tip", "s1/arm/root"]

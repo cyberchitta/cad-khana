@@ -31,9 +31,7 @@ class Motion:
     ts: tuple[float, ...]
 
     @staticmethod
-    def over_joint(
-        name: str, path: str, lo: float, hi: float, step: float
-    ) -> "Motion":
+    def over_joint(name: str, path: str, lo: float, hi: float, step: float) -> "Motion":
         """One joint driven from ``lo`` to ``hi`` as ``t`` runs 0→1, both
         ends sampled. ``step`` is the widest gap allowed between
         adjacent samples: a range it doesn't divide gets more samples,

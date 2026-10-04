@@ -213,9 +213,7 @@ def _crease_span(point: Vector, crossings: list[Crossing]) -> WallSample | None:
     leaving = next((c for c in crossings if c[0] > MIN_SPAN_MM and c[2] > 0), None)
     if leaving is None:
         return None
-    entries = [
-        d for d, _, a in crossings if a < 0 and -BACKOFF_MM <= d < leaving[0]
-    ]
+    entries = [d for d, _, a in crossings if a < 0 and -BACKOFF_MM <= d < leaving[0]]
     if entries and entries[-1] > BACKOFF_MM:
         return None
     span = leaving[0] - (entries[-1] if entries else 0.0)
@@ -251,7 +249,9 @@ def _open_fan(
     )
 
 
-def _crease_samples(part: Part, triangles: tuple[Triangle, ...]) -> Iterator[WallSample]:
+def _crease_samples(
+    part: Part, triangles: tuple[Triangle, ...]
+) -> Iterator[WallSample]:
     """Readings from sharp concave edges and points.
 
     A facet ray only measures a thin direction some facet faces. Under a

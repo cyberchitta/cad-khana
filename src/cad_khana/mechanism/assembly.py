@@ -244,8 +244,7 @@ class RevoluteJoint:
     def __post_init__(self):
         if self.frame not in ("parent", "local"):
             raise ValueError(
-                f"RevoluteJoint frame must be 'parent' or 'local', "
-                f"got {self.frame!r}"
+                f"RevoluteJoint frame must be 'parent' or 'local', got {self.frame!r}"
             )
 
     def with_angle(self, angle_deg: float) -> "RevoluteJoint":
@@ -440,9 +439,7 @@ class Assembly:
             )
         if any(k.name == name for k in self.keepouts):
             raise ValueError(f"duplicate keep-out name {name!r}")
-        return replace(
-            self, keepouts=self.keepouts + (KeepOutZone(name, solid, seat),)
-        )
+        return replace(self, keepouts=self.keepouts + (KeepOutZone(name, solid, seat),))
 
     def keepout(self, path: str) -> KeepOutZone:
         """Resolve a dotted keep-out ``path`` to its ``KeepOutZone`` in
@@ -499,9 +496,7 @@ class Assembly:
         for s in self.subassemblies:
             if s.name == head:
                 if rest:
-                    new_sub = replace(
-                        s, assembly=s.assembly.with_joint(rest, joint)
-                    )
+                    new_sub = replace(s, assembly=s.assembly.with_joint(rest, joint))
                     updated.append(new_sub)
                 else:
                     updated.append(replace(s, joint=joint))
@@ -533,9 +528,7 @@ class Assembly:
                         raise ValueError(
                             f"sub-assembly {head!r} has no joint to update"
                         )
-                    updated.append(
-                        replace(s, joint=s.joint.with_angle(angle_deg))
-                    )
+                    updated.append(replace(s, joint=s.joint.with_angle(angle_deg)))
                 found = True
             else:
                 updated.append(s)
@@ -549,9 +542,7 @@ class Assembly:
         built. Keys are the dotted joint paths ``joint_angles`` reports.
         Raises as ``with_joint_angle`` does on a path that names no
         joint."""
-        return reduce(
-            lambda a, item: a.with_joint_angle(*item), pose.items(), self
-        )
+        return reduce(lambda a, item: a.with_joint_angle(*item), pose.items(), self)
 
     def with_motion(self, motion: Motion) -> "Assembly":
         """Declare a motion this assembly goes through. ``check()``
@@ -583,9 +574,7 @@ class Assembly:
         """
         return self._with_materials(mapping, "")
 
-    def _with_materials(
-        self, mapping: dict[str, str], prefix: str
-    ) -> "Assembly":
+    def _with_materials(self, mapping: dict[str, str], prefix: str) -> "Assembly":
         new_parts = tuple(
             replace(p, material=mapping.get(f"{prefix}{p.name}", p.material))
             for p in self.parts
@@ -593,9 +582,7 @@ class Assembly:
         new_subs = tuple(
             replace(
                 s,
-                assembly=s.assembly._with_materials(
-                    mapping, f"{prefix}{s.name}."
-                ),
+                assembly=s.assembly._with_materials(mapping, f"{prefix}{s.name}."),
             )
             for s in self.subassemblies
         )
@@ -628,9 +615,7 @@ class Assembly:
         swapped = self._swap_detail(overrides, "")
         swapped_names = swapped._all_part_names()
         additions = {
-            name: ov
-            for name, ov in overrides.items()
-            if name not in swapped_names
+            name: ov for name, ov in overrides.items() if name not in swapped_names
         }
         unplaced = next(
             (name for name, ov in additions.items() if ov.location is None),
@@ -650,9 +635,7 @@ class Assembly:
     def _with_addition(self, path: str, ov: "DetailOverride") -> "Assembly":
         head, _, rest = path.partition(".")
         if not rest:
-            return self.with_part(
-                head, ov.part, ov.location, ov.color, ov.material
-            )
+            return self.with_part(head, ov.part, ov.location, ov.color, ov.material)
         if all(s.name != head for s in self.subassemblies):
             raise KeyError(f"no sub-assembly named {head!r}")
         return replace(
@@ -683,9 +666,7 @@ class Assembly:
         new_subs = tuple(
             replace(
                 s,
-                assembly=s.assembly._swap_detail(
-                    overrides, f"{prefix}{s.name}."
-                ),
+                assembly=s.assembly._swap_detail(overrides, f"{prefix}{s.name}."),
             )
             for s in self.subassemblies
         )
@@ -696,9 +677,7 @@ class Assembly:
         names ``placed_parts`` reports."""
         names = {p.name for p in self.parts}
         for s in self.subassemblies:
-            names.update(
-                f"{s.name}.{n}" for n in s.assembly._all_part_names()
-            )
+            names.update(f"{s.name}.{n}" for n in s.assembly._all_part_names())
         return names
 
     def _all_subassembly_paths(self) -> set[str]:
@@ -713,9 +692,7 @@ class Assembly:
         }
 
     def _asserting(self, assertion: Assertion, during: During) -> "Assembly":
-        return replace(
-            self, assertions=self.assertions + (_phased(assertion, during),)
-        )
+        return replace(self, assertions=self.assertions + (_phased(assertion, during),))
 
     def assert_no_interference(
         self,
@@ -771,11 +748,7 @@ class Assembly:
         if min_mm is None and max_mm is None:
             raise ValueError("assert_distance needs min_mm and/or max_mm")
         d = None if along is None else _direction(along)
-        if (
-            isinstance(b, Plane)
-            and d is not None
-            and abs(d.dot(b.z_dir)) < 1 - 1e-9
-        ):
+        if isinstance(b, Plane) and d is not None and abs(d.dot(b.z_dir)) < 1 - 1e-9:
             raise ValueError(
                 "assert_distance: along must be parallel to the plane "
                 "normal — any other direction never closes on an "
@@ -785,8 +758,7 @@ class Assembly:
             a=a,
             b=b,
             name=name
-            or _distance_name(a, b, along, min_mm, max_mm)
-            + _phase_label(during),
+            or _distance_name(a, b, along, min_mm, max_mm) + _phase_label(during),
             min_mm=min_mm,
             max_mm=max_mm,
             along=d,
@@ -885,9 +857,7 @@ class Assembly:
         ``mechanism.json`` and diff either way; ``ge`` / ``le`` bounds
         make it pass/fail, with neither it is a pure recorder.
         ``detail`` is context carried into the result."""
-        assertion = ScalarClaim(
-            name=name, value=value, ge=ge, le=le, detail=detail
-        )
+        assertion = ScalarClaim(name=name, value=value, ge=ge, le=le, detail=detail)
         return replace(self, assertions=self.assertions + (assertion,))
 
     def assert_solid_count(
@@ -987,9 +957,7 @@ class Assembly:
             min_overlap_mm3=min_overlap_mm3,
             reason=reason,
             name=name
-            or _allowed_contact_name(
-                a, b, min_overlap_mm3, max_overlap_mm3, during
-            ),
+            or _allowed_contact_name(a, b, min_overlap_mm3, max_overlap_mm3, during),
         )
         return self._asserting(assertion, during)
 
@@ -1067,18 +1035,12 @@ class Assembly:
         and a real overlap reads green."""
         if isinstance(group, str):
             sub = self._subassembly_at(group)
-            return tuple(
-                sorted(
-                    f"{group}.{n}" for n in sub.assembly._all_part_names()
-                )
-            )
+            return tuple(sorted(f"{group}.{n}" for n in sub.assembly._all_part_names()))
         subtrees = self._all_subassembly_paths()
         return tuple(
             path
             for entry in group
-            for path in (
-                self._resolve_group(entry) if entry in subtrees else (entry,)
-            )
+            for path in (self._resolve_group(entry) if entry in subtrees else (entry,))
         )
 
     def assert_no_interference_between(
@@ -1215,9 +1177,7 @@ class Assembly:
         nothing but are still walked through.
         """
         own = {
-            s.name: s.joint.angle_deg
-            for s in self.subassemblies
-            if s.joint is not None
+            s.name: s.joint.angle_deg for s in self.subassemblies if s.joint is not None
         }
         nested = {
             f"{s.name}.{k}": v

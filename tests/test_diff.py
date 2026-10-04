@@ -83,7 +83,9 @@ def test_interference_added():
 
 
 def test_assertion_regression_shows_detail():
-    old = _empty_mech() | {"assertions": [{"name": "clr", "passed": True, "detail": None}]}
+    old = _empty_mech() | {
+        "assertions": [{"name": "clr", "passed": True, "detail": None}]
+    }
     new = _empty_mech() | {
         "assertions": [
             {"name": "clr", "passed": False, "detail": "distance 0.1mm below min 0.2mm"}
@@ -95,47 +97,72 @@ def test_assertion_regression_shows_detail():
 
 
 def test_assertion_fix_is_reported():
-    old = _empty_mech() | {"assertions": [{"name": "clr", "passed": False, "detail": "x"}]}
-    new = _empty_mech() | {"assertions": [{"name": "clr", "passed": True, "detail": None}]}
+    old = _empty_mech() | {
+        "assertions": [{"name": "clr", "passed": False, "detail": "x"}]
+    }
+    new = _empty_mech() | {
+        "assertions": [{"name": "clr", "passed": True, "detail": None}]
+    }
     out = diff(old, new)
     assert "fixed: clr" in out
 
 
 def test_assertion_newly_skipped_is_reported():
-    old = _empty_mech() | {"assertions": [{"name": "clr", "passed": True, "detail": None}]}
+    old = _empty_mech() | {
+        "assertions": [{"name": "clr", "passed": True, "detail": None}]
+    }
     new = _empty_mech() | {
-        "assertions": [{"name": "clr", "passed": None, "detail": "skipped: part(s) absent from this run: bolt"}]
+        "assertions": [
+            {
+                "name": "clr",
+                "passed": None,
+                "detail": "skipped: part(s) absent from this run: bolt",
+            }
+        ]
     }
     out = diff(old, new)
     assert "changed: clr passed → skipped" in out
 
 
 def test_assertion_skip_to_failure_is_reported():
-    old = _empty_mech() | {"assertions": [{"name": "clr", "passed": None, "detail": "skipped"}]}
-    new = _empty_mech() | {"assertions": [{"name": "clr", "passed": False, "detail": "x"}]}
+    old = _empty_mech() | {
+        "assertions": [{"name": "clr", "passed": None, "detail": "skipped"}]
+    }
+    new = _empty_mech() | {
+        "assertions": [{"name": "clr", "passed": False, "detail": "x"}]
+    }
     out = diff(old, new)
     assert "changed: clr skipped → failed" in out
 
 
 def test_assertion_added_as_skipped_is_reported():
     old = _empty_mech()
-    new = _empty_mech() | {"assertions": [{"name": "clr", "passed": None, "detail": "skipped"}]}
+    new = _empty_mech() | {
+        "assertions": [{"name": "clr", "passed": None, "detail": "skipped"}]
+    }
     out = diff(old, new)
     assert "added: clr (skipped)" in out
 
 
 def test_assertion_skip_names_its_class():
-    old = _empty_mech() | {"assertions": [{"name": "clr", "passed": True, "skipped": None}]}
-    new = _empty_mech() | {"assertions": [{"name": "clr", "passed": None, "skipped": "absent_part"}]}
+    old = _empty_mech() | {
+        "assertions": [{"name": "clr", "passed": True, "skipped": None}]
+    }
+    new = _empty_mech() | {
+        "assertions": [{"name": "clr", "passed": None, "skipped": "absent_part"}]
+    }
     assert "changed: clr passed → skipped (absent_part)" in diff(old, new)
 
 
 def test_assertion_skip_class_change_is_reported():
-    old = _empty_mech() | {"assertions": [{"name": "clr", "passed": None, "skipped": "absent_part"}]}
-    new = _empty_mech() | {"assertions": [{"name": "clr", "passed": None, "skipped": "absent_joint"}]}
-    assert (
-        "changed: clr skipped (absent_part) → skipped (absent_joint)"
-        in diff(old, new)
+    old = _empty_mech() | {
+        "assertions": [{"name": "clr", "passed": None, "skipped": "absent_part"}]
+    }
+    new = _empty_mech() | {
+        "assertions": [{"name": "clr", "passed": None, "skipped": "absent_joint"}]
+    }
+    assert "changed: clr skipped (absent_part) → skipped (absent_joint)" in diff(
+        old, new
     )
 
 
@@ -155,10 +182,20 @@ def test_assertion_newly_waived_is_reported():
 def test_assertion_stably_waived_is_not_reported():
     waived = {
         "assertions": [
-            {"name": "wall_min:1.5", "passed": False, "detail": "x", "waived": "artifact"}
+            {
+                "name": "wall_min:1.5",
+                "passed": False,
+                "detail": "x",
+                "waived": "artifact",
+            }
         ],
         "warnings": [
-            {"kind": "waived_failure", "assertion": "wall_min:1.5", "reason": "artifact", "detail": "x"}
+            {
+                "kind": "waived_failure",
+                "assertion": "wall_min:1.5",
+                "reason": "artifact",
+                "detail": "x",
+            }
         ],
     }
     assert (
@@ -170,12 +207,22 @@ def test_assertion_stably_waived_is_not_reported():
 def test_warning_added_and_removed():
     old = _empty_printability() | {
         "warnings": [
-            {"kind": "stale_waiver", "assertion": "overhang_max:45.0", "reason": "old", "detail": None}
+            {
+                "kind": "stale_waiver",
+                "assertion": "overhang_max:45.0",
+                "reason": "old",
+                "detail": None,
+            }
         ]
     }
     new = _empty_printability() | {
         "warnings": [
-            {"kind": "waived_failure", "assertion": "wall_min:1.5", "reason": "artifact", "detail": "x"}
+            {
+                "kind": "waived_failure",
+                "assertion": "wall_min:1.5",
+                "reason": "artifact",
+                "detail": "x",
+            }
         ]
     }
     out = diff(old, new)
@@ -196,9 +243,7 @@ def _motion(
     return {
         "name": "stack_turn",
         "samples": samples,
-        "joints_deg": {
-            "rotating": {"min": 0.0, "max": 358.0, "max_step": max_step}
-        },
+        "joints_deg": {"rotating": {"min": 0.0, "max": 358.0, "max_step": max_step}},
         "moved": moved,
         "movable": movable,
     }
@@ -399,7 +444,11 @@ def test_printability_assertion_regression():
     }
     new = _empty_printability() | {
         "assertions": [
-            {"name": "wall_min:1.5", "passed": False, "detail": "min wall 1.0mm below min 1.5mm"}
+            {
+                "name": "wall_min:1.5",
+                "passed": False,
+                "detail": "min wall 1.0mm below min 1.5mm",
+            }
         ]
     }
     out = diff(old, new)
@@ -528,12 +577,22 @@ def test_part_real_move_is_reported():
 def test_assertion_value_drift_reported_when_state_unchanged():
     old = _empty_mech() | {
         "assertions": [
-            {"name": "distance:gear/pinion>=0.15", "passed": True, "detail": None, "value": 0.2}
+            {
+                "name": "distance:gear/pinion>=0.15",
+                "passed": True,
+                "detail": None,
+                "value": 0.2,
+            }
         ]
     }
     new = _empty_mech() | {
         "assertions": [
-            {"name": "distance:gear/pinion>=0.15", "passed": True, "detail": None, "value": 0.24}
+            {
+                "name": "distance:gear/pinion>=0.15",
+                "passed": True,
+                "detail": None,
+                "value": 0.24,
+            }
         ]
     }
     out = diff(old, new)
@@ -546,7 +605,9 @@ def test_assertion_value_noise_below_tolerance_not_reported():
         "assertions": [{"name": "d", "passed": True, "detail": None, "value": 0.2}]
     }
     new = _empty_mech() | {
-        "assertions": [{"name": "d", "passed": True, "detail": None, "value": 0.2 + 1e-9}]
+        "assertions": [
+            {"name": "d", "passed": True, "detail": None, "value": 0.2 + 1e-9}
+        ]
     }
     assert diff(old, new) == "no changes\n"
 
@@ -569,8 +630,12 @@ def test_regressed_assertion_not_double_reported_as_value_change():
 
 
 def test_mechanism_part_solid_count_change_is_reported():
-    old = _empty_mech() | {"parts": {"a": {"volume_mm3": 100, "solid_count": 1, "bbox": {}}}}
-    new = _empty_mech() | {"parts": {"a": {"volume_mm3": 100, "solid_count": 2, "bbox": {}}}}
+    old = _empty_mech() | {
+        "parts": {"a": {"volume_mm3": 100, "solid_count": 1, "bbox": {}}}
+    }
+    new = _empty_mech() | {
+        "parts": {"a": {"volume_mm3": 100, "solid_count": 2, "bbox": {}}}
+    }
     assert "solid_count: 1 → 2" in diff(old, new)
 
 
@@ -675,7 +740,12 @@ def test_a_keepout_measuring_fewer_parts_is_reported_while_it_still_passes():
     """One result per keep-out folds its parts into a count; a selection
     that shrank (a renamed subtree, a wider ``excluding``) must still
     show, as the dropped per-part rows once did."""
-    claim = {"name": "clear_of:driver>=0.5", "passed": True, "detail": None, "value": 9.5}
+    claim = {
+        "name": "clear_of:driver>=0.5",
+        "passed": True,
+        "detail": None,
+        "value": 9.5,
+    }
     old = _empty_mech() | {"assertions": [claim | {"measured": 357}]}
     new = _empty_mech() | {"assertions": [claim | {"measured": 345}]}
     assert "changed: clear_of:driver>=0.5 measured 357 → 345" in diff(old, new)

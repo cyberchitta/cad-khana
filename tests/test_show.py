@@ -94,7 +94,9 @@ def test_state_reads_each_verdict_off_real_output(mech: dict, printability: dict
     assert state(_named(mech, "gap.wide:a/b")) == "passed"
     assert state(_named(mech, "tight:a/b")) == "failed"
     assert state(_named(mech, "detail_only")) == "skipped"
-    (wall,) = [a for a in printability["assertions"] if a["name"].startswith("wall_min")]
+    (wall,) = [
+        a for a in printability["assertions"] if a["name"].startswith("wall_min")
+    ]
     assert state(wall) == "waived"
 
 

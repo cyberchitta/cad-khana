@@ -74,9 +74,7 @@ def test_motion_poses_follow_the_schedule():
 
 def test_over_joint_includes_both_ends():
     motion = Motion.over_joint("swing_in", "swing", 90.0, 30.0, step=20.0)
-    assert [p["swing"] for p in motion.poses] == pytest.approx(
-        [90.0, 70.0, 50.0, 30.0]
-    )
+    assert [p["swing"] for p in motion.poses] == pytest.approx([90.0, 70.0, 50.0, 30.0])
 
 
 def test_over_joint_never_steps_wider_than_asked():
@@ -139,9 +137,7 @@ def test_a_units_motion_qualifies_into_the_root_that_composes_it():
     """Declared once, on the unit that owns the joint — like its
     assertions, it is held at every root the unit is composed into."""
     unit = _hinged().with_motion(_swing_in())
-    root = Assembly().with_subassembly(
-        "turret", unit, joint=RevoluteJoint(axis=Axis.Z)
-    )
+    root = Assembly().with_subassembly("turret", unit, joint=RevoluteJoint(axis=Axis.Z))
     (motion,) = root.all_motions
     assert motion.name == "turret.swing_in"
     assert motion.ts == _swing_in().ts

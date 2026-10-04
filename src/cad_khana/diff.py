@@ -154,8 +154,14 @@ def _assertions_section(old: list[Diag], new: list[Diag]) -> list[str]:
     ]
     removed = [f"  removed: {name}" for name in sorted(old_map.keys() - new_map.keys())]
     return (
-        regressed + fixed + skip_changed + value_changed + measured_changed
-        + waive_changed + added + removed
+        regressed
+        + fixed
+        + skip_changed
+        + value_changed
+        + measured_changed
+        + waive_changed
+        + added
+        + removed
     )
 
 
@@ -204,7 +210,9 @@ def _mech_part_changes(name: str, old: Diag, new: Diag) -> list[str]:
         else []
     )
     com_line = (
-        [f"    center_of_mass_mm: {old.get('center_of_mass_mm')} → {new.get('center_of_mass_mm')}"]
+        [
+            f"    center_of_mass_mm: {old.get('center_of_mass_mm')} → {new.get('center_of_mass_mm')}"
+        ]
         if not _numbers_close(
             old.get("center_of_mass_mm"), new.get("center_of_mass_mm")
         )
@@ -321,9 +329,7 @@ def _motions_section(old: list[Diag], new: list[Diag]) -> list[str]:
 
 
 def _mech_warning_label(w: Diag) -> str:
-    subject = (
-        w.get("joint") or w.get("assertion") or w.get("part") or w.get("motion")
-    )
+    subject = w.get("joint") or w.get("assertion") or w.get("part") or w.get("motion")
     return f"{w['kind']}: {subject}" if subject else w["kind"]
 
 
@@ -349,15 +355,11 @@ def _diff_mechanism(old: Diag, new: Diag) -> str:
         ),
         (
             "assertions",
-            _assertions_section(
-                old.get("assertions", []), new.get("assertions", [])
-            ),
+            _assertions_section(old.get("assertions", []), new.get("assertions", [])),
         ),
         (
             "warnings",
-            _mech_warnings_section(
-                old.get("warnings", []), new.get("warnings", [])
-            ),
+            _mech_warnings_section(old.get("warnings", []), new.get("warnings", [])),
         ),
     )
     blocks = [f"{title}:\n" + "\n".join(lines) for title, lines in sections if lines]
@@ -484,9 +486,7 @@ def _diff_printability(old: Diag, new: Diag) -> str:
         else []
     )
     com_section = (
-        [
-            f"  {old.get('center_of_mass_mm')} → {new.get('center_of_mass_mm')}"
-        ]
+        [f"  {old.get('center_of_mass_mm')} → {new.get('center_of_mass_mm')}"]
         if old.get("center_of_mass_mm") != new.get("center_of_mass_mm")
         else []
     )
@@ -537,9 +537,7 @@ def _diff_printability(old: Diag, new: Diag) -> str:
         ("overhang", _overhang_section(old.get("overhang"), new.get("overhang"))),
         (
             "assertions",
-            _assertions_section(
-                old.get("assertions", []), new.get("assertions", [])
-            ),
+            _assertions_section(old.get("assertions", []), new.get("assertions", [])),
         ),
         (
             "warnings",

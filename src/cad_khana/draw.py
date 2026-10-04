@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw
 
 from cad_khana.mechanism.assembly import Assembly
 
+
 @dataclass(frozen=True)
 class View:
     name: str
@@ -18,16 +19,16 @@ class View:
 
 
 VIEW_PRESETS: dict[str, View] = {
-    "top":    View("top",    look_from=( 0,  0,  1), look_up=( 0,  1,  0)),
-    "bottom": View("bottom", look_from=( 0,  0, -1), look_up=( 0,  1,  0)),
-    "front":  View("front",  look_from=( 0, -1,  0), look_up=( 0,  0,  1)),
-    "back":   View("back",   look_from=( 0,  1,  0), look_up=( 0,  0,  1)),
-    "right":  View("right",  look_from=( 1,  0,  0), look_up=( 0,  0,  1)),
-    "left":   View("left",   look_from=(-1,  0,  0), look_up=( 0,  0,  1)),
-    "iso_ne": View("iso_ne", look_from=( 1,  1,  1), look_up=( 0,  0,  1)),
-    "iso_nw": View("iso_nw", look_from=(-1,  1,  1), look_up=( 0,  0,  1)),
-    "iso_se": View("iso_se", look_from=( 1, -1,  1), look_up=( 0,  0,  1)),
-    "iso_sw": View("iso_sw", look_from=(-1, -1,  1), look_up=( 0,  0,  1)),
+    "top": View("top", look_from=(0, 0, 1), look_up=(0, 1, 0)),
+    "bottom": View("bottom", look_from=(0, 0, -1), look_up=(0, 1, 0)),
+    "front": View("front", look_from=(0, -1, 0), look_up=(0, 0, 1)),
+    "back": View("back", look_from=(0, 1, 0), look_up=(0, 0, 1)),
+    "right": View("right", look_from=(1, 0, 0), look_up=(0, 0, 1)),
+    "left": View("left", look_from=(-1, 0, 0), look_up=(0, 0, 1)),
+    "iso_ne": View("iso_ne", look_from=(1, 1, 1), look_up=(0, 0, 1)),
+    "iso_nw": View("iso_nw", look_from=(-1, 1, 1), look_up=(0, 0, 1)),
+    "iso_se": View("iso_se", look_from=(1, -1, 1), look_up=(0, 0, 1)),
+    "iso_sw": View("iso_sw", look_from=(-1, -1, 1), look_up=(0, 0, 1)),
 }
 
 DEFAULT_VIEW_NAMES: tuple[str, ...] = tuple(VIEW_PRESETS.keys())
@@ -70,7 +71,12 @@ def _edge_key(e: Edge) -> tuple:
         if gt == GeomType.CIRCLE:
             c = adaptor.Circle()
             loc = c.Location()
-            geom = ("CIRCLE", round(loc.X(), 4), round(loc.Y(), 4), round(c.Radius(), 4))
+            geom = (
+                "CIRCLE",
+                round(loc.X(), 4),
+                round(loc.Y(), 4),
+                round(c.Radius(), 4),
+            )
         else:
             el = adaptor.Ellipse()
             loc = el.Location()
@@ -291,7 +297,9 @@ def _arc_d(arc: _EllipseArc, scale: float, ox: float, oy: float, canvas_px: int)
     if arc.closed:
         quarter = _to_px(arc.quarter, scale, ox, oy, canvas_px)
         three_q = _to_px(arc.three_quarter, scale, ox, oy, canvas_px)
-        _, sweep_a = _classify_arc(start, quarter, mid, center, rx_px, ry_px, rot_px_rad)
+        _, sweep_a = _classify_arc(
+            start, quarter, mid, center, rx_px, ry_px, rot_px_rad
+        )
         _, sweep_b = _classify_arc(mid, three_q, end, center, rx_px, ry_px, rot_px_rad)
         return (
             f"M {start[0]:.2f} {start[1]:.2f} "
@@ -308,7 +316,9 @@ def _arc_d(arc: _EllipseArc, scale: float, ox: float, oy: float, canvas_px: int)
     )
 
 
-def _polyline_points(samples: Segment, scale: float, ox: float, oy: float, canvas_px: int) -> str:
+def _polyline_points(
+    samples: Segment, scale: float, ox: float, oy: float, canvas_px: int
+) -> str:
     return " ".join(
         f"{px[0]:.2f},{px[1]:.2f}"
         for px in (_to_px(p, scale, ox, oy, canvas_px) for p in samples)
@@ -376,16 +386,18 @@ def _scoped_compound(assembly: Assembly, part: str | None) -> Compound:
     matches = tuple(p for p in placed if p.name == part)
     if not matches:
         names = ", ".join(repr(p.name) for p in placed) or "(none)"
-        raise ValueError(
-            f"--part {part!r} not in assembly; have: {names}"
-        )
+        raise ValueError(f"--part {part!r} not in assembly; have: {names}")
     return Compound(children=[p.part.moved(p.location) for p in matches])
 
 
 def _bbox_extent(compound: Compound) -> tuple[tuple[float, float, float], float]:
     """Return (center_xyz, max_extent) for an arbitrary compound."""
     bb = compound.bounding_box()
-    center = ((bb.min.X + bb.max.X) / 2, (bb.min.Y + bb.max.Y) / 2, (bb.min.Z + bb.max.Z) / 2)
+    center = (
+        (bb.min.X + bb.max.X) / 2,
+        (bb.min.Y + bb.max.Y) / 2,
+        (bb.min.Z + bb.max.Z) / 2,
+    )
     extent = max(bb.max.X - bb.min.X, bb.max.Y - bb.min.Y, bb.max.Z - bb.min.Z)
     return center, extent
 
@@ -412,9 +424,7 @@ def _resolve_views(names: tuple[str, ...] | None) -> tuple[View, ...]:
     unknown = tuple(n for n in names if n not in VIEW_PRESETS)
     if unknown:
         known = ", ".join(VIEW_PRESETS.keys())
-        raise ValueError(
-            f"unknown view name(s): {', '.join(unknown)}; known: {known}"
-        )
+        raise ValueError(f"unknown view name(s): {', '.join(unknown)}; known: {known}")
     return tuple(VIEW_PRESETS[n] for n in names)
 
 
@@ -490,5 +500,7 @@ def draw(
         if format in ("png", "both"):
             paths.append(_draw_view(compound, v, center, extent, out))
         if format in ("svg", "both"):
-            paths.append(_draw_view_svg(compound, v, center, extent, out, themeable=themeable))
+            paths.append(
+                _draw_view_svg(compound, v, center, extent, out, themeable=themeable)
+            )
     return tuple(paths)

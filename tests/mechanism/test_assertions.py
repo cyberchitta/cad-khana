@@ -1,5 +1,15 @@
 import pytest
-from build123d import Axis, Box, BuildPart, Cylinder, Location, Locations, Plane, Pos, Rot
+from build123d import (
+    Axis,
+    Box,
+    BuildPart,
+    Cylinder,
+    Location,
+    Locations,
+    Plane,
+    Pos,
+    Rot,
+)
 
 from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
 from cad_khana.mechanism.assertions import JointWindow, evaluate
@@ -139,7 +149,6 @@ def test_interference_reason_appears_in_failure_detail():
     assert "junction design pending" in result.detail
 
 
-
 def test_interference_reason_recorded_on_pass():
     # A reason labels the claim, and a label is as true on a pass — the
     # assert_scalar rule, not assert_solid_count's failure hypothesis.
@@ -166,6 +175,7 @@ def test_known_overlap_reason_recorded_on_pass():
     (result,) = evaluate(a)
     assert result.passed
     assert result.detail == "reason: junction pending"
+
 
 def test_interference_default_name_contains_both_parts():
     a = (
@@ -315,9 +325,7 @@ def test_anchors_coincident_honors_joint_angle_applied_after_declaration():
     top = (
         Assembly()
         .with_anchor("target", Location((10, 0, 0)))
-        .with_subassembly(
-            "arm", unit, joint=RevoluteJoint(axis=Axis.Z, frame="local")
-        )
+        .with_subassembly("arm", unit, joint=RevoluteJoint(axis=Axis.Z, frame="local"))
         .assert_anchors_coincident("target", "arm.tip")
     )
     (at_rest,) = evaluate(top)
@@ -480,13 +488,10 @@ def test_allowed_contact_reason_appears_in_failure_detail():
         Assembly()
         .with_part("shaft", _cube())
         .with_part("bore", _cube(), location=Location((9, 0, 0)))
-        .assert_allowed_contact(
-            "shaft", "bore", max_overlap_mm3=50, reason="press fit"
-        )
+        .assert_allowed_contact("shaft", "bore", max_overlap_mm3=50, reason="press fit")
     )
     (result,) = evaluate(a)
     assert "press fit" in result.detail
-
 
 
 def test_allowed_contact_reason_recorded_on_pass():
@@ -515,6 +520,7 @@ def test_allowed_contact_without_reason_passes_with_no_detail():
     (result,) = evaluate(a)
     assert result.passed
     assert result.detail is None
+
 
 def test_allowed_contact_bound_tolerates_solver_noise():
     a = (
@@ -630,11 +636,7 @@ def test_distance_to_plane_directed():
 def test_distance_to_plane_undirected_is_zero_when_crossing():
     from build123d import Plane
 
-    a = (
-        Assembly()
-        .with_part("a", _cube())
-        .assert_distance("a", Plane.XY, min_mm=1)
-    )
+    a = Assembly().with_part("a", _cube()).assert_distance("a", Plane.XY, min_mm=1)
     (result,) = evaluate(a)
     assert result.passed is False
     assert result.value == 0.0
@@ -662,11 +664,7 @@ def test_distance_against_absent_part_is_skipped():
 def test_distance_to_plane_with_absent_part_is_skipped():
     from build123d import Plane
 
-    a = (
-        Assembly()
-        .with_part("a", _cube())
-        .assert_distance("ghost", Plane.XY, min_mm=1)
-    )
+    a = Assembly().with_part("a", _cube()).assert_distance("ghost", Plane.XY, min_mm=1)
     (result,) = evaluate(a)
     assert result.passed is None
     assert "ghost" in result.detail
@@ -805,11 +803,7 @@ def test_subassembly_contact_assertions_qualify_when_composed():
 
 
 def test_subassembly_detail_only_assertion_skips_when_composed():
-    unit = (
-        Assembly()
-        .with_part("a", _cube())
-        .assert_distance("a", "bolt", min_mm=0.2)
-    )
+    unit = Assembly().with_part("a", _cube()).assert_distance("a", "bolt", min_mm=0.2)
     top = Assembly().with_subassembly("u", unit)
     (result,) = evaluate(top)
     assert result.passed is None
@@ -1050,11 +1044,15 @@ def test_out_of_phase_permission_yields_to_one_in_phase():
     a = (
         _swung(90)
         .assert_allowed_contact(
-            "post", "swing.arm", max_overlap_mm3=5,
+            "post",
+            "swing.arm",
+            max_overlap_mm3=5,
             during=JointWindow("swing", 0, 10),
         )
         .assert_allowed_contact(
-            "post", "swing.arm", max_overlap_mm3=2000,
+            "post",
+            "swing.arm",
+            max_overlap_mm3=2000,
             during=JointWindow("swing", 80, 100),
         )
     )
@@ -1067,11 +1065,15 @@ def test_permissions_all_out_of_phase_forbid_the_contact():
     a = (
         _swung(90)
         .assert_allowed_contact(
-            "post", "swing.arm", max_overlap_mm3=5,
+            "post",
+            "swing.arm",
+            max_overlap_mm3=5,
             during=JointWindow("swing", 0, 10),
         )
         .assert_allowed_contact(
-            "post", "swing.arm", max_overlap_mm3=2000,
+            "post",
+            "swing.arm",
+            max_overlap_mm3=2000,
             during=JointWindow("swing", 20, 30),
         )
     )
@@ -1094,9 +1096,7 @@ def test_phased_group_pair_still_yields_to_a_declared_contact():
         )
         .assert_allowed_contact("post", "swing.arm", max_overlap_mm3=2000)
     )
-    assert [r.name for r in evaluate(a)] == [
-        "allowed_contact:post/swing.arm<=2000"
-    ]
+    assert [r.name for r in evaluate(a)] == ["allowed_contact:post/swing.arm<=2000"]
 
 
 # --- assert_solid_count -------------------------------------------------
@@ -1248,7 +1248,9 @@ def test_a_failing_keepout_claim_lists_every_failing_part_and_only_those():
     assert result.value == 0.0
     assert result.measured == 3
     sector, skirt = result.detail.split("; ")
-    assert sector.startswith("2 of 3 parts: rig.sector overlaps the keep-out by 48.0000mm^3")
+    assert sector.startswith(
+        "2 of 3 parts: rig.sector overlaps the keep-out by 48.0000mm^3"
+    )
     assert skirt.startswith("rig.skirt distance 23.0000mm below min 25.0mm at (")
     assert "rig.bowl" not in result.detail
 
@@ -1352,7 +1354,10 @@ def _clamp(wall_r: float | None) -> Assembly:
         block
         if wall_r is None
         else block
-        + (Pos(0, 0, 5) * Cylinder(wall_r + 2, 10) - Pos(0, 0, 5) * Cylinder(wall_r, 10))
+        + (
+            Pos(0, 0, 5) * Cylinder(wall_r + 2, 10)
+            - Pos(0, 0, 5) * Cylinder(wall_r, 10)
+        )
     )
     return Assembly().with_part("clamp", body)
 
@@ -1371,9 +1376,7 @@ def test_a_seated_keepout_reads_the_clearance_past_its_seat():
 
 
 def test_without_its_seat_the_same_keepout_reads_zero():
-    (result,) = evaluate(
-        _clamp(4.5).assert_clear_of("clamp", BOLT_CORRIDOR, name="m4")
-    )
+    (result,) = evaluate(_clamp(4.5).assert_clear_of("clamp", BOLT_CORRIDOR, name="m4"))
     assert result.passed
     assert result.value == pytest.approx(0.0, abs=1e-6)
 
@@ -1391,9 +1394,7 @@ def test_a_seated_keepout_fails_a_wall_inside_its_margin():
 
 def test_a_seat_does_not_excuse_an_overlap():
     (result,) = evaluate(
-        _clamp(3.5).assert_clear_of(
-            "clamp", BOLT_CORRIDOR, name="m4", seat=Plane.XY
-        )
+        _clamp(3.5).assert_clear_of("clamp", BOLT_CORRIDOR, name="m4", seat=Plane.XY)
     )
     assert result.passed is False
     assert result.value == 0.0

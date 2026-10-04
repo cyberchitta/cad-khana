@@ -109,9 +109,7 @@ def test_resolve_rejects_a_named_non_callable(tmp_path: Path):
     path = _module(
         tmp_path,
         "unit.py",
-        "from cad_khana.mechanism.assembly import Assembly\n"
-        "\n"
-        "asm = Assembly()\n",
+        "from cad_khana.mechanism.assembly import Assembly\n\nasm = Assembly()\n",
     )
     with pytest.raises(TargetError, match="not a factory"):
         resolve(Target(path, "asm"))

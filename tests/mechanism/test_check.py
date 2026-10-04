@@ -211,8 +211,6 @@ def test_check_records_interferences(tmp_path: Path):
     assert hit["centroid"][1] == approx(0.0, abs=1e-9)
 
 
-
-
 def _swung() -> Assembly:
     """A cube on a Z joint, clear of ``post`` as built and swung into
     it by 60deg."""

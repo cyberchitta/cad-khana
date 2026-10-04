@@ -60,11 +60,10 @@ def _root(
 
 def _write_error_diagnostics(out: Path, error: str) -> None:
     from cad_khana.mechanism.hints import match_hint
+
     out.mkdir(parents=True, exist_ok=True)
     diag = Diagnostics(status="error", error=error, hint=match_hint(error))
-    (out / "mechanism.json").write_text(
-        json.dumps(asdict(diag), indent=2) + "\n"
-    )
+    (out / "mechanism.json").write_text(json.dumps(asdict(diag), indent=2) + "\n")
 
 
 ScriptArg = Annotated[
@@ -265,9 +264,7 @@ def check(
     nonzero if any assertion failed. No export, no viewer push.
     """
     globs = tuple(only or ())
-    _run_target(
-        target, out, "check", lambda a, o: check_assembly(a, out=o, only=globs)
-    )
+    _run_target(target, out, "check", lambda a, o: check_assembly(a, out=o, only=globs))
 
 
 @app.command()
@@ -317,9 +314,7 @@ def view(
 
 
 @app.command()
-def run(
-    script: ScriptArg, out: OutOpt = None, out_root: OutRootOpt = None
-) -> None:
+def run(script: ScriptArg, out: OutOpt = None, out_root: OutRootOpt = None) -> None:
     """Execute an orchestration script (sweeps, inspect() batches, exports).
 
     Declarations belong in modules the import-model commands consume;
@@ -363,7 +358,9 @@ def draw(
     ] = None,
     format: Annotated[
         str,
-        typer.Option("--format", help="Output format: png, svg, or both. Default: png."),
+        typer.Option(
+            "--format", help="Output format: png, svg, or both. Default: png."
+        ),
     ] = "png",
     themeable: Annotated[
         bool,
@@ -477,11 +474,15 @@ def show(
     ] = None,
     failed: Annotated[
         bool,
-        typer.Option("--failed", help="Only failed assertions (a waived failure is not one)."),
+        typer.Option(
+            "--failed", help="Only failed assertions (a waived failure is not one)."
+        ),
     ] = False,
     skipped: Annotated[
         bool,
-        typer.Option("--skipped", help="Only skipped assertions; with --failed, either."),
+        typer.Option(
+            "--skipped", help="Only skipped assertions; with --failed, either."
+        ),
     ] = False,
     sort: Annotated[
         str | None,
@@ -505,7 +506,9 @@ def show(
     ] = None,
     as_json: Annotated[
         bool,
-        typer.Option("--json", help="Print the matching assertions (or groups) as JSON."),
+        typer.Option(
+            "--json", help="Print the matching assertions (or groups) as JSON."
+        ),
     ] = False,
 ) -> None:
     """Read a diagnostics JSON: a summary, then its assertions filtered.
@@ -517,9 +520,7 @@ def show(
     if sort not in (None, "value"):
         typer.echo(f"error: unknown --sort {sort!r}; known: value", err=True)
         raise typer.Exit(code=2)
-    states = frozenset(
-        s for s, on in (("failed", failed), ("skipped", skipped)) if on
-    )
+    states = frozenset(s for s, on in (("failed", failed), ("skipped", skipped)) if on)
     render = report_json if as_json else report
     try:
         diag = require_diagnostics(json.loads(path.read_text()))

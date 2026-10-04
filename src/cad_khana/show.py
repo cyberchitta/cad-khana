@@ -36,8 +36,7 @@ def require_diagnostics(diag: Any) -> Diag:
         and isinstance(diag.get("assertions"), list)
     ):
         raise ValueError(
-            "not a cad-khana diagnostics file "
-            "(no schema_version or assertions list)"
+            "not a cad-khana diagnostics file (no schema_version or assertions list)"
         )
     return diag
 
@@ -106,7 +105,9 @@ def _group_key(pattern: re.Pattern[str], name: str) -> str:
     return (
         UNMATCHED
         if match is None
-        else match.group(1) if pattern.groups else match.group(0)
+        else match.group(1)
+        if pattern.groups
+        else match.group(0)
     )
 
 
@@ -153,8 +154,7 @@ def row(assertion: Diag, width: int = DETAIL_WIDTH) -> str:
     detail = assertion.get("detail")
     return (
         f"{MARKERS[state(assertion)]:<6} {_fmt(assertion.get('value')):>10}  "
-        f"{assertion['name']}"
-        + (f" — {_clip(detail, width)}" if detail else "")
+        f"{assertion['name']}" + (f" — {_clip(detail, width)}" if detail else "")
     )
 
 

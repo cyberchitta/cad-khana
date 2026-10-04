@@ -54,9 +54,7 @@ class PairSamples:
 
     @property
     def in_contact(self) -> tuple[bool, ...]:
-        return tuple(
-            v > INTERFERENCE_VOLUME_EPSILON_MM3 for v in self.volumes_mm3
-        )
+        return tuple(v > INTERFERENCE_VOLUME_EPSILON_MM3 for v in self.volumes_mm3)
 
 
 @dataclass(frozen=True)
@@ -237,9 +235,7 @@ def _angle_span(
     }
 
 
-def _bracketing(
-    runs: tuple[tuple[int, int], ...], n: int
-) -> tuple[int, ...]:
+def _bracketing(runs: tuple[tuple[int, int], ...], n: int) -> tuple[int, ...]:
     """Every contacting sample index, each run widened by the clear
     sample on either side — the outer bound on where contact really
     starts and ends."""
@@ -258,27 +254,17 @@ def _phase(result: SweepResult, samples: PairSamples) -> PairPhase:
     contact = samples.in_contact
     runs = _runs(contact)
     hits = tuple(i for i, over in enumerate(contact) if over)
-    kind = (
-        NEVER
-        if not hits
-        else ALWAYS
-        if len(hits) == len(result.ts)
-        else TRANSIENT
-    )
+    kind = NEVER if not hits else ALWAYS if len(hits) == len(result.ts) else TRANSIENT
     peak, t_at_peak = max(zip(samples.volumes_mm3, result.ts))
     return PairPhase(
         a=samples.a,
         b=samples.b,
         kind=kind,
-        t_intervals=tuple(
-            (result.ts[lo], result.ts[hi]) for lo, hi in runs
-        ),
+        t_intervals=tuple((result.ts[lo], result.ts[hi]) for lo, hi in runs),
         max_volume_mm3=peak,
         t_at_max=t_at_peak if hits else None,
         angles_at_contact=_angle_span(result.angles, hits),
-        angles_bracketing=_angle_span(
-            result.angles, _bracketing(runs, len(result.ts))
-        ),
+        angles_bracketing=_angle_span(result.angles, _bracketing(runs, len(result.ts))),
     )
 
 

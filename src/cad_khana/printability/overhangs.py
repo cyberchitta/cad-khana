@@ -62,9 +62,9 @@ def _on_build_plate(triangle: Triangle, up: Vector, min_up: float) -> bool:
 
 def _region(facets: tuple[_Facet, ...]) -> OverhangRegion:
     area = sum(f.triangle.area for f in facets)
-    centroid = sum(
-        (f.triangle.centroid * f.triangle.area for f in facets), Vector()
-    ) / area
+    centroid = (
+        sum((f.triangle.centroid * f.triangle.area for f in facets), Vector()) / area
+    )
     corners = tuple(c for f in facets for c in f.triangle.corners)
     return OverhangRegion(
         area_mm2=area,
@@ -158,7 +158,11 @@ def regions_with_points(
                     + tuple(on_surface(face, f.triangle).centroid for f in counted),
                 )
                 for face, facets in zip(part.faces(), facing_down)
-                if (counted := tuple(f for f in facets if f.angle_deg > angle_threshold_deg))
+                if (
+                    counted := tuple(
+                        f for f in facets if f.angle_deg > angle_threshold_deg
+                    )
+                )
             ),
             key=lambda pair: -pair[0].area_mm2,
         )

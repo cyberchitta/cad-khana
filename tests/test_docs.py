@@ -168,7 +168,13 @@ def test_documented_schema_version_is_current(doc: str):
 # ``compound``, the result dataclasses) is out of scope.
 SCRIPT_MODULES = {
     "cad_khana.mechanism.motion": ("Motion",),
-    "cad_khana.mechanism.sweep": ("sweep", "over_joint", "over_motion", "classify", "onset"),
+    "cad_khana.mechanism.sweep": (
+        "sweep",
+        "over_joint",
+        "over_motion",
+        "classify",
+        "onset",
+    ),
     "cad_khana.printability.inspect": ("inspect",),
     "cad_khana.printability.methods": ("FDM",),
     "cad_khana.printability.waiver": ("Waiver",),

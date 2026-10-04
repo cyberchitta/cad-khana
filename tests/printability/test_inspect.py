@@ -126,12 +126,9 @@ def test_inspect_fails_when_overhang_exceeds_threshold(tmp_path: Path):
         inspect(_l_shape(), method=FDM(), out=tmp_path, name="ell")
     data = json.loads((tmp_path / "ell-printability.json").read_text())
     overhang_failures = [
-        a
-        for a in data["assertions"]
-        if "overhang" in a["name"] and not a["passed"]
+        a for a in data["assertions"] if "overhang" in a["name"] and not a["passed"]
     ]
     assert overhang_failures
-
 
 
 def test_raised_overhang_threshold_still_records_the_angle(tmp_path: Path):
@@ -145,6 +142,7 @@ def test_raised_overhang_threshold_still_records_the_angle(tmp_path: Path):
         "max_angle_deg": approx(90.0, abs=0.01),
         "regions": [],
     }
+
 
 # --- waivers ------------------------------------------------------------
 
@@ -355,8 +353,9 @@ def test_a_thinner_wall_breaks_a_bound_wall_waiver(tmp_path: Path):
     data = json.loads((tmp_path / "plate-printability.json").read_text())
     (wall,) = [a for a in data["assertions"] if a["name"].startswith("wall_min")]
     assert wall["waived"] is None
-    assert "waiver not applied: min_wall_mm 1.0000 below its min_wall_mm 2.0" in (
-        wall["detail"]
+    assert (
+        "waiver not applied: min_wall_mm 1.0000 below its min_wall_mm 2.0"
+        in (wall["detail"])
     )
 
 
@@ -536,7 +535,9 @@ def test_a_bore_crown_traces_to_the_bore_not_the_block_it_was_cut_from(
         },
     )
     assert result.status == "ok"
-    assert _written(tmp_path, "bored", "overhang")["waived"] == "bore: Ø6 crown, bridged"
+    assert (
+        _written(tmp_path, "bored", "overhang")["waived"] == "bore: Ø6 crown, bridged"
+    )
 
 
 def test_a_feature_waiver_nothing_traces_to_is_stale(tmp_path: Path):
@@ -659,7 +660,6 @@ def test_a_wall_on_no_feature_and_a_refusing_one_names_both(tmp_path: Path):
     )
 
 
-
 def test_a_wall_with_neither_side_on_a_feature_says_so(tmp_path: Path):
     with pytest.raises(SystemExit):
         inspect(
@@ -679,6 +679,7 @@ def test_a_wall_with_neither_side_on_a_feature_says_so(tmp_path: Path):
     }
     assert reasons == "neither side traces to a feature"
 
+
 def test_every_thin_wall_waived_by_its_features_applies(tmp_path: Path):
     result = inspect(
         _two_floors(),
@@ -689,7 +690,8 @@ def test_every_thin_wall_waived_by_its_features_applies(tmp_path: Path):
             "bar": Feature(_plate(40, 10, 10), waive={"wall_min": "floors"}),
             "pocket_a": Feature(_pocket(-10, 1.0), waive={"wall_min": "a"}),
             "pocket_b": Feature(
-                _pocket(10, 0.8), waive={"wall_min": Waiver(reason="b", min_wall_mm=0.79)}
+                _pocket(10, 0.8),
+                waive={"wall_min": Waiver(reason="b", min_wall_mm=0.79)},
             ),
         },
     )
