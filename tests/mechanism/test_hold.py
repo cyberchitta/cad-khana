@@ -2,7 +2,7 @@ import pytest
 from build123d import Axis, Box, BuildPart, Location, Plane, Pos
 
 from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
-from cad_khana.mechanism.assertions import JointWindow
+from cad_khana.mechanism.assertions import JointWindow, evaluate
 from cad_khana.mechanism.diagnostics import JointRange, PoseCounts, WorstAt
 from cad_khana.mechanism.hold import hold
 from cad_khana.mechanism.motion import Motion
@@ -96,6 +96,31 @@ def test_value_is_the_worst_over_the_motion_and_says_where():
     assert result.worst_at == WorstAt(
         motion="swing_in", t=1.0, joints_deg={"swing": pytest.approx(30.0)}
     )
+
+
+def test_the_witness_is_the_worst_poses():
+    a = (
+        _swung()
+        .assert_distance("post", "swing.arm", min_mm=1.0)
+        .with_motion(_swing(30))
+    )
+    (at_30,) = evaluate(a.posed({"swing": 30.0}))
+    assert _only(a).witness_mm == at_30.witness_mm
+
+
+def test_parts_moving_together_report_the_witness_of_the_pose_they_name():
+    """A reused result is reported at the pose that computed it — the
+    first to look — so its world-frame witness is that pose's."""
+    a = (
+        _swung()
+        .assert_distance("swing.arm", "swing.tip", min_mm=1.0)
+        .with_motion(_swing(90))
+    )
+    result = _only(a)
+    assert result.worst_at is None
+    assert result.witness_mm is not None
+    (ax, _, _), (tx, _, _) = result.witness_mm
+    assert abs(ax - 25.0) < 1e-6 and abs(tx - 39.0) < 1e-6
 
 
 def test_worst_is_the_as_built_pose_when_the_motion_only_helps():

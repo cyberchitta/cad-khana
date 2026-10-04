@@ -571,6 +571,47 @@ def test_distance_min_bound_passes_and_records_value():
     assert abs(result.value - 10.0) < 1e-6
 
 
+def _close(got: float, want: float) -> bool:
+    return abs(got - want) < 1e-6
+
+
+def _boxes(b_at: tuple[float, float, float]) -> Assembly:
+    return (
+        Assembly()
+        .with_part("a", Box(10, 10, 10))
+        .with_part("b", Box(10, 10, 10), location=Location(b_at))
+    )
+
+
+def test_distance_records_its_witness_points_on_each_part():
+    """The nearest pair, one point on each part, so a feature that
+    becomes the nearest pair shows even while the claim stays green."""
+    (result,) = evaluate(_boxes((20, 0, 3)).assert_distance("a", "b", min_mm=5))
+    assert result.witness_mm is not None
+    (ax, _, az), (bx, _, bz) = result.witness_mm
+    assert _close(ax, 5.0) and _close(bx, 15.0)
+    assert -2 - 1e-6 <= az <= 5 + 1e-6 and _close(az, bz)
+
+
+def test_distance_records_its_witness_on_a_failure_too():
+    (result,) = evaluate(_boxes((20, 0, 0)).assert_distance("a", "b", max_mm=5))
+    assert result.passed is False
+    assert result.witness_mm is not None
+    (ax, _, _), (bx, _, _) = result.witness_mm
+    assert _close(ax, 5.0) and _close(bx, 15.0)
+
+
+def test_a_directed_or_datum_plane_distance_records_no_witness():
+    """An extent along a direction or to a plane is read off a projection,
+    not a pair of points."""
+    a = (
+        _boxes((0, 0, 20))
+        .assert_distance("a", "b", along="Z", min_mm=5)
+        .assert_distance("a", Plane.XY.offset(-20), min_mm=5)
+    )
+    assert [r.witness_mm for r in evaluate(a)] == [None, None]
+
+
 def test_distance_max_bound_fails_when_too_far():
     a = (
         Assembly()

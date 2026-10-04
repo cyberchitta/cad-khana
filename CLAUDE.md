@@ -246,7 +246,7 @@ A module the import-model verbs consume never calls `check()`,
 full design, its phases, and what is still owed:
 `_notes/draft-script-decomposition.md`.
 
-## Diagnostics JSON schemas (v0.17)
+## Diagnostics JSON schemas (v0.18)
 
 Version these from day one. Agents depend on field stability.
 
@@ -267,7 +267,7 @@ for three bumps.
 
 ```json
 {
-  "schema_version": "0.17",
+  "schema_version": "0.18",
   "status": "ok | error | assertion_failed",
   "error": null,
   "hint": "Missing .part accessor — use `with BuildPart() as p: ...; return p.part`.",
@@ -295,7 +295,7 @@ for three bumps.
     {"a": "lever", "b": "housing", "volume_mm3": 0.3, "centroid": [x,y,z]}
   ],
   "assertions": [
-    {"name": "lever_clears_housing", "passed": true, "detail": null, "value": null, "measured": null, "waived": null, "skipped": null,
+    {"name": "lever_clears_housing", "passed": true, "detail": null, "value": null, "measured": null, "witness_mm": null, "waived": null, "skipped": null,
      "poses": {"evaluated": 181, "distinct": 46, "in_phase": 181, "failed": 0},
      "worst_at": {"motion": "stack_turn", "t": 0.0333, "joints_deg": {"rotating": 12.0}}}
   ],
@@ -381,7 +381,7 @@ Maintainer facts behind those fields:
 
 ```json
 {
-  "schema_version": "0.17",
+  "schema_version": "0.18",
   "kind": "printability",
   "status": "ok | assertion_failed",
   "name": "housing",

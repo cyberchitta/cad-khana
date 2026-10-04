@@ -73,6 +73,16 @@ its claims filtered, sorted or grouped; see `references/cli.md`.
   seat side counted). `null` for every other kind and on a skip. A
   selection that shrank — a renamed subtree, a wider `excluding` —
   keeps the claim green; `khana diff` reports the count's change.
+- `assertions[].witness_mm` — the nearest pair a distance was read
+  between, `[[x, y, z] on a, [x, y, z] on b]` in the root frame at the
+  reported pose (`worst_at`'s, or as built), for `assert_distance`
+  between two parts with no `along=`; pass and fail alike, on the
+  modelled surfaces (before any `grow_*_mm`). `null` for every other
+  kind, and for a directed or datum-plane distance, which is read off a
+  projection rather than between two points. A feature that becomes
+  the nearest pair can leave the value nearly where it was and the
+  claim green while it now measures something else; `khana diff` shows
+  the points beside a value change, and alone when only they moved.
 - `assertions[].poses` — `evaluated` (poses the verdict covers: `1`
   means it looked once), `distinct` (evaluations actually run — `1`
   under a motion means **the motion never moves this claim**, so it

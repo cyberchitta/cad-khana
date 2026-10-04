@@ -111,6 +111,11 @@ recording a named, diffable result. `assert_distance` /
 `assert_scalar` turn those claims into first-class assertions, and
 both record their **measured value** in the JSON even on pass, so
 `khana diff` reports drift the pass/fail boolean can't see.
+A two-part `assert_distance` also records `witness_mm`, the point on
+each part it was read between, and `khana diff` prints where those
+moved. A gap that barely changed but whose points jumped is a claim
+now measuring a different pair of features — say, a guide wall you
+just added — not the one its name describes.
 
 Promoting a bare assert is not free, though: it **widens the claim's
 scope** from the one pose its constants came from to every pose a

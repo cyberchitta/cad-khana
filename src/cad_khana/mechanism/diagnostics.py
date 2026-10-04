@@ -9,7 +9,7 @@ from build123d import Part
 if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
 
-SCHEMA_VERSION = "0.17"
+SCHEMA_VERSION = "0.18"
 INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
 
 # Absolute tolerance on assertion bound comparisons, in the bound's own
@@ -20,6 +20,9 @@ INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
 BOUND_EPSILON = 1e-6
 
 Warning = dict[str, str | int]
+Point = tuple[float, float, float]
+# The nearest pair a distance was measured between: a point on each side.
+Witness = tuple[Point, Point]
 
 # Why an assertion can come back ``passed=None``. Free-text ``detail``
 # can't tell "expected here" from "typo"; the class can be counted.
@@ -132,6 +135,11 @@ class AssertionResult:
     result measured (``assert_clear_of``), on pass and fail alike, so a
     selection that shrank shows under ``khana diff``; ``None`` for every
     other kind and on a skip.
+    ``witness_mm`` is the nearest pair a two-part distance was measured
+    between, a point on ``a`` then on ``b`` in the root frame at the
+    reported pose (``assert_distance`` without ``along=`` or a datum
+    plane), so a feature that became the nearest pair shows under
+    ``khana diff`` while the value barely moves; ``None`` otherwise.
     ``waived`` is the waiver rationale when a failure was waived
     (printability ``inspect(..., waive=...)``); ``passed`` stays
     honestly ``False`` — a waived failure just doesn't fail the run.
@@ -148,6 +156,7 @@ class AssertionResult:
     detail: str | None = None
     value: float | None = None
     measured: int | None = None
+    witness_mm: Witness | None = None
     waived: str | None = None
     skipped: str | None = None
     poses: PoseCounts | None = None

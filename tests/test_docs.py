@@ -16,6 +16,7 @@ survived three schema bumps before ``55fab5a`` caught it by eye.
 import importlib
 import inspect
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -56,10 +57,10 @@ def _pair() -> Assembly:
 
 # One call per public claim method: a new ``assert_*`` must be added here,
 # which is what makes the value enumeration below complete.
-CLAIMS = {
+CLAIMS: dict[str, Callable[[Assembly], Assembly]] = {
     "assert_no_interference": lambda x: x.assert_no_interference("a", "b"),
     "assert_distance": lambda x: x.assert_distance("a", "b", min_mm=0.0),
-    "assert_clear_of": lambda x: x.assert_clear_of("a", _cube(), name="k"),
+    "assert_clear_of": lambda x: x.assert_clear_of("a", Box(10, 10, 10), name="k"),
     "assert_scalar": lambda x: x.assert_scalar("s", 1.0),
     "assert_solid_count": lambda x: x.assert_solid_count("a"),
     "assert_tangent_contact": lambda x: x.assert_tangent_contact("a", "b"),
@@ -129,6 +130,17 @@ def _measured_bullet() -> str:
 def test_measured_bullet_names_exactly_the_kinds_that_record_a_count(method: str):
     (result,) = evaluate(CLAIMS[method](_pair()))
     assert (f"`{method}`" in _measured_bullet()) == (result.measured is not None)
+
+
+def _witness_bullet() -> str:
+    start = DIAGNOSTICS.index("- `assertions[].witness_mm`")
+    return DIAGNOSTICS[start : DIAGNOSTICS.index("\n- `", start + 1)]
+
+
+@pytest.mark.parametrize("method", sorted(CLAIMS))
+def test_witness_bullet_names_exactly_the_kinds_that_record_points(method: str):
+    (result,) = evaluate(CLAIMS[method](_pair()))
+    assert (f"`{method}`" in _witness_bullet()) == (result.witness_mm is not None)
 
 
 @pytest.mark.parametrize("method", sorted(GROUP_FORMS))

@@ -271,7 +271,9 @@ def _phase_joints(assertion: Assertion, contacts: Contacts) -> set[str]:
 def _rank(visit: _Visit) -> tuple[int, float, int]:
     """Worst first: a failing pose, then a passing one, then a lapsed
     one; within those the least slack to the claim's own bound; then
-    the first looked at."""
+    the first looked at. That last tie-break is also what keeps a
+    world-frame witness true: a reused result ranks equal at every pose
+    sharing its key, so the pose reported is the one that computed it."""
     passed = visit.result.passed
     return (
         0 if passed is False else 1 if passed else 2,

@@ -92,6 +92,27 @@ def _value_moved(old: Any, new: Any) -> bool:
     return old != new
 
 
+def _witness_moved(old: Diag, new: Diag) -> bool:
+    a, b = old.get("witness_mm"), new.get("witness_mm")
+    return (
+        a is not None
+        and b is not None
+        and any(
+            _value_moved(p, q)
+            for pa, pb in zip(a, b, strict=True)
+            for p, q in zip(pa, pb, strict=True)
+        )
+    )
+
+
+def _witness_delta(old: Diag, new: Diag) -> str:
+    return f"{_pair(old['witness_mm'])} → {_pair(new['witness_mm'])}"
+
+
+def _pair(witness: list[list[float]]) -> str:
+    return " / ".join(_at(p) for p in witness)
+
+
 def _worst_pose(assertion: Diag) -> str:
     """Where a held assertion's value came from, when that is not the
     as-built pose — a drifting worst value usually moved poses too."""
@@ -129,9 +150,23 @@ def _assertions_section(old: list[Diag], new: list[Diag]) -> list[str]:
     value_changed = [
         f"  changed: {name} value {_delta(old_map[name].get('value'), new_map[name].get('value'))}"
         f"{_worst_pose(new_map[name])}"
+        + (
+            f" at {_witness_delta(old_map[name], new_map[name])}"
+            if _witness_moved(old_map[name], new_map[name])
+            else ""
+        )
         for name in sorted(common)
         if old_map[name]["passed"] == new_map[name]["passed"]
         and _value_moved(old_map[name].get("value"), new_map[name].get("value"))
+    ]
+    # The nearest pair a distance reads can change at an equal value —
+    # a new feature at the same gap — which the value cannot show.
+    witness_changed = [
+        f"  changed: {name} witness {_witness_delta(old_map[name], new_map[name])}"
+        for name in sorted(common)
+        if old_map[name]["passed"] == new_map[name]["passed"]
+        and not _value_moved(old_map[name].get("value"), new_map[name].get("value"))
+        and _witness_moved(old_map[name], new_map[name])
     ]
     # A claim folding several parts into one result: a selection that
     # shrank stays green, so the count is what shows it.
@@ -158,6 +193,7 @@ def _assertions_section(old: list[Diag], new: list[Diag]) -> list[str]:
         + fixed
         + skip_changed
         + value_changed
+        + witness_changed
         + measured_changed
         + waive_changed
         + added

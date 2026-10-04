@@ -1,10 +1,10 @@
 import pytest
 
-from cad_khana.diff import diff
+from cad_khana.diff import Diag, diff
 from cad_khana.mechanism.diagnostics import SCHEMA_VERSION
 
 
-def _empty_mech() -> dict:
+def _empty_mech() -> Diag:
     return {
         "schema_version": SCHEMA_VERSION,
         "status": "ok",
@@ -749,3 +749,42 @@ def test_a_keepout_measuring_fewer_parts_is_reported_while_it_still_passes():
     old = _empty_mech() | {"assertions": [claim | {"measured": 357}]}
     new = _empty_mech() | {"assertions": [claim | {"measured": 345}]}
     assert "changed: clear_of:driver>=0.5 measured 357 → 345" in diff(old, new)
+
+
+def _distance(value: float, witness: list[list[float]]) -> Diag:
+    return {
+        "name": "distance:trap/ramp<=6",
+        "passed": True,
+        "detail": None,
+        "value": value,
+        "witness_mm": witness,
+    }
+
+
+def test_a_distance_whose_value_moved_shows_where_its_witness_went():
+    """The sorted-studs case: a guide became the nearest pair. The value
+    moved a little; the points jumped — the reader sees which."""
+    old = _empty_mech() | {"assertions": [_distance(5.42, [[0, 0, 0], [0, 0, 5.42]])]}
+    new = _empty_mech() | {"assertions": [_distance(5.17, [[20, 3, 0], [20, 3, 5.17]])]}
+    out = diff(old, new)
+    assert "changed: distance:trap/ramp<=6 value" in out
+    assert (
+        "at (0.00, 0.00, 0.00) / (0.00, 0.00, 5.42) → (20.00, 3.00, 0.00) / (20.00, 3.00, 5.17)"
+        in out
+    )
+
+
+def test_a_witness_that_moved_at_an_unchanged_value_is_reported():
+    """Equal readings, different pair: the value can't show it."""
+    old = _empty_mech() | {"assertions": [_distance(5.0, [[0, 0, 0], [0, 0, 5]])]}
+    new = _empty_mech() | {"assertions": [_distance(5.0, [[9, 0, 0], [9, 0, 5]])]}
+    assert (
+        "changed: distance:trap/ramp<=6 witness (0.00, 0.00, 0.00) / (0.00, 0.00, 5.00)"
+        " → (9.00, 0.00, 0.00) / (9.00, 0.00, 5.00)" in diff(old, new)
+    )
+
+
+def test_an_unchanged_witness_adds_nothing():
+    claim = _distance(5.0, [[0, 0, 0], [0, 0, 5]])
+    old = _empty_mech() | {"assertions": [claim]}
+    assert diff(old, old) == diff(_empty_mech(), _empty_mech())

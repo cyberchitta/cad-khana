@@ -10,6 +10,8 @@ from cad_khana.mechanism.diagnostics import (
     BOUND_EPSILON,
     INTERFERENCE_VOLUME_EPSILON_MM3,
     AssertionResult,
+    Point,
+    Witness,
     intersection_volume,
 )
 
@@ -317,17 +319,22 @@ class Distance:
             name=f"{prefix}.{self.name}",
         )
 
-    def _measure(self, parts: dict[str, Part]) -> float:
+    def _measure(self, parts: dict[str, Part]) -> tuple[float, Witness | None]:
+        """The distance, and the nearest pair when it is read between two
+        points rather than off a projection."""
         shape = parts[self.a]
         if isinstance(self.b, Plane):
-            return _plane_distance(shape, self.b, self.along)
+            return _plane_distance(shape, self.b, self.along), None
         other = parts[self.b]
         if self.along is None:
-            return shape.distance_to(other)
-        return _extent(other, self.along)[0] - _extent(shape, self.along)[1]
+            # build123d leaves Shape's type parameter unbound in this signature
+            gap, on_a, on_b = shape.distance_to_with_closest_points(other)  # pyright: ignore[reportUnknownMemberType]
+            return gap, (_point(on_a), _point(on_b))
+        return _extent(other, self.along)[0] - _extent(shape, self.along)[1], None
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
-        measured = self._measure(parts) - self.grow_a_mm - self.grow_b_mm
+        gap, witness = self._measure(parts)
+        measured = gap - self.grow_a_mm - self.grow_b_mm
         below = self.min_mm is not None and measured < self.min_mm - BOUND_EPSILON
         above = self.max_mm is not None and measured > self.max_mm + BOUND_EPSILON
         detail = (
@@ -337,13 +344,19 @@ class Distance:
             if above
             else None
         )
-        return AssertionResult(self.name, not (below or above), detail, value=measured)
+        return AssertionResult(
+            self.name, not (below or above), detail, value=measured, witness_mm=witness
+        )
 
     def slack(self, value: float) -> float:
         return min(
             value - self.min_mm if self.min_mm is not None else float("inf"),
             self.max_mm - value if self.max_mm is not None else float("inf"),
         )
+
+
+def _point(v: Vector) -> Point:
+    return (v.X, v.Y, v.Z)
 
 
 def _at(v: Vector) -> str:
