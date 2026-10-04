@@ -1,7 +1,8 @@
 # Authoring style
 
-Load before writing or changing a part function or its helpers, or a
-declaration module. These conventions are what make a script
+Load before writing or restructuring a declaration module — a part
+function, helper or factory, or adding, moving or deriving a parameter.
+Changing an existing parameter's value alone doesn't need it. These conventions are what make a script
 re-editable; nothing enforces them.
 
 ## Declaration module

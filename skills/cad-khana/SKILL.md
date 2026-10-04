@@ -313,7 +313,7 @@ for the task they cover.
 |---|---|
 | `references/workflow.md` | starting a mechanism from a blank file, or the same failure surviving three fix attempts — design order, the check-then-draw loop, when to stop and escalate with `HUMAN_REVIEW:` |
 | `references/cli.md` | addressing a `:factory`, looking for an output file, keeping a script's outputs apart (before/after baselines, parallel runs), an import failing under `khana`, the viewer, or checking several members of a family |
-| `references/style.md` | writing or changing a part function or its helpers, or a declaration module |
+| `references/style.md` | writing or restructuring a declaration module — a part function, helper or factory, or adding, moving or deriving a parameter (changing an existing parameter's value alone doesn't fire it) |
 | `references/assertions.md` | writing or changing any `assert_*` — the catalogue, solid count, distance/scalar, contact claims and `during=`, group assertions |
 | `references/composition.md` | adding a sub-assembly, joint or anchor, or a claim about two units |
 | `references/motion.md` | anything that moves or animates — declared motions, sweeps, GLB export |
