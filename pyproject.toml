@@ -53,6 +53,9 @@ testpaths = ["tests"]
 
 [tool.ruff]
 target-version = "py313"
+# Code blocks in the docs are laid out for reading: aligned columns and
+# per-argument comments that the formatter would undo.
+extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 # pyflakes + pycodestyle errors, import order, pyupgrade, bugbear,
