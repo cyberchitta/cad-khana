@@ -53,10 +53,6 @@ def _sample(edge: Edge) -> Segment:
     return tuple((p.X, p.Y) for p in (edge @ (i / (n - 1)) for i in range(n)))
 
 
-def _segments(compound: Compound) -> tuple[Segment, ...]:
-    return tuple(_sample(e) for e in compound.edges())
-
-
 def _edge_key(e: Edge) -> tuple:
     """Orientation-invariant fingerprint for HLR-produced edges.
 
@@ -190,10 +186,6 @@ def _primitive(edge: Edge) -> _Primitive:
     if edge.geom_type in (GeomType.CIRCLE, GeomType.ELLIPSE):
         return _arc_primitive(edge)
     return _Polyline(samples=_sample(edge))
-
-
-def _primitives(compound: Compound) -> tuple[_Primitive, ...]:
-    return tuple(_primitive(e) for e in compound.edges())
 
 
 def _bounds(segments: tuple[Segment, ...]) -> tuple[float, float, float, float]:
