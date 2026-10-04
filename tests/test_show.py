@@ -203,6 +203,29 @@ def test_summary_names_an_old_schema_rather_than_refusing_it(mech: dict):
     assert "0.1" in text and SCHEMA_VERSION in text
 
 
+def test_a_field_an_old_file_lacks_reads_absent_not_a_default(mech: dict):
+    old = {
+        k: v
+        for k, v in mech.items()
+        if k not in {"interferences", "motions", "parts", "warnings"}
+    }
+    text = summary(old)
+    assert "parts absent  interferences absent  motions absent" in text
+    assert "warnings: absent" in text
+
+
+def test_a_printability_field_an_old_file_lacks_reads_absent(printability: dict):
+    old = {
+        k: v
+        for k, v in printability.items()
+        if k not in {"min_wall_mm", "overhang", "solid_count"}
+    }
+    text = summary(old)
+    assert "min_wall_mm absent" in text
+    assert "area_mm2 absent max_angle_deg absent" in text
+    assert "solid_count absent" in text
+
+
 def test_a_file_that_is_not_diagnostics_is_refused():
     with pytest.raises(ValueError):
         require_diagnostics({"foo": 1})

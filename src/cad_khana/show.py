@@ -3,7 +3,8 @@
 Pure — takes the parsed file, returns text or data; ``khana show`` does
 the reading and the printing. A reader compares nothing, so unlike
 ``diff`` it reads a file at any ``schema_version`` and says which one
-it read rather than refusing it: the fields are shown as written.
+it read rather than refusing it: the fields are shown as written, and
+one the file's schema lacks reads ``absent`` rather than a default.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -24,6 +25,7 @@ STATES = ("passed", "failed", "waived", "skipped")
 MARKERS = {"passed": "ok", "failed": "FAIL", "waived": "waived", "skipped": "skip"}
 UNMATCHED = "(unmatched)"
 DEFAULT_LIMIT = 50
+ABSENT = "absent"
 DETAIL_WIDTH = 100
 
 
@@ -200,21 +202,37 @@ def _assertion_line(assertions: list[Diag]) -> str:
     )
 
 
+def _read(diag: Diag, key: str, render: Callable[[Any], str] = _fmt) -> str:
+    """A field as rendered, or ``absent`` when an older schema lacks it —
+    never a default, which would read as a measurement the file never made."""
+    return render(diag[key]) if key in diag else ABSENT
+
+
+def _overhang(field: str) -> Callable[[Any], str]:
+    return lambda overhang: _fmt((overhang or {}).get(field))
+
+
+def _count(items: Any) -> str:
+    return str(len(items))
+
+
+def _interferences(found: list[Diag] | None) -> str:
+    return "not computed" if found is None else _count(found)
+
+
 def _body_line(diag: Diag) -> str:
     if file_kind(diag) == "printability":
-        overhang = diag.get("overhang") or {}
         return (
             f"printability: {diag.get('name')} ({diag.get('method')})  "
-            f"min_wall_mm {_fmt(diag.get('min_wall_mm'))}  "
-            f"overhang area_mm2 {_fmt(overhang.get('area_mm2'))} "
-            f"max_angle_deg {_fmt(overhang.get('max_angle_deg'))}  "
-            f"solid_count {diag.get('solid_count')}"
+            f"min_wall_mm {_read(diag, 'min_wall_mm')}  "
+            f"overhang area_mm2 {_read(diag, 'overhang', _overhang('area_mm2'))} "
+            f"max_angle_deg {_read(diag, 'overhang', _overhang('max_angle_deg'))}  "
+            f"solid_count {_read(diag, 'solid_count', str)}"
         )
-    found = diag.get("interferences", [])
     return (
-        f"parts {len(diag.get('parts', {}))}  "
-        f"interferences {'not computed' if found is None else len(found)}  "
-        f"motions {len(diag.get('motions', []))}"
+        f"parts {_read(diag, 'parts', _count)}  "
+        f"interferences {_read(diag, 'interferences', _interferences)}  "
+        f"motions {_read(diag, 'motions', _count)}"
     )
 
 
@@ -231,8 +249,12 @@ def _selection_lines(diag: Diag) -> list[str]:
     )
 
 
+def _warnings(warnings: list[Diag]) -> str:
+    counts = Counter(w["kind"] for w in warnings)
+    return _counted(counts) if counts else "none"
+
+
 def summary(diag: Diag) -> str:
-    warnings = Counter(w["kind"] for w in diag.get("warnings", []))
     return "\n".join(
         [
             _header(diag),
@@ -240,7 +262,7 @@ def summary(diag: Diag) -> str:
             *_selection_lines(diag),
             _body_line(diag),
             _assertion_line(diag["assertions"]),
-            f"warnings: {_counted(warnings) if warnings else 'none'}",
+            f"warnings: {_read(diag, 'warnings', _warnings)}",
         ]
     )
 

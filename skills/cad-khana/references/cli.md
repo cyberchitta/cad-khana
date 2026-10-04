@@ -249,4 +249,6 @@ It exits 0 whatever the file says — it is a reader, not a verdict — and
 Unlike `diff`, it reads a file at an older `schema_version`, as
 written, and the summary's first line names both versions: it compares
 nothing, so there is no second schema to coerce, but a field's meaning
-is the current one only after a re-run.
+is the current one only after a re-run. A summary field the older
+schema lacks reads `absent`, never a zero — `interferences absent` is
+a file that never had the field, not one that found none.
