@@ -152,7 +152,9 @@ not a whole-model result`. The all-pairs interference pass — on a
 large tree most of a check's time — is skipped, so `interferences` is
 `null`, not `[]`. A glob that matches no assertion is a usage error
 (exit 2) that writes nothing: a typo would otherwise evaluate zero
-claims and exit 0. Each glob must match something, so one typo among
+claims and exit 0. It names close matches, so a glob missing its
+claim-kind prefix (`base_fall_path*` for `clear_of:base_fall_path>=1`)
+points at the claim. Each glob must match something, so one typo among
 several is caught too. A contact claim's `during=` phase is still read
 against every claim on its pair, selected or not.
 

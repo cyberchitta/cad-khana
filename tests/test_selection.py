@@ -26,6 +26,30 @@ def test_claims_glob_matching_nothing_is_an_error_naming_it():
         claims(("clear_of:a",), ("clear_of:*", "clera_of:*"))
 
 
+def test_claims_glob_missing_the_kind_prefix_names_the_claim():
+    """The sorted-studs typo: the declared name without its kind prefix.
+    Names containing the glob's literal core are the near matches."""
+    names = ("clear_of:base_fall_path>=1", "clear_of:tray>=0.5", "distance:a/b>=0.2")
+    with pytest.raises(
+        SelectionError,
+        match="'base_fall_path\\*' — close: clear_of:base_fall_path>=1 \\(of 3",
+    ):
+        claims(names, ("base_fall_path*",))
+
+
+def test_claims_misspelled_glob_names_close_matches():
+    with pytest.raises(SelectionError, match="'clera_of:a\\*'.*close: clear_of:a"):
+        claims(("clear_of:a", "distance:a/b>=0.2"), ("clera_of:a*",))
+
+
+def test_claims_near_matches_are_capped_with_a_count():
+    names = tuple(f"clear_of:pin_{i}>=1" for i in range(5))
+    with pytest.raises(
+        SelectionError, match="close: .*_0.*_1.*_2.*\\(5 contain 'pin_'\\)"
+    ):
+        claims(names, ("pin_*",))
+
+
 # --- paths: dotted part / sub-assembly paths ------------------------------
 
 

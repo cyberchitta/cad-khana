@@ -9,6 +9,7 @@ this tool exists to prevent.
 
 from __future__ import annotations
 
+import re
 from difflib import get_close_matches
 from fnmatch import fnmatchcase
 
@@ -24,10 +25,22 @@ def claims(names: tuple[str, ...], patterns: tuple[str, ...]) -> tuple[bool, ...
     unmatched = tuple(p for p in patterns if not any(fnmatchcase(n, p) for n in names))
     if unmatched:
         raise SelectionError(
-            f"no assertion matches {', '.join(map(repr, unmatched))} "
-            f"(of {len(names)} declared; globs are fnmatch, case-sensitive)"
+            "; ".join(
+                f"no assertion matches {p!r}{_near_claims(names, p)}" for p in unmatched
+            )
+            + f" (of {len(names)} declared; globs are fnmatch, case-sensitive)"
         )
     return tuple(any(fnmatchcase(n, p) for p in patterns) for n in names)
+
+
+def _near_claims(names: tuple[str, ...], pattern: str) -> str:
+    """Names containing the glob's longest literal run — what a dropped
+    kind prefix leaves intact — else ``difflib``'s close matches to it."""
+    core = max(re.split(r"\[[^]]*\]|[*?]", pattern), key=len)
+    containing = tuple(n for n in names if core and core in n)
+    near = containing or tuple(get_close_matches(core or pattern, names, n=3))
+    more = f" ({len(containing)} contain {core!r})" if len(containing) > 3 else ""
+    return f" — close: {', '.join(near[:3])}{more}" if near else ""
 
 
 def _under(name: str, path: str) -> bool:
