@@ -32,10 +32,16 @@ _BORE_CROWN = (
 )
 
 inspect(
-    clevis(), method=FDM(), out="outputs", name="clevis",
+    clevis(),
+    method=FDM(),
+    out="outputs",
+    name="clevis",
     waive={"overhang_max": _BORE_CROWN},
 )
 inspect(
-    tang(), method=FDM(), out="outputs", name="tang",
+    tang(),
+    method=FDM(),
+    out="outputs",
+    name="tang",
     waive={"overhang_max": _BORE_CROWN},
 )

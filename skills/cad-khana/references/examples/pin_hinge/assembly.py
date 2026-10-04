@@ -29,22 +29,21 @@ from build123d import Box, Cylinder, Location, Part, Pos, Rot
 
 from cad_khana.mechanism.assembly import Assembly
 
-
 # --- Parameters ---------------------------------------------------------
 
-PIN_D = 4.0             # hinge pin diameter
-PIN_CLEARANCE = 0.3     # radial clearance between pin and pivot holes
-SLOT_CLEARANCE = 0.5    # gap between each tang face and the facing arm
+PIN_D = 4.0  # hinge pin diameter
+PIN_CLEARANCE = 0.3  # radial clearance between pin and pivot holes
+SLOT_CLEARANCE = 0.5  # gap between each tang face and the facing arm
 
-TANG_L = 40.0           # tang length along its own +X
-TANG_T = 4.0            # tang thickness (aligned with pin axis)
-TANG_W = 12.0           # tang height perpendicular to length and thickness
-TANG_PIVOT_OFFSET = 6.0 # distance from the tang's near end to its pivot hole
+TANG_L = 40.0  # tang length along its own +X
+TANG_T = 4.0  # tang thickness (aligned with pin axis)
+TANG_W = 12.0  # tang height perpendicular to length and thickness
+TANG_PIVOT_OFFSET = 6.0  # distance from the tang's near end to its pivot hole
 
-CLEVIS_L = 20.0         # clevis length along the pin axis
-CLEVIS_BASE_T = 5.0     # thickness of the clevis base plate
-CLEVIS_ARM_T = 3.0      # thickness of each arm
-CLEVIS_ARM_H = 14.0     # arm height above the base plate
+CLEVIS_L = 20.0  # clevis length along the pin axis
+CLEVIS_BASE_T = 5.0  # thickness of the clevis base plate
+CLEVIS_ARM_T = 3.0  # thickness of each arm
+CLEVIS_ARM_H = 14.0  # arm height above the base plate
 
 
 # --- Derived ------------------------------------------------------------
@@ -57,6 +56,7 @@ PIVOT_Z = CLEVIS_BASE_T + CLEVIS_ARM_H / 2
 
 
 # --- Parts --------------------------------------------------------------
+
 
 def pin(length: float = PIN_L, diameter: float = PIN_D) -> Part:
     """Cylindrical hinge pin; cylinder axis along +Z in its local frame."""
@@ -76,11 +76,7 @@ def tang(
     along Y so the thin dimension of the plate lines up with the hinge.
     """
     plate = Pos(length / 2, 0, 0) * Box(length, thickness, width)
-    hole = (
-        Pos(pivot_offset, 0, 0)
-        * Rot(90, 0, 0)
-        * Cylinder(hole_d / 2, thickness * 2)
-    )
+    hole = Pos(pivot_offset, 0, 0) * Rot(90, 0, 0) * Cylinder(hole_d / 2, thickness * 2)
     return plate - hole
 
 
@@ -101,11 +97,7 @@ def clevis(
     arm_plus = Pos(0, arm_offset_y, arm_z) * Box(length, arm_t, arm_h)
     arm_minus = Pos(0, -arm_offset_y, arm_z) * Box(length, arm_t, arm_h)
     body = base + arm_plus + arm_minus
-    pivot_hole = (
-        Pos(0, 0, pivot_z)
-        * Rot(90, 0, 0)
-        * Cylinder(hole_d / 2, width + 2)
-    )
+    pivot_hole = Pos(0, 0, pivot_z) * Rot(90, 0, 0) * Cylinder(hole_d / 2, width + 2)
     return body - pivot_hole
 
 
