@@ -1186,6 +1186,7 @@ def test_a_keepout_clear_by_its_margin_passes_and_records_the_distance():
     assert result.name == "clear_of:m4_drop_in>=2"
     assert result.passed
     assert result.value == pytest.approx(5.0)
+    assert result.measured == 1
 
 
 def test_a_keepout_closer_than_its_margin_fails_with_a_witness():
@@ -1235,7 +1236,8 @@ def test_a_keepout_claim_is_one_result_reading_its_nearest_part():
     assert result.name == "clear_of:driver>=0"
     assert result.passed
     assert result.value == pytest.approx(23.0)
-    assert result.detail == "nearest: rig.skirt at 23.0000mm"
+    assert result.detail == "nearest of 2: rig.skirt at 23.0000mm"
+    assert result.measured == 2  # the excluded sector is not measured
 
 
 def test_a_failing_keepout_claim_lists_every_failing_part_and_only_those():
@@ -1244,6 +1246,7 @@ def test_a_failing_keepout_claim_lists_every_failing_part_and_only_those():
     )
     assert result.passed is False
     assert result.value == 0.0
+    assert result.measured == 3
     sector, skirt = result.detail.split("; ")
     assert sector.startswith("2 of 3 parts: rig.sector overlaps the keep-out by 48.0000mm^3")
     assert skirt.startswith("rig.skirt distance 23.0000mm below min 25.0mm at (")
@@ -1256,6 +1259,7 @@ def test_a_keepout_claim_naming_an_absent_part_skips_whole():
     )
     assert result.passed is None
     assert result.skipped == "absent_part"
+    assert result.measured is None
     assert "ghost" in result.detail
 
 
@@ -1404,7 +1408,8 @@ def test_a_part_wholly_on_the_seat_side_has_no_reading():
     )
     assert result.passed
     assert result.value is None
-    assert result.detail == "no selected part has material past the seat"
+    assert result.detail == "none of the 1 selected parts has material past the seat"
+    assert result.measured == 1
 
 
 def test_a_named_seat_is_composed_with_its_keepout():

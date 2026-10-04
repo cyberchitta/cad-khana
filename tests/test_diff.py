@@ -669,3 +669,13 @@ def test_diff_reports_a_changed_declared_count_under_one_selection():
     grown = _partial(["gap_*"])
     grown["selection"] = {**grown["selection"], "declared": 4}
     assert "declared 3 → 4" in diff(_partial(["gap_*"]), grown)
+
+
+def test_a_keepout_measuring_fewer_parts_is_reported_while_it_still_passes():
+    """One result per keep-out folds its parts into a count; a selection
+    that shrank (a renamed subtree, a wider ``excluding``) must still
+    show, as the dropped per-part rows once did."""
+    claim = {"name": "clear_of:driver>=0.5", "passed": True, "detail": None, "value": 9.5}
+    old = _empty_mech() | {"assertions": [claim | {"measured": 357}]}
+    new = _empty_mech() | {"assertions": [claim | {"measured": 345}]}
+    assert "changed: clear_of:driver>=0.5 measured 357 → 345" in diff(old, new)

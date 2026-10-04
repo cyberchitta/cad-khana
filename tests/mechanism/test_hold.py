@@ -532,7 +532,8 @@ def test_a_keepout_claim_over_several_parts_reports_the_worst_pose_minimum():
     result = _only(a)
     assert result.passed
     assert result.value == pytest.approx(5.0)  # tip at 0deg: y -1 → zone y -6
-    assert result.detail == "nearest: swing.tip at 5.0000mm"
+    assert result.detail == "nearest of 2: swing.tip at 5.0000mm"
+    assert result.measured == 2
 
 
 # --- only: a subset of the claims -----------------------------------------

@@ -67,6 +67,12 @@ its claims filtered, sorted or grouped; see `references/cli.md`.
   Held over a motion, `value` and `detail` are the **worst pose's**
   (least slack to the claim's own bound; for a kind with no measured
   value, the first failing pose — the onset).
+- `assertions[].measured` — how many parts a claim that folds several
+  into one result measured: the selection size for `assert_clear_of`,
+  on pass and fail alike (`excluding` applied, parts wholly on the
+  seat side counted). `null` for every other kind and on a skip. A
+  selection that shrank — a renamed subtree, a wider `excluding` —
+  keeps the claim green; `khana diff` reports the count's change.
 - `assertions[].poses` — `evaluated` (poses the verdict covers: `1`
   means it looked once), `distinct` (evaluations actually run — `1`
   under a motion means **the motion never moves this claim**, so it

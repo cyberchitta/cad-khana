@@ -487,15 +487,16 @@ class KeepOut:
         detail = (
             f"{len(failures)} of {len(readings)} parts: " + "; ".join(failures)
             if failures
-            else "no selected part has material past the seat"
+            else f"none of the {len(readings)} selected parts has material past the seat"
             if nearest is None
-            else f"nearest: {nearest.part} at {nearest.distance:.4f}mm"
+            else f"nearest of {len(readings)}: {nearest.part} at {nearest.distance:.4f}mm"
         )
         return AssertionResult(
             self.name,
             not failures,
             detail,
             value=None if nearest is None else nearest.distance,
+            measured=len(readings),
         )
 
     def slack(self, value: float) -> float:

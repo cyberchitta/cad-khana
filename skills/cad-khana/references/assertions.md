@@ -208,7 +208,9 @@ for a named keep-out, unless you pass `name=`). A second call under the
 same name at one level raises, since `khana diff` matches results by
 name: in a loop over units, put the unit in the name. `value` is the least
 distance over the selected parts, 0 when one overlaps. On a pass,
-`detail` names the nearest part (`nearest: load_ramp at 5.0000mm`). On
+`detail` names the nearest part and how many parts were measured
+(`nearest of 357: load_ramp at 5.0000mm`); `measured` carries that
+count, so `khana diff` shows a selection that shrank. On
 a failure it lists every failing part, and only those
 (`2 of 357 parts: …`): each part's overlap volume and centroid, or its
 distance and the point nearest the keep-out. A selected part absent

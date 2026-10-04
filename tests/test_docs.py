@@ -120,6 +120,17 @@ def test_value_bullet_names_every_claim_kind_on_the_right_side(method: str):
     )
 
 
+def _measured_bullet() -> str:
+    start = DIAGNOSTICS.index("- `assertions[].measured`")
+    return DIAGNOSTICS[start : DIAGNOSTICS.index("\n- `", start + 1)]
+
+
+@pytest.mark.parametrize("method", sorted(CLAIMS))
+def test_measured_bullet_names_exactly_the_kinds_that_record_a_count(method: str):
+    (result,) = evaluate(CLAIMS[method](_pair()))
+    assert (f"`{method}`" in _measured_bullet()) == (result.measured is not None)
+
+
 @pytest.mark.parametrize("method", sorted(GROUP_FORMS))
 def test_group_forms_record_no_value(method: str):
     assert not _records_value(method)

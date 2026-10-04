@@ -9,7 +9,7 @@ from build123d import Part
 if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
 
-SCHEMA_VERSION = "0.16"
+SCHEMA_VERSION = "0.17"
 INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
 
 # Absolute tolerance on assertion bound comparisons, in the bound's own
@@ -128,6 +128,10 @@ class AssertionResult:
     ``assert_solid_count`` count) even on pass
     — so runs are diffable — and stays ``None`` for the boolean-only
     kinds.
+    ``measured`` is how many parts a claim folding several into one
+    result measured (``assert_clear_of``), on pass and fail alike, so a
+    selection that shrank shows under ``khana diff``; ``None`` for every
+    other kind and on a skip.
     ``waived`` is the waiver rationale when a failure was waived
     (printability ``inspect(..., waive=...)``); ``passed`` stays
     honestly ``False`` — a waived failure just doesn't fail the run.
@@ -143,6 +147,7 @@ class AssertionResult:
     passed: bool | None
     detail: str | None = None
     value: float | None = None
+    measured: int | None = None
     waived: str | None = None
     skipped: str | None = None
     poses: PoseCounts | None = None

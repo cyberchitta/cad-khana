@@ -133,6 +133,14 @@ def _assertions_section(old: list[Diag], new: list[Diag]) -> list[str]:
         if old_map[name]["passed"] == new_map[name]["passed"]
         and _value_moved(old_map[name].get("value"), new_map[name].get("value"))
     ]
+    # A claim folding several parts into one result: a selection that
+    # shrank stays green, so the count is what shows it.
+    measured_changed = [
+        f"  changed: {name} measured {old_map[name].get('measured')}"
+        f" → {new_map[name].get('measured')}"
+        for name in sorted(common)
+        if old_map[name].get("measured") != new_map[name].get("measured")
+    ]
     waive_changed = [
         f"  changed: {name}"
         f" {_waive_state(old_map[name].get('waived'))}"
@@ -145,7 +153,10 @@ def _assertions_section(old: list[Diag], new: list[Diag]) -> list[str]:
         for name in sorted(new_map.keys() - old_map.keys())
     ]
     removed = [f"  removed: {name}" for name in sorted(old_map.keys() - new_map.keys())]
-    return regressed + fixed + skip_changed + value_changed + waive_changed + added + removed
+    return (
+        regressed + fixed + skip_changed + value_changed + measured_changed
+        + waive_changed + added + removed
+    )
 
 
 # --- Mechanism diff -----------------------------------------------------
