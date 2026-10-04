@@ -157,7 +157,7 @@ def regions_with_points(
                     tuple(c for f in counted for c in f.triangle.corners)
                     + tuple(on_surface(face, f.triangle).centroid for f in counted),
                 )
-                for face, facets in zip(part.faces(), facing_down)
+                for face, facets in zip(part.faces(), facing_down, strict=True)
                 if (
                     counted := tuple(
                         f for f in facets if f.angle_deg > angle_threshold_deg

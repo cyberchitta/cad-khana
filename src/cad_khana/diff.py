@@ -189,7 +189,7 @@ def _numbers_close(old: Any, new: Any) -> bool:
         return abs(float(old) - float(new)) <= _PART_NUMERIC_TOLERANCE
     if isinstance(old, list) and isinstance(new, list):
         return len(old) == len(new) and all(
-            _numbers_close(o, n) for o, n in zip(old, new)
+            _numbers_close(o, n) for o, n in zip(old, new, strict=True)
         )
     if isinstance(old, dict) and isinstance(new, dict):
         return old.keys() == new.keys() and all(

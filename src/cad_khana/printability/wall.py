@@ -65,7 +65,7 @@ def _xyz(v: Vector) -> tuple[float, float, float]:
 def _surface_facets(part: Part) -> tuple[Triangle, ...]:
     return tuple(
         on_surface(face, triangle)
-        for face, triangles in zip(part.faces(), _tessellate_faces(part))
+        for face, triangles in zip(part.faces(), _tessellate_faces(part), strict=True)
         for triangle in triangles
     )
 

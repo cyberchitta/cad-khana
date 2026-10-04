@@ -1,3 +1,5 @@
+from itertools import pairwise
+
 import pytest
 from build123d import Axis, Box, BuildPart, Location
 
@@ -83,7 +85,7 @@ def test_over_joint_never_steps_wider_than_asked():
     motion = Motion.over_joint("swing_in", "swing", 0.0, 50.0, step=20.0)
     angles = [p["swing"] for p in motion.poses]
     assert angles[0] == 0.0 and angles[-1] == pytest.approx(50.0)
-    assert max(b - a for a, b in zip(angles, angles[1:])) <= 20.0
+    assert max(b - a for a, b in pairwise(angles)) <= 20.0
 
 
 def test_over_joint_zero_range_is_one_pose():

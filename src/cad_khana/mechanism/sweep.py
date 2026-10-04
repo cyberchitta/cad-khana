@@ -220,7 +220,7 @@ def _runs(contact: tuple[bool, ...]) -> tuple[tuple[int, int], ...]:
         for i, over in enumerate(contact)
         if over and (i == last or not contact[i + 1])
     )
-    return tuple(zip(starts, ends))
+    return tuple(zip(starts, ends, strict=True))
 
 
 def _angle_span(
@@ -255,7 +255,7 @@ def _phase(result: SweepResult, samples: PairSamples) -> PairPhase:
     runs = _runs(contact)
     hits = tuple(i for i, over in enumerate(contact) if over)
     kind = NEVER if not hits else ALWAYS if len(hits) == len(result.ts) else TRANSIENT
-    peak, t_at_peak = max(zip(samples.volumes_mm3, result.ts))
+    peak, t_at_peak = max(zip(samples.volumes_mm3, result.ts, strict=True))
     return PairPhase(
         a=samples.a,
         b=samples.b,

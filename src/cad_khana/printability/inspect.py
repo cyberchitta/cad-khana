@@ -252,7 +252,7 @@ def _refused(r: Refusal) -> str:
     ``wall 0.8000mm from (…) [pocket_b] to (…) [none]: …``."""
     ends = tuple(
         f"({_point(p)}) [{', '.join(names) or 'none'}]"
-        for p, names in zip(r.failure.at, r.traced)
+        for p, names in zip(r.failure.at, r.traced, strict=True)
     )
     place = f"from {ends[0]} to {ends[1]}" if len(ends) == 2 else f"at {ends[0]}"
     return f"{r.failure.label} {place}: {'; '.join(r.reasons)}"

@@ -434,7 +434,7 @@ def _align_quaternion_hemispheres(
     for i in range(1, len(trajectory)):
         prev_q = trajectory[i - 1][1]
         cur_q = trajectory[i][1]
-        dot = sum(a * b for a, b in zip(prev_q, cur_q))
+        dot = sum(a * b for a, b in zip(prev_q, cur_q, strict=True))
         if dot < 0.0:
             trajectory[i] = (trajectory[i][0], tuple(-c for c in cur_q))
 
@@ -514,12 +514,13 @@ def _group_tracks(
         pivot, seat = _pivot(group.path), _pivot(group.parent)
         local = [
             _trs(up.inverse() * own)
-            for up, own in zip(_drift(group.parent), _drift(group.path))
+            for up, own in zip(_drift(group.parent), _drift(group.path), strict=True)
         ]
         trs = [
             (
                 tuple(
-                    p + rc - s for p, rc, s in zip(pos, _quat_rotate(q, pivot), seat)
+                    p + rc - s
+                    for p, rc, s in zip(pos, _quat_rotate(q, pivot), seat, strict=True)
                 ),
                 q,
             )
@@ -648,7 +649,9 @@ def _inject_animation_into_glb(
             member = gltf.nodes[member_id]
             member.translation = [
                 t - c
-                for t, c in zip(member.translation or [0.0, 0.0, 0.0], track.pivot)
+                for t, c in zip(
+                    member.translation or [0.0, 0.0, 0.0], track.pivot, strict=True
+                )
             ]
         nested_ids = [
             group_node[t.group.path]

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from functools import cached_property
+from itertools import pairwise
 
 from build123d import Location, Part, Plane
 
@@ -365,7 +366,7 @@ def _summary(
             path: JointRange(
                 min=min(vs),
                 max=max(vs),
-                max_step=max((abs(b - a) for a, b in zip(vs, vs[1:])), default=0.0),
+                max_step=max((abs(b - a) for a, b in pairwise(vs)), default=0.0),
             )
             for path, vs in series.items()
         },
@@ -387,7 +388,7 @@ def _warnings(
         )
         + tuple(
             {"kind": "never_in_phase", "assertion": r.name}
-            for a, r in zip(assertions, results)
+            for a, r in zip(assertions, results, strict=True)
             if isinstance(a, Phased)
             and r.skipped not in ABSENCES
             and r.poses.in_phase == 0
@@ -409,7 +410,7 @@ def _warnings(
 def _selected(
     assertions: tuple[Assertion, ...], keep: tuple[bool, ...]
 ) -> tuple[Assertion, ...]:
-    return tuple(a for a, k in zip(assertions, keep) if k)
+    return tuple(a for a, k in zip(assertions, keep, strict=True) if k)
 
 
 def hold(assembly: Assembly, only: tuple[str, ...] = ()) -> Held:
@@ -422,7 +423,11 @@ def hold(assembly: Assembly, only: tuple[str, ...] = ()) -> Held:
     samples = (_Sample(0, None, None, {}),) + tuple(
         _Sample(order, m.name, t, pose)
         for order, (m, t, pose) in enumerate(
-            ((m, t, pose) for m, poses in schedules for t, pose in zip(m.ts, poses)),
+            (
+                (m, t, pose)
+                for m, poses in schedules
+                for t, pose in zip(m.ts, poses, strict=True)
+            ),
             start=1,
         )
     )
@@ -468,7 +473,7 @@ def hold(assembly: Assembly, only: tuple[str, ...] = ()) -> Held:
     )
     movable = tuple(
         not _pose_invariant(a) and v.result.skipped not in ABSENCES
-        for a, v in zip(assertions, at_rest)
+        for a, v in zip(assertions, at_rest, strict=True)
     )
     summaries = tuple(
         _summary(

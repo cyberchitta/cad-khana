@@ -152,7 +152,7 @@ def cover(
                     readings(
                         tuple(
                             f
-                            for f, fn, r in zip(failures, names, refusals)
+                            for f, fn, r in zip(failures, names, refusals, strict=True)
                             if not r and n in fn
                         )
                     )
@@ -167,17 +167,19 @@ def cover(
             for n in sorted(fn)
             if n in breaches
         )
-        for fn, r in zip(names, refusals)
+        for fn, r in zip(names, refusals, strict=True)
     )
     traced_to = frozenset(n for fn in names for n in fn)
     return Coverage(
         uncovered=tuple(
-            Refusal(f, t, r) for f, t, r in zip(failures, traced, reasons) if r
+            Refusal(f, t, r)
+            for f, t, r in zip(failures, traced, reasons, strict=True)
+            if r
         ),
         covering=tuple(
             n
             for n in waiving
-            if any(not r and n in fn for fn, r in zip(names, reasons))
+            if any(not r and n in fn for fn, r in zip(names, reasons, strict=True))
         ),
         stale=tuple(n for n in waiving if n not in traced_to),
     )
