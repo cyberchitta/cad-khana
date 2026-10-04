@@ -307,22 +307,25 @@ rest of both files' fields: `references/diagnostics.md`.
 ## Reference files
 
 Load each when its trigger applies — they are not optional reading
-for the task they cover.
+for the task they cover. Every library name a script needs is in the
+last column, beside the file that documents it: a name you can't find
+here isn't in the library, and one you can is already documented, so
+load that file before proposing a feature.
 
-| Load | before |
-|---|---|
-| `references/workflow.md` | starting a mechanism from a blank file, or the same failure surviving three fix attempts — design order, the check-then-draw loop, when to stop and escalate with `HUMAN_REVIEW:` |
-| `references/cli.md` | addressing a `:factory`, looking for an output file, keeping a script's outputs apart (before/after baselines, parallel runs), an import failing under `khana`, the viewer, or checking several members of a family |
-| `references/style.md` | writing or restructuring a declaration module — a part function, helper or factory, or adding, moving or deriving a parameter (changing an existing parameter's value alone doesn't fire it) |
-| `references/assertions.md` | writing or changing any `assert_*` — the catalogue, solid count, distance/scalar, contact claims and `during=`, group assertions |
-| `references/composition.md` | adding a sub-assembly, joint or anchor, or a claim about two units |
-| `references/motion.md` | anything that moves or animates — declared motions, sweeps, GLB export |
-| `references/printability.md` | an `inspect()` call, a waiver, a printability JSON, or choosing a print orientation |
-| `references/diagnostics.md` | reading any JSON field beyond `status`, `passed`, `skipped_counts` and `warnings` |
-| `references/drawings.md` | `khana draw` — which view answers which question |
-| `references/build123d_quickref.md` | selector operators, algebraic vs Builder mode, type-conversion shortcuts |
-| `references/standard_parts.md` | any standard hardware (bd_warehouse) |
-| `references/examples/pin_hinge/` | a worked three-part mechanism with assertions and `inspect()` calls |
+| Load | before | names |
+|---|---|---|
+| `references/workflow.md` | starting a mechanism from a blank file, or the same failure surviving three fix attempts — design order, the check-then-draw loop, when to stop and escalate with `HUMAN_REVIEW:` |  |
+| `references/cli.md` | addressing a `:factory`, looking for an output file, keeping a script's outputs apart (before/after baselines, parallel runs), an import failing under `khana`, the viewer, or checking several members of a family | `check`, `export_assembly` |
+| `references/style.md` | writing or restructuring a declaration module — a part function, helper or factory, or adding, moving or deriving a parameter (changing an existing parameter's value alone doesn't fire it) | `Assembly`, `with_part`, `with_materials`, `with_detailed_geometry` |
+| `references/assertions.md` | writing or changing any `assert_*` — the catalogue, solid count, distance/scalar, contact claims and `during=`, group assertions | every `assert_*`, `with_keepout` |
+| `references/composition.md` | adding a sub-assembly, joint or anchor, or a claim about two units | `with_subassembly`, `part(path)`, `placed_parts`, `with_anchor`, `anchor`, `with_joint`, `with_joint_angle` |
+| `references/motion.md` | anything that moves or animates — declared motions, sweeps, GLB export | `Motion`, `with_motion`, `posed`, `over_joint`, `over_motion`, `sweep`, `classify`, `onset`, `export_glb`, `export_animated_glb` |
+| `references/printability.md` | an `inspect()` call, a waiver, a printability JSON, or choosing a print orientation | `inspect`, `FDM`, `Waiver`, `Feature` |
+| `references/diagnostics.md` | reading any JSON field beyond `status`, `passed`, `skipped_counts` and `warnings` |  |
+| `references/drawings.md` | `khana draw` — which view answers which question |  |
+| `references/build123d_quickref.md` | selector operators, algebraic vs Builder mode, type-conversion shortcuts |  |
+| `references/standard_parts.md` | any standard hardware (bd_warehouse) |  |
+| `references/examples/pin_hinge/` | a worked three-part mechanism with assertions and `inspect()` calls |  |
 
 ## Feedback
 

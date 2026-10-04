@@ -6,12 +6,14 @@ home that dropped it. Field meanings live in ``references/diagnostics.md``;
 every warning kind is named in ``SKILL.md`` itself, because a warning
 never fails a run and an agent that doesn't know the kind won't load a
 reference to find it; the claim catalogue lives in
-``references/assertions.md``. ``CLAUDE.md`` carries only the schema
+``references/assertions.md``; every name a script calls sits in
+``SKILL.md``'s reference table, beside the file that documents it. ``CLAUDE.md`` carries only the schema
 version and the maintainer's delta. These tests derive each enumerable
 fact from the code and fail when its home omits one — the drift that
 survived three schema bumps before ``55fab5a`` caught it by eye.
 """
 
+import importlib
 import inspect
 import re
 from pathlib import Path
@@ -147,3 +149,52 @@ def test_documented_schema_version_is_current(doc: str):
         re.findall(r"schemas? \(v([\d.]+)\)", doc)
     )
     assert stated <= {SCHEMA_VERSION}
+
+
+# The library surface a script calls, derived from the code: every
+# ``with_*`` builder, plus each script-facing module's public functions
+# and classes. Machinery a script never calls (``joint_angles``,
+# ``compound``, the result dataclasses) is out of scope.
+SCRIPT_MODULES = {
+    "cad_khana.mechanism.motion": ("Motion",),
+    "cad_khana.mechanism.sweep": ("sweep", "over_joint", "over_motion", "classify", "onset"),
+    "cad_khana.printability.inspect": ("inspect",),
+    "cad_khana.printability.methods": ("FDM",),
+    "cad_khana.printability.waiver": ("Waiver",),
+    "cad_khana.printability.feature": ("Feature",),
+    "cad_khana.export": ("export_assembly", "export_glb", "export_animated_glb"),
+}
+SURFACE_ROW = re.compile(r"^\| `(references/[\w./]+)` \| .* \| (.*) \|$", re.M)
+
+
+def _surface_rows() -> dict[str, set[str]]:
+    section = SKILL.split("## Reference files", 1)[1].split("\n## ", 1)[0]
+    return {
+        ref: set(re.findall(r"`(\w+)", names))
+        for ref, names in SURFACE_ROW.findall(section)
+    }
+
+
+def test_every_builder_and_script_name_is_on_the_skill_index():
+    listed = set().union(*_surface_rows().values())
+    builders = {n for n in dir(Assembly) if n.startswith("with_")}
+    named = {n for names in SCRIPT_MODULES.values() for n in names}
+    stale = [
+        (module, n)
+        for module, names in SCRIPT_MODULES.items()
+        for n in names
+        if not hasattr(importlib.import_module(module), n)
+    ]
+    assert not stale, stale
+    assert builders | named <= listed, sorted((builders | named) - listed)
+
+
+def test_each_listed_name_is_documented_in_its_row_file():
+    rows = _surface_rows()
+    missing = [
+        (ref, name)
+        for ref, names in rows.items()
+        for name in names - {"every"}
+        if name not in (SKILL_DIR / ref).read_text()
+    ]
+    assert not missing, missing
