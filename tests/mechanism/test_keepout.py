@@ -83,6 +83,12 @@ def _sphere_depth(p: Vector) -> float:
     return p.length - 5
 
 
+# _cone's radius falls from 6 at z = -5 to 2 at z = 5; dividing by the
+# slant keeps the side's depth a distance, as the margin assumes.
+def _cone_depth(p: Vector) -> float:
+    return max((hypot(p.X, p.Y) - (4 - 0.4 * p.Z)) / hypot(1, 0.4), abs(p.Z) - 5)
+
+
 MEMBERSHIP_CASES: dict[
     str, tuple[Callable[[], Part], Callable[[Vector], float], Travel]
 ] = {
@@ -93,6 +99,12 @@ MEMBERSHIP_CASES: dict[
         (50 * sin(TILT), 0, 50 * cos(TILT)),
     ),
     "sphere": (_sphere, _sphere_depth, (0, 30, 0)),
+    "cone across its axis": (_cone, _cone_depth, (40, 0, 0)),
+    "cone tilted to the travel": (
+        _cone,
+        _cone_depth,
+        (40 * sin(TILT), 0, 40 * cos(TILT)),
+    ),
 }
 
 
