@@ -180,6 +180,31 @@ a = a.assert_clear_of("stage_1", driver, name="arc_screw",
                       excluding=["stage_1.sector_2"])
 ```
 
+**A straight-line path is `swept(body, by)`**, the exact volume a body
+passes through translating by a vector (from
+`cad_khana.mechanism.keepout`). Use it for a draw-out or drop-in
+path whose obstacles must stay clear of the moving body:
+
+```python
+from cad_khana.mechanism.keepout import swept
+
+# a basket drawn 120 mm out along +X, past every column
+path = swept(basket(), (120, 0, 0))
+a = a.assert_clear_of(columns, path, name="basket_draw_out")
+```
+
+It is exact, not sampled, so it catches an obstacle that the body
+clears at rest and at the end of its travel but crosses on the way. It
+takes planes, cylinders, cones and spheres, the faces whose outline
+OCCT computes exactly. Any other face (a torus, a B-spline) raises
+rather than return an approximate path. There, fall back to stepped
+copies of the body in a `Compound`, which is sampled. Two cautions:
+`value` is the least distance over the whole path. When the nearest
+obstacle sits beside the body at rest, that is the rest clearance, and
+the green says nothing about margin mid-travel. Also, extruding the
+body's silhouette is **not** a substitute: a slot a post stands in at
+rest is hidden in the silhouette, so that shape is red from the start.
+
 The keep-out is declared in this assembly's frame and rides its
 placement: composed into a parent, or under a joint, it moves with the
 unit that declared it. That is a datum `Plane`'s rule too.

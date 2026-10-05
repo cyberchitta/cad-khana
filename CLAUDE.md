@@ -36,6 +36,13 @@ humans.
   maintained by a solver. Keep it simple.
 - Not a replacement for Build123d. `cad_khana` is a thin library on top.
   Users drop into raw Build123d for anything the library doesn't cover.
+  **The one exception is `mechanism/keepout.py`**, and it is held to an
+  admission rule: a construction goes there only when an assertion needs
+  an exact shape that Build123d does not provide, and it refuses inputs
+  it cannot build exactly rather than approximate them, since a keep-out
+  that under-covers is a false green. Its docstring names what would retire
+  it (an upstream equivalent). It is named for the claim it serves, not
+  `geometry/`, so that it cannot grow into a general CAD module.
 - Not an MCP server in v0. CLI only. MCP may come later; structure code so
   it's possible without rewrites.
 - Not a GUI. The VS Code extension is a human convenience, documented in the
@@ -107,6 +114,7 @@ cad-khana/
         motion.py             # Motion: a schedule of poses, declared as data
         hold.py               # held evaluation: assertions over every motion
         sweep.py              # sampled-motion queries: sweep/classify/onset
+        keepout.py            # keep-out constructions: swept() — the one module that builds geometry
         check.py              # check() orchestrator + CheckResult
       printability/
         methods.py            # FDM dataclass (up_axis, wall_min, overhang_max)
@@ -586,6 +594,7 @@ for end-user install, `uvx khana ...` for ephemeral use.
 ## Invariants
 
 - **Side effect isolation.** `mechanism.diagnostics`, `mechanism.assertions`,
+  `mechanism.keepout`,
   `printability.wall`, `printability.overhangs`, `diff.py`, and `show.py`
   are pure —
   take data, return data. File I/O lives in `export.py`, `draw.py`,
