@@ -26,12 +26,14 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from itertools import combinations
 
-from build123d import BoundBox, Part
+from build123d import Part
 
 from cad_khana.mechanism.assembly import Assembly
 from cad_khana.mechanism.diagnostics import (
     INTERFERENCE_VOLUME_EPSILON_MM3,
+    bboxes_apart,
     intersection_volume,
+    part_bbox,
 )
 from cad_khana.mechanism.motion import Motion
 
@@ -120,17 +122,6 @@ class Onset:
     evaluations: int
 
 
-def _bboxes_overlap(a: BoundBox, b: BoundBox) -> bool:
-    return (
-        a.min.X <= b.max.X
-        and b.min.X <= a.max.X
-        and a.min.Y <= b.max.Y
-        and b.min.Y <= a.max.Y
-        and a.min.Z <= b.max.Z
-        and b.min.Z <= a.max.Z
-    )
-
-
 def _shapes(assembly: Assembly) -> dict[str, Part]:
     return {p.name: p.part.moved(p.location) for p in assembly.placed_parts}
 
@@ -140,11 +131,11 @@ def _bbox_candidates(shapes: dict[str, Part]) -> tuple[Pair, ...]:
     in the direction that matters — disjoint boxes cannot intersect —
     so skipping the boolean for the rest costs no coverage, only the
     O(n^2) booleans that dominate a discovery sweep."""
-    boxes = {n: s.bounding_box() for n, s in shapes.items()}
+    boxes = {n: part_bbox(s) for n, s in shapes.items()}
     return tuple(
         pair
         for pair in combinations(sorted(shapes), 2)
-        if _bboxes_overlap(boxes[pair[0]], boxes[pair[1]])
+        if not bboxes_apart(boxes[pair[0]], boxes[pair[1]])
     )
 
 

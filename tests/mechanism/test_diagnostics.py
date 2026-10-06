@@ -1,6 +1,8 @@
-from build123d import Box, BuildPart, Location, Locations
+import pytest
+from build123d import Box, BuildPart, Location, Locations, Mode
 from pytest import approx
 
+from cad_khana.mechanism import diagnostics
 from cad_khana.mechanism.assembly import Assembly
 from cad_khana.mechanism.diagnostics import SCHEMA_VERSION, compute
 
@@ -88,6 +90,73 @@ def test_interference_pairs_are_unordered_combinations():
     )
     pairs = {(i.a, i.b) for i in compute(a).interferences}
     assert pairs == {("a", "b"), ("a", "c"), ("b", "c")}
+
+
+def _intersected_pairs(
+    a: Assembly, monkeypatch: pytest.MonkeyPatch
+) -> set[tuple[str, str]]:
+    seen: set[tuple[str, str]] = set()
+    real = diagnostics._interference  # pyright: ignore[reportPrivateUsage]
+
+    def spy(x: diagnostics._Posed, y: diagnostics._Posed):  # pyright: ignore[reportPrivateUsage]
+        seen.add((x.name, y.name))
+        return real(x, y)
+
+    monkeypatch.setattr(diagnostics, "_interference", spy)
+    compute(a)
+    return seen
+
+
+def test_pairs_with_apart_bounding_boxes_skip_the_boolean(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    a = (
+        Assembly()
+        .with_part("a", Box(10, 10, 10))
+        .with_part("b", Box(10, 10, 10), location=Location((5, 0, 0)))
+        .with_part("far", Box(10, 10, 10), location=Location((0, 0, 50)))
+    )
+    assert _intersected_pairs(a, monkeypatch) == {("a", "b")}
+
+
+def test_touching_and_hair_apart_boxes_still_run_the_boolean(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    a = (
+        Assembly()
+        .with_part("a", Box(10, 10, 10))
+        .with_part("touch", Box(10, 10, 10), location=Location((10, 0, 0)))
+        .with_part("hair", Box(10, 10, 10), location=Location((0, 10 + 1e-4, 0)))
+    )
+    assert {("a", "touch"), ("a", "hair")} <= _intersected_pairs(a, monkeypatch)
+
+
+def _notched() -> Box:
+    with BuildPart() as p:
+        Box(30, 30, 10)
+        with Locations((10, 10, 0)):
+            Box(10, 10, 10, mode=Mode.SUBTRACT)
+    return p.part  # pyright: ignore[reportReturnType]
+
+
+def test_overlapping_boxes_around_disjoint_shapes_report_nothing():
+    a = (
+        Assembly()
+        .with_part("l", _notched())
+        .with_part("in_notch", Box(8, 8, 8), location=Location((10, 10, 0)))
+    )
+    assert compute(a).interferences == ()
+
+
+def test_overlap_on_every_axis_but_one_is_still_found():
+    a = (
+        Assembly()
+        .with_part("a", Box(10, 10, 10))
+        .with_part("b", Box(10, 10, 10), location=Location((0, 0, 9.5)))
+    )
+    hits = compute(a).interferences or ()
+    assert len(hits) == 1
+    assert abs(hits[0].volume_mm3 - 50.0) < 1e-6
 
 
 def test_assertions_default_empty():

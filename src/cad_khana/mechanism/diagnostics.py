@@ -19,6 +19,12 @@ INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
 # ~1e-7 bbox slop observed); exact comparison flips on that noise.
 BOUND_EPSILON = 1e-6
 
+# The interference pass skips a pair only when its bounding boxes are
+# apart by more than this. A skip is the one way that pass can lose a
+# result, so the margin is a thousand times the ~1e-7 bbox slop above;
+# a wider margin costs only a few extra booleans.
+BBOX_GAP_MARGIN_MM = 1e-3
+
 Warning = dict[str, str | int]
 Point = tuple[float, float, float]
 # The nearest pair a distance was measured between: a point on each side.
@@ -219,7 +225,7 @@ def _placed(p: PlacedPart) -> Part:
     return p.part.moved(p.location)
 
 
-def _bbox(part: Part) -> BBox:
+def part_bbox(part: Part) -> BBox:
     bb = part.bounding_box()
     return BBox(
         min=(bb.min.X, bb.min.Y, bb.min.Z),
@@ -230,7 +236,7 @@ def _bbox(part: Part) -> BBox:
 def _part_diagnostics(shape: Part) -> PartDiagnostics:
     com = shape.center()
     return PartDiagnostics(
-        bbox=_bbox(shape),
+        bbox=part_bbox(shape),
         volume_mm3=shape.volume,
         surface_area_mm2=shape.area,
         center_of_mass_mm=(com.X, com.Y, com.Z),
@@ -258,8 +264,29 @@ def multi_solid_warnings(
     )
 
 
-def _interference(a: PlacedPart, b: PlacedPart) -> Interference | None:
-    inter = _placed(a) & _placed(b)
+@dataclass(frozen=True)
+class _Posed:
+    name: str
+    shape: Part
+    bbox: BBox
+
+    @staticmethod
+    def create(p: PlacedPart) -> _Posed:
+        shape = _placed(p)
+        return _Posed(name=p.name, shape=shape, bbox=part_bbox(shape))
+
+
+def bboxes_apart(a: BBox, b: BBox) -> bool:
+    """Boxes separated by more than ``BBOX_GAP_MARGIN_MM`` on some axis,
+    so the shapes inside them cannot share volume."""
+    return any(
+        a_max + BBOX_GAP_MARGIN_MM < b_min or b_max + BBOX_GAP_MARGIN_MM < a_min
+        for a_min, a_max, b_min, b_max in zip(a.min, a.max, b.min, b.max, strict=True)
+    )
+
+
+def _interference(a: _Posed, b: _Posed) -> Interference | None:
+    inter = a.shape & b.shape
     if inter is None:
         return None
     # `a & b` can return a `ShapeList` when one of the inputs is a
@@ -287,11 +314,14 @@ def _interference(a: PlacedPart, b: PlacedPart) -> Interference | None:
 
 def interferences(assembly: Assembly) -> tuple[Interference, ...]:
     """Every pair of parts, intersected — quadratic in the part count,
-    and the bulk of a large tree's ``check``."""
+    and the bulk of a large tree's ``check``. A pair whose bounding
+    boxes are apart skips the boolean: on a large tree most pairs are,
+    and the box test costs microseconds against a boolean's ~1 ms."""
+    posed = tuple(_Posed.create(p) for p in assembly.placed_parts)
     return tuple(
         r
-        for a, b in combinations(assembly.placed_parts, 2)
-        if (r := _interference(a, b)) is not None
+        for a, b in combinations(posed, 2)
+        if not bboxes_apart(a.bbox, b.bbox) and (r := _interference(a, b)) is not None
     )
 
 

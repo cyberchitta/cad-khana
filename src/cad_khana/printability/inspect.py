@@ -14,7 +14,7 @@ from cad_khana.mechanism.diagnostics import (
     SCHEMA_VERSION,
     AssertionResult,
     BBox,
-    _bbox,
+    part_bbox,
 )
 from cad_khana.printability.feature import Coverage, Failure, Feature, Refusal, cover
 from cad_khana.printability.methods import FDM
@@ -445,7 +445,7 @@ def inspect(
         name=name,
         method=type(method).__name__,
         method_params=asdict(method),
-        bbox=_bbox(part),
+        bbox=part_bbox(part),
         volume_mm3=part.volume,
         surface_area_mm2=part.area,
         center_of_mass_mm=(com.X, com.Y, com.Z),
