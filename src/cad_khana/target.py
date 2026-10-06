@@ -13,6 +13,13 @@ form. Anything else is a boundary error that lists the module's public
 factories — the error message is the discovery mechanism, which is why
 the ``-> Assembly`` return annotation mandated by the code style is
 load-bearing here.
+
+User code is compiled from the file on disk, never from a cached
+``.pyc`` (``source_imports``): Python trusts a ``.pyc`` whose recorded
+source mtime (whole seconds) and size match, so an edit landing in the
+same second at the same size ran the previous code — a red test
+restored by ``sed`` then ``mv`` went red on correct source, and the
+mirror case is a green over broken source.
 """
 
 from __future__ import annotations
@@ -21,9 +28,12 @@ import importlib
 import importlib.util
 import inspect
 import sys
+from collections.abc import Generator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
+from importlib.machinery import ModuleSpec, SourceFileLoader
 from pathlib import Path
-from types import ModuleType
+from types import CodeType, ModuleType
 
 from cad_khana.mechanism.assembly import Assembly
 
@@ -96,6 +106,87 @@ def load(path: Path) -> ModuleType:
     return importlib.import_module(module)
 
 
+class _SourceLoader(SourceFileLoader):
+    """A ``SourceFileLoader`` that compiles the file on disk every time —
+    it neither reads nor writes ``__pycache__``."""
+
+    def get_code(self, fullname: str) -> CodeType:
+        path = self.get_filename(fullname)
+        return self.source_to_code(self.get_data(path), path)
+
+
+_INSTALLED = tuple(
+    {
+        Path(p).resolve()
+        for p in (sys.prefix, sys.base_prefix, sys.exec_prefix, sys.base_exec_prefix)
+    }
+)
+
+
+def edited_in_place(origin: Path) -> bool:
+    """Code outside the interpreter's prefixes — the user's tree, an
+    editable install — is what gets edited between runs. Installed code
+    keeps its cache: it does not change under a run, and recompiling
+    the CAD stack every time would cost seconds."""
+    resolved = origin.resolve()
+    return not any(resolved.is_relative_to(prefix) for prefix in _INSTALLED)
+
+
+def _from_source(spec: ModuleSpec, origin: str) -> ModuleSpec | None:
+    return importlib.util.spec_from_file_location(
+        spec.name,
+        origin,
+        loader=_SourceLoader(spec.name, origin),
+        submodule_search_locations=spec.submodule_search_locations,
+    )
+
+
+class _SourceFinder:
+    """First on ``sys.meta_path``: asks the finders behind it, in their
+    order, and swaps a plain source loader for ``_SourceLoader`` when the
+    module is edited in place — resolution is unchanged, only where the
+    code object comes from."""
+
+    @classmethod
+    def find_spec(
+        cls,
+        fullname: str,
+        path: Sequence[str] | None,
+        target: ModuleType | None = None,
+    ) -> ModuleSpec | None:
+        spec = next(
+            (
+                found
+                for finder in sys.meta_path
+                if finder is not cls
+                and (found := finder.find_spec(fullname, path, target)) is not None
+            ),
+            None,
+        )
+        return (
+            _from_source(spec, spec.origin)
+            if spec is not None
+            and type(spec.loader) is SourceFileLoader
+            and spec.origin is not None
+            and edited_in_place(Path(spec.origin))
+            else spec
+        )
+
+
+@contextmanager
+def source_imports() -> Generator[None]:
+    """Imports inside compile edited-in-place modules from source.
+
+    A boundary switch, like ``_failures.defer``: the CLI holds it for the
+    whole of a verb or script, so an import a factory makes at call time
+    is covered too."""
+    sys.meta_path.insert(0, _SourceFinder)
+    try:
+        yield
+    finally:
+        sys.meta_path.remove(_SourceFinder)
+
+
 def ensure_importable(root: Path) -> None:
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
@@ -104,7 +195,9 @@ def ensure_importable(root: Path) -> None:
 def _load_standalone(path: Path) -> ModuleType:
     path = path.resolve()
     ensure_importable(path.parent)
-    spec = importlib.util.spec_from_file_location(path.stem, path)
+    spec = importlib.util.spec_from_file_location(
+        path.stem, path, loader=_SourceLoader(path.stem, str(path))
+    )
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)

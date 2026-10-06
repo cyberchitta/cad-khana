@@ -1,9 +1,19 @@
+import json
+import os
+import py_compile
 from pathlib import Path
 
 import pytest
 
 from cad_khana.mechanism.assembly import Assembly
-from cad_khana.target import Target, TargetError, factories, load, resolve
+from cad_khana.target import (
+    Target,
+    TargetError,
+    edited_in_place,
+    factories,
+    load,
+    resolve,
+)
 
 
 def _module(tmp_path: Path, name: str, text: str) -> Path:
@@ -113,3 +123,24 @@ def test_resolve_rejects_a_named_non_callable(tmp_path: Path):
     )
     with pytest.raises(TargetError, match="not a factory"):
         resolve(Target(path, "asm"))
+
+
+def test_load_compiles_a_standalone_target_from_source_not_a_stale_pyc(
+    tmp_path: Path,
+):
+    path = tmp_path / "stale_standalone.py"
+    path.write_text("SIZE = 20\n")
+    py_compile.compile(
+        str(path),
+        doraise=True,
+        invalidation_mode=py_compile.PycInvalidationMode.TIMESTAMP,
+    )
+    stat = path.stat()
+    path.write_text("SIZE = 10\n")
+    os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+    assert load(path).SIZE == 10
+
+
+def test_installed_code_keeps_its_cache(tmp_path: Path):
+    assert not edited_in_place(Path(json.__file__))
+    assert edited_in_place(tmp_path / "unit.py")

@@ -1,4 +1,6 @@
 import json
+import os
+import py_compile
 from pathlib import Path
 
 import pytest
@@ -1509,4 +1511,62 @@ def test_diff_reads_two_partial_runs_of_the_same_selection(tmp_path: Path):
     result = runner.invoke(
         app, ["diff", str(one / "mechanism.json"), str(two / "mechanism.json")]
     )
+    assert result.exit_code == 0, result.output
+
+
+def _stale(path: Path, was: str, now: str) -> None:
+    """Leave ``path`` holding ``now`` behind a ``.pyc`` compiled from
+    ``was`` at the same size and mtime — an edit and its restore landing
+    in one second, which Python's timestamp check cannot see."""
+    assert len(was) == len(now)
+    path.write_text(was)
+    py_compile.compile(
+        str(path),
+        doraise=True,
+        invalidation_mode=py_compile.PycInvalidationMode.TIMESTAMP,
+    )
+    stat = path.stat()
+    path.write_text(now)
+    os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+
+
+def test_check_reads_a_package_targets_constants_from_source_not_a_stale_pyc(
+    tmp_path: Path,
+):
+    """A ``.pyc`` matching the source's size and mtime is not trusted:
+    the run measures what the file says (sorted-studs' 17 T red test,
+    restored in the same second, read red on correct source)."""
+    unit = tmp_path / "proj" / "stalepkg"
+    unit.mkdir(parents=True)
+    (unit / "__init__.py").write_text("")
+    _stale(unit / "params.py", "SIZE = 20\n", "SIZE = 10\n")
+    module = unit / "asm.py"
+    module.write_text(
+        "from build123d import Box\n"
+        "from cad_khana.mechanism.assembly import Assembly\n"
+        "\n"
+        "from .params import SIZE\n"
+        "\n"
+        "\n"
+        "def assembly() -> Assembly:\n"
+        "    return Assembly().with_part('cube', Box(SIZE, SIZE, SIZE))\n"
+    )
+    out = tmp_path / "out"
+    result = runner.invoke(app, ["check", str(module), "--out", str(out)])
+    assert result.exit_code == 0, result.output
+    data = json.loads((out / "mechanism.json").read_text())
+    assert abs(data["parts"]["cube"]["volume_mm3"] - 1000.0) < 1e-6
+
+
+def test_run_reads_a_sibling_module_from_source_not_a_stale_pyc(tmp_path: Path):
+    unit = tmp_path / "stale_sibling_unit"
+    unit.mkdir()
+    _stale(unit / "stale_decl.py", "SIZE = 20\n", "SIZE = 10\n")
+    script = unit / "printability.py"
+    script.write_text(
+        "from stale_decl import SIZE\n"
+        "\n"
+        "assert SIZE == 10, f'ran the cached bytecode: {SIZE}'\n"
+    )
+    result = runner.invoke(app, ["run", str(script)])
     assert result.exit_code == 0, result.output

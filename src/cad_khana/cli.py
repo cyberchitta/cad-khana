@@ -26,6 +26,7 @@ from cad_khana.target import (
     ensure_importable,
     package_module_spec,
     resolve,
+    source_imports,
 )
 
 app = typer.Typer(
@@ -173,7 +174,8 @@ def _run_script(
         out = _paths.under_root(script.resolve().parent / "outputs")
     _failures.defer()
     try:
-        _exec_script(script)
+        with source_imports():
+            _exec_script(script)
     except SystemExit as exc:
         if exc.code:
             raise
@@ -221,7 +223,8 @@ def _run_target(
     # (cwd-relative) either way.
     out_path = target.default_out if out is None else Path.cwd() / out
     try:
-        verb(resolve(target), out_path)
+        with source_imports():
+            verb(resolve(target), out_path)
     except (TargetError, SelectionError) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(code=2) from None
