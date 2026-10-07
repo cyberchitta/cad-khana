@@ -369,10 +369,12 @@ Maintainer facts behind those fields:
   from non-linear schedules. Sweeps derive a claim; assertions hold it.
 - Sub-assembly assertions and motions qualify into every composing root
   (`Assembly.all_assertions`, `Assembly.all_motions`).
-- **A partial run skips the interference pass** because it is what a
-  large tree's check spends its time on (sorted-studs m05, 250 parts:
-  37 s of a 49 s check; under its 180-pose motion, hold adds 37 s more,
-  which the selection narrows), and a subset run exists to be fast.
+- **A partial run skips the interference pass** because a subset run
+  exists to be fast and the pass answers for the whole model, not the
+  selection. It was once most of a check (m05, 250 parts: 37 s of
+  49 s); since the bbox prefilter it is not (sorted-studs whole
+  machine, 357 parts, 2026-10-06: interferences 5.5 s, hold 54 s of a
+  79 s check — so the selection's real saving is now in hold).
   `interferences: null` rather than `[]`, so it cannot read as "looked,
   found none"; `interferences_rest_pose_only` is dropped with it.
   `status` is not changed — it answers for the claims held — and the
