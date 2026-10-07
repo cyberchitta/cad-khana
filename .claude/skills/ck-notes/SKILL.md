@@ -59,6 +59,13 @@ how the loop silently stops being demand-driven.
   even when the consumer already wrote "DONE" throughout. The Close-out is
   where cross-repo consequences get named: a caveat the consumer's work
   retired, a field-note that came back, a decision now gated.
+- **A suggested conversion goes over unprobed.** When a handoff suggests
+  the consumer convert sites to shipped API, don't build and run the
+  conversion on their tree first: their run is the exercise, so a pre-run
+  duplicates a long check on a shared machine (owner, 2026-10-04: "why
+  would you run the conversion twice. let them run it and report"). The
+  probe-before-claiming rule binds what cad-khana ships. Say in the
+  handoff what is unprobed and what they should watch go red.
 - **Re-verify an inventory before trusting it.** Every handoff that carried
   a per-file inventory has had it drift between authoring and execution —
   files already fixed by an earlier item, sites the grep shape couldn't see.
