@@ -273,9 +273,11 @@ before believing an exit 0. Every kind:
   the as-built pose only.
 - `partial_run` (`evaluated`, `declared`) — `khana check --only` held
   a subset and computed no interferences: a green here is not the model's.
-- `multi_solid` (`part`, `solid_count`) — a part in several pieces that
-  no `assert_solid_count` / `inspect(..., solid_count=N)` speaks for:
-  bound it or declare it. Nothing else sees a severed part.
+- `multi_solid` (`part`, `solid_count`) — a part of several solids,
+  apart or overlapping, that no `assert_solid_count` /
+  `inspect(..., solid_count=N)` speaks for: bound it or declare it.
+  Nothing else sees a severed part. A declared count does not say the
+  solids are apart.
 - `not_solid` (`part`, `solid_count`) — a part with faces outside any
   solid: a shell, a face, or one beside a solid. It holds no material, so
   it is left out of `interferences[]`, its `volume_mm3` is `null`, and

@@ -33,7 +33,10 @@ its claims filtered, sorted or grouped; see `references/cli.md`.
   way to verify a boolean operation changed geometry: counts shift on
   success, stay the same on a silent no-op or OCCT failure.
 - `parts[name].solid_count` — `1` for a part in one piece. Above `1`
-  something is detached (or touches only along an edge); see
+  the part is several solids: detached, touching only along an edge, or
+  overlapping. A compound of overlapping solids counts each one, and its
+  `volume_mm3` is their sum, not the union a slicer prints; a declared
+  count says how many solids, not that they are apart. See
   `multi_solid` in `SKILL.md` §Read `warnings` on every run. `0` is a
   surface — declared with `assert_solid_count(part, eq=0)`, or a
   `not_solid` warning.
@@ -119,7 +122,8 @@ its claims filtered, sorted or grouped; see `references/cli.md`.
   (`up_axis: [0, -1, 0]`) reads differently from an as-placed one.
   `khana diff` lists each parameter that changed under `method_params:`.
 - `volume_mm3`, `bbox` — basic part metrics.
-- `solid_count` — `1` for a part in one piece; above `1` the file also
+- `solid_count` — `1` for a part in one piece; above `1` it is several
+  solids, possibly overlapping (see `parts[name].solid_count`), and the file also
   carries a `multi_solid` warning unless `inspect(..., solid_count=N)`
   declared the count, in which case `assertions` carries
   `solid_count:N` instead.
