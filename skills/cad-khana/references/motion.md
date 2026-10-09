@@ -147,6 +147,10 @@ clear→contact interval and bisects inside it — bisection alone would
 assume contact only ever starts once, and `Onset.brackets` tells you
 how many transitions the samples actually showed.
 
+A part with a surface (`not_solid`) has no overlap to measure: `sweep`'s
+every-pair pass leaves it out, and naming it in `pairs=` or to `onset`
+raises `ValueError` — measure it with `assert_distance`.
+
 **A sweep is never a substitute for holding the claims.** The two look
 alike from outside — both are "the mechanism at N poses" — and are
 opposite in kind: `sweep` measures raw pairwise overlap volumes and

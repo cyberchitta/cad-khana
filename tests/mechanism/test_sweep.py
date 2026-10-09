@@ -1,4 +1,7 @@
-from build123d import Axis, Box, BuildPart, Location
+from collections.abc import Callable
+
+from build123d import Axis, Box, BuildPart, Location, Part, Shell
+from pytest import raises
 
 from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
 from cad_khana.mechanism.sweep import (
@@ -175,3 +178,38 @@ def test_onset_counts_every_transition_so_a_second_phase_is_visible():
 def test_onset_evaluations_exceed_the_sample_count_when_it_bisects():
     result = onset(_approaching, ("a", "b"), (0.0, 1.0), tol=1e-3)
     assert result.evaluations > 2
+
+
+# --- surfaces -------------------------------------------------------------
+
+
+def _skin() -> Part:
+    return Part([Shell(Box(8, 8, 8).faces())])
+
+
+def _mixed() -> Part:
+    """One solid, so the part looks healthy, and a shell beside it."""
+    return Part([Box(2, 2, 2).moved(Location((0, 0, 30))), Shell(Box(8, 8, 8).faces())])
+
+
+def _sunk(skin: Part) -> Callable[[float], Assembly]:
+    """A surface sunk inside cube ``a`` at every t, beside a cube pair
+    that does overlap."""
+    return lambda t: _slider(5).with_part("skin", skin)
+
+
+def test_sweep_leaves_a_surface_out_of_the_every_pair_pass():
+    for skin in (_skin(), _mixed()):
+        result = sweep(_sunk(skin), (0.0, 1.0))
+        assert [(p.a, p.b) for p in result.pairs] == [("a", "b")]
+
+
+def test_sweep_refuses_a_named_pair_through_a_surface():
+    for skin in (_skin(), _mixed()):
+        with raises(ValueError, match="skin.*assert_distance"):
+            sweep(_sunk(skin), (0.0, 1.0), pairs=(("a", "skin"),))
+
+
+def test_onset_refuses_a_pair_through_a_surface():
+    with raises(ValueError, match="skin"):
+        onset(_sunk(_skin()), ("skin", "a"), (0.0, 1.0))

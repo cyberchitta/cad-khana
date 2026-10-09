@@ -32,6 +32,7 @@ from cad_khana.mechanism.assembly import Assembly
 from cad_khana.mechanism.diagnostics import (
     INTERFERENCE_VOLUME_EPSILON_MM3,
     bboxes_apart,
+    has_surface,
     intersection_volume,
     part_bbox,
 )
@@ -139,6 +140,20 @@ def _bbox_candidates(shapes: dict[str, Part]) -> tuple[Pair, ...]:
     )
 
 
+def _measurable(shapes: dict[str, Part], pairs: tuple[Pair, ...]) -> tuple[Pair, ...]:
+    """``pairs``, or a refusal when one runs through a surface: its
+    boolean is empty however deep it sinks, and a recorded ``0.0`` would
+    classify the pair ``never``."""
+    surfaces = sorted({n for pair in pairs for n in pair if has_surface(shapes[n])})
+    if surfaces:
+        raise ValueError(
+            f"overlap is undefined for a surface ({', '.join(surfaces)} has "
+            "faces outside any solid, so no material to intersect); measure "
+            "it with assert_distance"
+        )
+    return pairs
+
+
 def _key(pair: Pair) -> Pair:
     a, b = pair
     return (a, b) if a <= b else (b, a)
@@ -148,7 +163,11 @@ def _frame_volumes(
     assembly: Assembly, pairs: Iterable[Pair] | None
 ) -> dict[Pair, float]:
     shapes = _shapes(assembly)
-    candidates = _bbox_candidates(shapes) if pairs is None else tuple(pairs)
+    candidates = (
+        _bbox_candidates({n: s for n, s in shapes.items() if not has_surface(s)})
+        if pairs is None
+        else _measurable(shapes, tuple(pairs))
+    )
     return {
         _key(pair): intersection_volume(shapes[pair[0]], shapes[pair[1]])
         for pair in candidates
@@ -166,7 +185,10 @@ def sweep(
     missing from the assembly raises ``KeyError`` on its path. Without,
     every pair in the tree is a candidate, bbox-prefiltered per frame;
     a pair whose boxes are disjoint in some frame records ``0.0``
-    there, which is a measurement rather than a default.
+    there, which is a measurement rather than a default. A part with a
+    surface has no overlap to measure: the every-pair pass leaves it
+    out, as ``interferences`` does, and a named pair through it raises
+    ``ValueError`` rather than record a ``0.0`` that reads as clear.
     """
     ts = tuple(ts)
     frames = tuple(factory(t) for t in ts)
