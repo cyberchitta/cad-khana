@@ -254,7 +254,7 @@ A module the import-model verbs consume never calls `check()`,
 full design, its phases, and what is still owed:
 `_notes/draft-script-decomposition.md`.
 
-## Diagnostics JSON schemas (v0.18)
+## Diagnostics JSON schemas (v0.19)
 
 Version these from day one. Agents depend on field stability.
 
@@ -275,7 +275,7 @@ for three bumps.
 
 ```json
 {
-  "schema_version": "0.18",
+  "schema_version": "0.19",
   "status": "ok | error | assertion_failed",
   "error": null,
   "hint": "Missing .part accessor — use `with BuildPart() as p: ...; return p.part`.",
@@ -312,7 +312,8 @@ for three bumps.
     {"kind": "never_in_phase", "assertion": "pad_engages"},
     {"kind": "motion_moved_nothing", "motion": "lift", "moved": 0, "movable": 2082},
     {"kind": "interferences_rest_pose_only"},
-    {"kind": "multi_solid", "part": "glow_band", "solid_count": 5}
+    {"kind": "multi_solid", "part": "glow_band", "solid_count": 5},
+    {"kind": "not_solid", "part": "datum_sheet", "solid_count": 0}
   ]
 }
 ```
@@ -355,6 +356,17 @@ Maintainer facts behind those fields:
   because that file's `warnings[]` holds `stale_waiver`, and a warning
   nobody can answer trains readers to skim the block that must not be
   skimmed.
+- **Surfaces** (0.19): a part with faces outside any solid
+  (`diagnostics.has_surface`) bounds no material, so `a & b` against it
+  is empty however deep it sinks — a closed shell 8 mm into a cube read
+  green before. Overlap is undefined for it, distance is not: overlap
+  claims fail with a detail naming it (a fail, not a skip — the author
+  expected a check), the interference pass leaves it out, `volume_mm3`
+  is `null` (the kernel's enclosed volume stood beside an unmeasurable
+  overlap), and `inspect()` refuses it. `not_solid` warns unless
+  `assert_solid_count(eq=0)` declares it — declared, never inferred from
+  the type, because the dangerous case is the shell that looks solid to
+  its author. `eq=0` silences only the warning.
 - **`detail` on a pass carries labels, never failure hypotheses.**
   `assert_scalar`'s `detail=` and a contact claim's `reason=`
   (`assert_allowed_contact`, `assert_interference`, `known_overlaps`)
@@ -391,7 +403,7 @@ Maintainer facts behind those fields:
 
 ```json
 {
-  "schema_version": "0.18",
+  "schema_version": "0.19",
   "kind": "printability",
   "status": "ok | assertion_failed",
   "name": "housing",

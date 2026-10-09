@@ -1,8 +1,9 @@
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
-from build123d import Axis, Box, BuildPart, Location, Locations
+from build123d import Axis, Box, BuildPart, Location, Locations, Part, Shell
 from pytest import approx
 
 from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
@@ -170,7 +171,7 @@ def test_check_skipped_assertion_does_not_fail_the_run(tmp_path: Path):
 def test_check_with_nothing_skipped_still_lists_every_skip_class(tmp_path: Path):
     check(Assembly().with_part("a", _cube()), out=tmp_path)
     data = json.loads((tmp_path / "mechanism.json").read_text())
-    assert data["schema_version"] == "0.18"
+    assert data["schema_version"] == "0.19"
     assert data["skipped_counts"] == {
         "absent_part": 0,
         "absent_joint": 0,
@@ -330,6 +331,79 @@ def test_a_units_solid_count_claim_covers_the_part_in_a_parent(tmp_path: Path):
 def test_multi_solid_is_named_in_the_stderr_roll_up(tmp_path: Path, capsys):
     check(Assembly().with_part("pair", _two_bodies()), out=tmp_path)
     assert "1 multi_solid" in capsys.readouterr().err
+
+
+# --- not_solid ----------------------------------------------------------
+
+
+def _shell() -> Part:
+    return Part([Shell(Box(10, 10, 10).faces())])
+
+
+def _mixed() -> Part:
+    """One solid, so the count looks healthy, and a shell beside it."""
+    return Part(
+        [Box(2, 2, 2).moved(Location((0, 0, 30))), Shell(Box(10, 10, 10).faces())]
+    )
+
+
+def _sunk(skin: Part) -> Assembly:
+    return (
+        Assembly()
+        .with_part("cube", Box(10, 10, 10))
+        .with_part("skin", skin, location=Location((8, 0, 0)))
+    )
+
+
+def _read(tmp_path: Path) -> dict[str, Any]:
+    return json.loads((tmp_path / "mechanism.json").read_text())
+
+
+def test_a_surface_part_has_no_volume_and_is_warned_about(tmp_path: Path):
+    """The shell encloses 1000 mm³ and the kernel says so, but it holds no
+    material: ``interferences[]`` was silently empty against a cube it
+    sinks 8 mm into."""
+    check(_sunk(_shell()), out=tmp_path)
+    data = _read(tmp_path)
+    assert data["parts"]["skin"]["volume_mm3"] is None
+    assert data["parts"]["skin"]["solid_count"] == 0
+    assert data["parts"]["cube"]["volume_mm3"] == approx(1000.0)
+    assert data["warnings"] == [{"kind": "not_solid", "part": "skin", "solid_count": 0}]
+
+
+def test_a_solid_with_a_stray_surface_is_warned_about(tmp_path: Path):
+    check(_sunk(_mixed()), out=tmp_path)
+    data = _read(tmp_path)
+    assert data["parts"]["skin"]["volume_mm3"] is None
+    assert data["warnings"] == [{"kind": "not_solid", "part": "skin", "solid_count": 1}]
+
+
+def test_a_declared_surface_draws_no_warning_but_still_fails_overlap(tmp_path: Path):
+    with pytest.raises(SystemExit):
+        check(
+            _sunk(_shell())
+            .assert_solid_count("skin", eq=0)
+            .assert_no_interference("skin", "cube"),
+            out=tmp_path,
+        )
+    data = _read(tmp_path)
+    assert data["warnings"] == []
+    assert data["status"] == "assertion_failed"
+    assert data["parts"]["skin"]["volume_mm3"] is None
+
+
+def test_a_count_claim_does_not_declare_a_stray_surface(tmp_path: Path):
+    """``eq=0`` declares a surface; ``eq=1`` on a solid with a shell
+    beside it declares nothing about the shell."""
+    check(_sunk(_mixed()).assert_solid_count("skin", eq=1), out=tmp_path)
+    assert [w["kind"] for w in _read(tmp_path)["warnings"]] == ["not_solid"]
+
+
+def test_not_solid_is_named_in_the_stderr_roll_up(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    check(_sunk(_shell()), out=tmp_path)
+    assert "1 not_solid" in capsys.readouterr().err
 
 
 def test_check_prints_what_each_motion_moved(tmp_path: Path, capsys):

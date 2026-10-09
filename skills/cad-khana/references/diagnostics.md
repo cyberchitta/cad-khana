@@ -24,18 +24,24 @@ its claims filtered, sorted or grouped; see `references/cli.md`.
   and `status: "ok"` means *those* held. The file also carries a
   `partial_run` warning; `khana diff` refuses it against a file of a
   different selection.
-- `parts[name].volume_mm3` — sanity-check a part is not empty.
+- `parts[name].volume_mm3` — sanity-check a part is not empty. `null`
+  for a part with a surface (`not_solid` in `SKILL.md`): a closed shell
+  encloses a volume the kernel would report, but no boolean finds
+  material there.
 - `parts[name].bbox` — sanity-check on size and placement.
 - `parts[name].face_count` / `edge_count` / `vertex_count` — cheapest
   way to verify a boolean operation changed geometry: counts shift on
   success, stay the same on a silent no-op or OCCT failure.
 - `parts[name].solid_count` — `1` for a part in one piece. Above `1`
   something is detached (or touches only along an edge); see
-  `multi_solid` in `SKILL.md` §Read `warnings` on every run.
+  `multi_solid` in `SKILL.md` §Read `warnings` on every run. `0` is a
+  surface — declared with `assert_solid_count(part, eq=0)`, or a
+  `not_solid` warning.
 - `interferences` — list of overlapping part pairs with volume +
   centroid, **at the as-built pose only**, motion or no motion. `null`
   on a partial run: the all-pairs pass did not run, which `[]` (ran,
-  found none) would misstate.
+  found none) would misstate. A part whose `volume_mm3` is `null` is
+  left out of the pass: overlap is undefined for a surface.
 - `motions` — one entry per declared motion: `samples`, and per driven
   joint the range covered and `max_step`, the widest gap between
   adjacent samples. Empty means every green below is a one-pose green.

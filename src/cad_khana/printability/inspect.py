@@ -14,6 +14,7 @@ from cad_khana.mechanism.diagnostics import (
     SCHEMA_VERSION,
     AssertionResult,
     BBox,
+    has_surface,
     part_bbox,
 )
 from cad_khana.printability.feature import Coverage, Failure, Feature, Refusal, cover
@@ -412,7 +413,18 @@ def inspect(
     ``features`` names the cutters and blocks the part was built from, each
     with its own waivers. A failure is waived only when every surface it
     lies on traces to a feature and every feature it traces to waives it;
-    ``waive`` stays the body-wide fallback for whatever they leave."""
+    ``waive`` stays the body-wide fallback for whatever they leave.
+
+    A part with a surface — faces outside any solid — is refused: a wall
+    is the material between two faces and an overhang the underside of
+    material, and a surface has none. Any reading of it would be a
+    number about nothing."""
+    if has_surface(part):
+        raise ValueError(
+            f"inspect({name!r}): the part has faces outside any solid (a "
+            "surface), and wall thickness and overhang need material — "
+            "make it a Solid, or inspect only its solids"
+        )
     out_path = resolve_out(out)
     out_path.mkdir(parents=True, exist_ok=True)
     samples = wall_samples(part)

@@ -276,6 +276,11 @@ before believing an exit 0. Every kind:
 - `multi_solid` (`part`, `solid_count`) — a part in several pieces that
   no `assert_solid_count` / `inspect(..., solid_count=N)` speaks for:
   bound it or declare it. Nothing else sees a severed part.
+- `not_solid` (`part`, `solid_count`) — a part with faces outside any
+  solid: a shell, a face, or one beside a solid. It holds no material, so
+  it is left out of `interferences[]`, its `volume_mm3` is `null`, and
+  every overlap claim on it fails. A surface on purpose declares
+  `assert_solid_count(part, eq=0)`; otherwise wrap it in `Solid(...)`.
 - `waived_failure` (printability) — a failed check you waived; carries
   the reason and the failure detail. The reading is still a failure.
 - `stale_waiver` (printability) — a waiver whose check now passes:

@@ -3,7 +3,17 @@ import re
 from pathlib import Path
 
 import pytest
-from build123d import Box, BuildPart, Cylinder, Locations, Pos, Rot
+from build123d import (
+    Box,
+    BuildPart,
+    Cylinder,
+    Location,
+    Locations,
+    Part,
+    Pos,
+    Rot,
+    Shell,
+)
 from pytest import approx
 
 from cad_khana.printability.feature import Feature
@@ -832,3 +842,20 @@ def test_overhang_failure_detail_names_where_the_largest_region_is(tmp_path: Pat
     (failure,) = [a for a in data["assertions"] if a["name"].startswith("overhang_max")]
     assert "2 regions" in failure["detail"]
     assert "largest 200.00mm² at (15.00, 0.00, 3.00)" in failure["detail"]
+
+
+_SURFACES: dict[str, Part] = {
+    "shell": Part([Shell(Box(10, 10, 10).faces())]),
+    "solid_with_stray_shell": Part(
+        [Box(10, 10, 10), Shell(Box(2, 2, 2).faces()).moved(Location((0, 0, 30)))]
+    ),
+}
+
+
+@pytest.mark.parametrize("kind", sorted(_SURFACES))
+def test_a_surface_is_refused_since_wall_and_overhang_need_material(
+    tmp_path: Path, kind: str
+):
+    with pytest.raises(ValueError, match="surface"):
+        inspect(_SURFACES[kind], method=FDM(), out=tmp_path, name="skin")
+    assert not (tmp_path / "skin-printability.json").exists()

@@ -12,6 +12,7 @@ from cad_khana.mechanism.diagnostics import (
     AssertionResult,
     Point,
     Witness,
+    has_surface,
     intersection_volume,
 )
 
@@ -23,6 +24,21 @@ def _with_reason(failure: str | None, reason: str | None) -> str | None:
     """A contact claim's ``detail``: the failure if any, then the reason,
     which is recorded on a pass as well."""
     return "; ".join(s for s in (failure, reason and f"reason: {reason}") if s) or None
+
+
+def _surfaces(parts: dict[str, Part], names: Iterable[str]) -> str | None:
+    """Why an overlap through these parts cannot be measured, or ``None``
+    when it can: a part with a surface bounds no material, so its boolean
+    is empty however deep it sinks — a zero that would pass every
+    no-overlap claim. The claim fails instead; distance is still defined."""
+    surfaces = tuple(n for n in names if has_surface(parts[n]))
+    return (
+        f"overlap is undefined for a surface ({', '.join(surfaces)} has faces "
+        "outside any solid, so no material to intersect); measure it with "
+        "assert_distance"
+        if surfaces
+        else None
+    )
 
 
 def _extent(shape: Part, d: Vector) -> tuple[float, float]:
@@ -119,6 +135,8 @@ class NoInterference:
         )
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
+        if undefined := _surfaces(parts, self.part_refs):
+            return AssertionResult(self.name, False, undefined)
         volume = intersection_volume(parts[self.a], parts[self.b])
         passed = volume <= INTERFERENCE_VOLUME_EPSILON_MM3
         detail = None if passed else f"interference volume {volume:.4f}mm^3"
@@ -153,6 +171,8 @@ class TangentContact:
         )
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
+        if undefined := _surfaces(parts, self.part_refs):
+            return AssertionResult(self.name, False, undefined)
         overlap = intersection_volume(parts[self.a], parts[self.b])
         if overlap > INTERFERENCE_VOLUME_EPSILON_MM3:
             return AssertionResult(
@@ -228,6 +248,10 @@ class AllowedContact:
         )
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
+        if undefined := _surfaces(parts, self.part_refs):
+            return AssertionResult(
+                self.name, False, _with_reason(undefined, self.reason)
+            )
         overlap = intersection_volume(parts[self.a], parts[self.b])
         above = overlap > self.max_overlap_mm3 + BOUND_EPSILON
         below = (
@@ -477,6 +501,10 @@ class KeepOut:
         return replace(self, keepout=zone.solid, seat=zone.seat)
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
+        if undefined := _surfaces(parts, self.parts):
+            return AssertionResult(
+                self.name, False, undefined, measured=len(self.parts)
+            )
         readings = tuple(
             _reading(n, parts[n], self.keepout, self.seat) for n in self.parts
         )
@@ -601,6 +629,10 @@ class ExpectedInterference:
         )
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
+        if undefined := _surfaces(parts, self.part_refs):
+            return AssertionResult(
+                self.name, False, _with_reason(undefined, self.reason)
+            )
         volume = intersection_volume(parts[self.a], parts[self.b])
         passed = volume > INTERFERENCE_VOLUME_EPSILON_MM3
         failure = (

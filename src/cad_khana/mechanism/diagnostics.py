@@ -9,7 +9,7 @@ from build123d import Part
 if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
 
-SCHEMA_VERSION = "0.18"
+SCHEMA_VERSION = "0.19"
 INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
 
 # Absolute tolerance on assertion bound comparisons, in the bound's own
@@ -44,8 +44,13 @@ class BBox:
 
 @dataclass(frozen=True)
 class PartDiagnostics:
+    """``volume_mm3`` is ``None`` for a part with a surface — faces
+    outside any solid. The kernel reports the volume a closed surface
+    encloses, but no boolean finds material there, so a number would
+    stand beside an overlap that can never be measured."""
+
     bbox: BBox
-    volume_mm3: float
+    volume_mm3: float | None
     surface_area_mm2: float
     center_of_mass_mm: tuple[float, float, float]
     is_valid: bool
@@ -221,6 +226,15 @@ def intersection_volume(a: Part, b: Part) -> float:
     return sum(s.volume for s in intersection)
 
 
+def has_surface(shape: Part) -> bool:
+    """Whether ``shape`` has faces outside any solid: a shell, a face,
+    or a solid with either beside it. A surface bounds no material, so a
+    boolean against it is empty however deep it sinks — overlap is
+    undefined for it, where distance is not."""
+    in_solids = {f for s in shape.solids() for f in s.faces()}
+    return any(f not in in_solids for f in shape.faces())
+
+
 def _placed(p: PlacedPart) -> Part:
     return p.part.moved(p.location)
 
@@ -237,7 +251,7 @@ def _part_diagnostics(shape: Part) -> PartDiagnostics:
     com = shape.center()
     return PartDiagnostics(
         bbox=part_bbox(shape),
-        volume_mm3=shape.volume,
+        volume_mm3=None if has_surface(shape) else shape.volume,
         surface_area_mm2=shape.area,
         center_of_mass_mm=(com.X, com.Y, com.Z),
         is_valid=shape.is_valid,
@@ -261,6 +275,23 @@ def multi_solid_warnings(
         {"kind": "multi_solid", "part": name, "solid_count": p.solid_count}
         for name, p in parts.items()
         if p.solid_count > 1 and name not in claimed
+    )
+
+
+def not_solid_warnings(
+    parts: dict[str, PartDiagnostics], claimed: frozenset[str]
+) -> tuple[Warning, ...]:
+    """One warning per part with a surface, unless a solid-count claim
+    declares it all surface (``eq=0``). The interference pass leaves such
+    a part out, and an overlap claim through it fails, so an accidental
+    shell — which reports the volume it encloses and looks solid to its
+    author — is said once on every run rather than only where a claim
+    happens to name it. A count claim on a solid with a shell beside it
+    says nothing about the shell, so it warns either way."""
+    return tuple(
+        {"kind": "not_solid", "part": name, "solid_count": p.solid_count}
+        for name, p in parts.items()
+        if p.volume_mm3 is None and not (p.solid_count == 0 and name in claimed)
     )
 
 
@@ -316,8 +347,12 @@ def interferences(assembly: Assembly) -> tuple[Interference, ...]:
     """Every pair of parts, intersected — quadratic in the part count,
     and the bulk of a large tree's ``check``. A pair whose bounding
     boxes are apart skips the boolean: on a large tree most pairs are,
-    and the box test costs microseconds against a boolean's ~1 ms."""
-    posed = tuple(_Posed.create(p) for p in assembly.placed_parts)
+    and the box test costs microseconds against a boolean's ~1 ms. A
+    part with a surface is left out: its overlap is undefined, and its
+    ``volume_mm3: null`` and ``not_solid`` warning say so."""
+    posed = tuple(
+        _Posed.create(p) for p in assembly.placed_parts if not has_surface(p.part)
+    )
     return tuple(
         r
         for a, b in combinations(posed, 2)

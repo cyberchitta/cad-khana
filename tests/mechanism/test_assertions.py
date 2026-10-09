@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 import pytest
 from build123d import (
     Axis,
@@ -6,9 +8,11 @@ from build123d import (
     Cylinder,
     Location,
     Locations,
+    Part,
     Plane,
     Pos,
     Rot,
+    Shell,
 )
 
 from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
@@ -1477,3 +1481,83 @@ def test_two_keepout_claims_under_one_name_at_one_level_are_an_error():
     )
     with pytest.raises(ValueError, match="clear_of:m4>=0"):
         a.assert_clear_of("other", _corridor(10), name="m4")
+
+
+# --- surface parts: overlap is undefined -----------------------------------
+
+
+def _solid(size: float = 10) -> Part:
+    return Box(size, size, size)
+
+
+def _shell(size: float = 10) -> Part:
+    """A part holding only a closed surface: it reports the volume it
+    encloses, yet every boolean against it is empty."""
+    return Part([Shell(Box(size, size, size).faces())])
+
+
+def _into_cube() -> Assembly:
+    """A shell sunk 8 mm into a cube — the overlap a solid would show."""
+    return (
+        Assembly()
+        .with_part("cube", _solid())
+        .with_part("skin", _shell(), location=Location((8, 0, 0)))
+    )
+
+
+_OVERLAP_CLAIMS: dict[str, Callable[[Assembly], Assembly]] = {
+    "no_interference": lambda a: a.assert_no_interference("skin", "cube"),
+    "interference": lambda a: a.assert_interference("skin", "cube"),
+    "tangent": lambda a: a.assert_tangent_contact("skin", "cube"),
+    "allowed": lambda a: a.assert_allowed_contact("skin", "cube", max_overlap_mm3=1e6),
+    # build123d leaves Shape's type parameter unbound in this signature
+    "clear_of": lambda a: a.assert_clear_of(  # pyright: ignore[reportUnknownMemberType]
+        "skin", _solid().moved(Location((8, 0, 0))), name="corridor"
+    ),
+}
+
+
+@pytest.mark.parametrize("kind", sorted(_OVERLAP_CLAIMS))
+def test_an_overlap_claim_through_a_surface_fails_rather_than_reading_zero(kind: str):
+    (result,) = evaluate(_OVERLAP_CLAIMS[kind](_into_cube()))
+    assert result.passed is False
+    assert result.detail is not None
+    assert "surface" in result.detail and "skin" in result.detail
+
+
+def test_a_solid_with_a_stray_surface_is_a_surface_for_overlap():
+    """One solid, so the count looks healthy; the shell beside it is
+    still invisible to every boolean."""
+    mixed = Part([_solid(2).moved(Location((0, 0, 30))), Shell(_solid().faces())])
+    a = (
+        Assembly()
+        .with_part("cube", _solid())
+        .with_part("mixed", mixed, location=Location((8, 0, 0)))
+        .assert_no_interference("mixed", "cube")
+    )
+    (result,) = evaluate(a)
+    assert result.passed is False
+
+
+def test_a_surface_still_has_a_distance():
+    a = (
+        Assembly()
+        .with_part("cube", _solid())
+        .with_part("skin", _shell(), location=Location((15, 0, 0)))
+        .assert_distance("skin", "cube", min_mm=4.9)
+    )
+    (result,) = evaluate(a)
+    assert result.passed
+    assert result.value is not None and abs(result.value - 5.0) < 1e-9
+
+
+def test_solids_alone_are_untouched_by_the_surface_rule():
+    a = (
+        Assembly()
+        .with_part("a", _solid())
+        .with_part("b", _solid(), location=Location((8, 0, 0)))
+        .assert_no_interference("a", "b")
+    )
+    (result,) = evaluate(a)
+    assert result.passed is False
+    assert result.detail == "interference volume 200.0000mm^3"

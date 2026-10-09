@@ -16,6 +16,7 @@ from cad_khana.mechanism.diagnostics import (
     Warning,
     compute,
     multi_solid_warnings,
+    not_solid_warnings,
     skipped_counts,
 )
 from cad_khana.mechanism.hold import hold
@@ -79,12 +80,12 @@ def check(
         for w in held.warnings
         if not (only and w["kind"] == "interferences_rest_pose_only")
     )
+    claimed = solid_count_claimed(assembly.all_assertions)
     warnings = (
         partial
         + held_warnings
-        + multi_solid_warnings(
-            computed.parts, solid_count_claimed(assembly.all_assertions)
-        )
+        + multi_solid_warnings(computed.parts, claimed)
+        + not_solid_warnings(computed.parts, claimed)
     )
     diagnostics = replace(
         computed,
