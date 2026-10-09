@@ -5,7 +5,12 @@ from dataclasses import dataclass
 from itertools import chain, combinations, groupby
 from math import acos, ceil, cos, sin
 
-from build123d import Axis, Part, Vector
+from build123d import Axis, GeomType, Part, Vector
+
+# OCP ships no type stubs.
+from OCP.BRepAdaptor import (  # pyright: ignore[reportMissingTypeStubs]
+    BRepAdaptor_Surface,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
+)
 
 from cad_khana.core.tessellation import (
     TESSELLATION_ANGULAR_TOLERANCE,
@@ -21,6 +26,7 @@ WEDGE_ALIGNMENT = 0.7
 CREASE_STEP_MM = 1.0
 CREASE_NUDGE = 1e-3
 TANGENT_DOT = 1e-9
+APEX_CLEARANCE_MM = 1e-4
 
 Crossing = tuple[float, Vector, float]
 Corner = tuple[float, float, float]
@@ -86,7 +92,36 @@ def _ray(part: Part, origin: Vector, direction: Vector) -> list[Crossing]:
     )
 
 
-def _crossings(part: Part, triangle: Triangle) -> list[Crossing]:
+def _apexes(part: Part) -> tuple[Vector, ...]:
+    return tuple(
+        Vector(BRepAdaptor_Surface(face.wrapped).Cone().Apex())  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+        for face in part.faces()
+        if face.geom_type == GeomType.CONE
+    )
+
+
+def _cast_point(triangle: Triangle, apexes: tuple[Vector, ...]) -> Vector:
+    """Where a facet's ray starts: its centroid, unless the line along its
+    normal passes a cone's apex.
+
+    The kernel cannot take a normal at an apex. A line within ~1e-7 mm of one
+    either raises or reports a crossing with an arbitrary normal, which can
+    read an exit as an entry and drop the span. Such a ray starts instead a
+    step across the same facet — still on it, still along its normal, so the
+    wall it measures is the facet's own. The centroid was only ever a choice
+    of sample point; the step moves the point, not the reading.
+    """
+    centroid, normal = triangle.centroid, triangle.normal
+    near = any(
+        (apex - centroid).cross(normal).length < APEX_CLEARANCE_MM for apex in apexes
+    )
+    step = (triangle.corners[0] - centroid).normalized() * 2 * APEX_CLEARANCE_MM
+    return centroid + step if near else centroid
+
+
+def _crossings(
+    part: Part, triangle: Triangle, apexes: tuple[Vector, ...]
+) -> list[Crossing]:
     """Crossings along a facet's inward normal.
 
     The origin is backed off *outside* the surface, so that the ray records
@@ -95,7 +130,7 @@ def _crossings(part: Part, triangle: Triangle) -> list[Crossing]:
     very surface it came from within that distance.
     """
     inward = -triangle.normal
-    return _ray(part, triangle.centroid - inward * BACKOFF_MM, inward)
+    return _ray(part, _cast_point(triangle, apexes) - inward * BACKOFF_MM, inward)
 
 
 def _wall_span(crossings: list[Crossing]) -> WallSample | None:
@@ -131,8 +166,10 @@ def _wall_span(crossings: list[Crossing]) -> WallSample | None:
     )
 
 
-def _sample(part: Part, triangle: Triangle) -> WallSample | None:
-    return _wall_span(_crossings(part, triangle)) if triangle.area > 0 else None
+def _sample(
+    part: Part, triangle: Triangle, apexes: tuple[Vector, ...]
+) -> WallSample | None:
+    return _wall_span(_crossings(part, triangle, apexes)) if triangle.area > 0 else None
 
 
 def _corner(v: Vector) -> Corner:
@@ -292,8 +329,10 @@ def _crease_samples(
 
 
 def wall_samples(part: Part) -> tuple[WallSample, ...]:
-    triangles = _surface_facets(part)
-    facet_samples = (s for t in triangles if (s := _sample(part, t)) is not None)
+    triangles, apexes = _surface_facets(part), _apexes(part)
+    facet_samples = (
+        s for t in triangles if (s := _sample(part, t, apexes)) is not None
+    )
     return tuple(chain(facet_samples, _crease_samples(part, triangles)))
 
 

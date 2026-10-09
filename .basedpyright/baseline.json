@@ -10900,22 +10900,6 @@
                 }
             },
             {
-                "code": "reportPrivateUsage",
-                "range": {
-                    "startColumn": 40,
-                    "endColumn": 51,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportPrivateUsage",
-                "range": {
-                    "startColumn": 40,
-                    "endColumn": 50,
-                    "lineCount": 1
-                }
-            },
-            {
                 "code": "reportArgumentType",
                 "range": {
                     "startColumn": 20,

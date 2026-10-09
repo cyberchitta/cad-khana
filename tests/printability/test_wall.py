@@ -14,12 +14,21 @@ from build123d import (
     Polygon,
     Pos,
     Rot,
+    Vector,
     extrude,
 )
 from pytest import approx
 
-from cad_khana.core.tessellation import _tessellate
-from cad_khana.printability.wall import _crossings, min_wall
+from cad_khana.core.tessellation import (
+    _tessellate,  # pyright: ignore[reportPrivateUsage]
+    _triangle,  # pyright: ignore[reportPrivateUsage]
+)
+from cad_khana.printability.wall import (
+    _apexes,  # pyright: ignore[reportPrivateUsage]
+    _crossings,  # pyright: ignore[reportPrivateUsage]
+    _sample,  # pyright: ignore[reportPrivateUsage]
+    min_wall,
+)
 
 
 def _cube(size: float = 10):
@@ -128,7 +137,7 @@ def _clipping_ray(part):
         for t in _tessellate(part)
         if abs(t.centroid.X + 10 / 3) < 0.01 and abs(t.centroid.Y + 2) < 0.01
     )
-    return _crossings(part, triangle)
+    return _crossings(part, triangle, ())
 
 
 def test_fixture_still_grazes_the_far_corner():
@@ -207,6 +216,39 @@ def test_sharp_cone_pocket_apex_reads_the_floor_under_it():
         with Locations((0, 0, 1)):
             Cone(0, 2.5, 2, mode=Mode.SUBTRACT)
     assert min_wall(p.part).thickness_mm == approx(2.0, abs=0.02)
+
+
+def _facet_over(z: float, up: bool):
+    # A facet centred on the Z axis, so its ray runs through any apex there.
+    a, b, c = Vector(1, 0, z), Vector(-0.5, 0.866, z), Vector(-0.5, -0.866, z)
+    return _triangle(a, b, c) if up else _triangle(a, c, b)
+
+
+def test_facet_ray_through_a_cone_apex_reads_the_wall_under_it():
+    # The kernel raises on a line within ~1e-7 mm of this apex.
+    with BuildPart() as p:
+        Box(20, 20, 4)
+        with Locations((0, 0, 1)):
+            Cone(0, 2.5, 2, mode=Mode.SUBTRACT)
+    part = p.part
+    assert part is not None
+    sample = _sample(part, _facet_over(-2, up=False), _apexes(part))
+    assert sample is not None
+    assert sample.thickness_mm == approx(2.0, abs=1e-3)
+
+
+def test_facet_ray_through_a_cone_apex_is_not_dropped():
+    # Built this way the kernel does not raise: it reads the apex crossing as
+    # an entry, and the ray paired no exit.
+    with BuildPart() as p:
+        Box(10, 10, 4)
+        with Locations((0, 0, -1)):
+            Cone(2.5, 0, 2, mode=Mode.SUBTRACT)
+    part = p.part
+    assert part is not None
+    sample = _sample(part, _facet_over(2, up=True), _apexes(part))
+    assert sample is not None
+    assert sample.thickness_mm == approx(2.0, abs=1e-3)
 
 
 def test_groove_root_over_a_tilted_face_reads_the_perpendicular():
