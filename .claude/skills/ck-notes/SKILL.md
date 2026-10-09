@@ -66,6 +66,13 @@ how the loop silently stops being demand-driven.
   would you run the conversion twice. let them run it and report"). The
   probe-before-claiming rule binds what cad-khana ships. Say in the
   handoff what is unprobed and what they should watch go red.
+- **When a feature ships, sweep the consumer for what it retires.** Code
+  written before a feature existed has nothing to send it back: m05's
+  basket-removal fixture placed 26,772 stepped copies for two weeks after
+  keep-outs landed, and its runbook row still said "stepped" (handoff
+  `sorted-studs/basket-removal-keepouts-2026-10-04.md`, Q4). So `rg` their
+  `cad/` read-only for the hand-rolled shape the feature replaces, and name
+  the sites in the handoff — the conversion is theirs.
 - **Re-verify an inventory before trusting it.** Every handoff that carried
   a per-file inventory has had it drift between authoring and execution —
   files already fixed by an earlier item, sites the grep shape couldn't see.
