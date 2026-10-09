@@ -304,6 +304,11 @@ largest one's centroid and bounding box — its span is how far, and
 in which direction, the part overhangs:
 `foot outside rail's footprint along (0.00, 0.00, 1.00): 72.0000mm^3 in 1 piece; largest centred at (101.50, 0.00, 12.00), spanning (100.00, -3.00, 10.00) to (103.00, 3.00, 14.00)`.
 
+The footprint is all of `outer`, at every height along the axis, so
+material below the contact covers too: a ring overhanging its seat
+passes wherever a lower saddle of the same part lies beneath it.
+Within is not *rests on*.
+
 The footprint is `swept()`, so `outer` must have only plane,
 cylinder, cone and sphere faces. A torus fillet or a B-spline fails
 the claim, naming the face kinds, rather than read an approximate
@@ -320,7 +325,9 @@ Two contact assertions, split by what the design intends:
   `assert_tangent_contact` — a gap beyond `tol_mm` fails and a real
   overlap fails. When a part must rest against a specific surface,
   assert the tangent contact against the surface it must face; that
-  pins the orientation too.
+  pins the orientation too. The gap is the pair's *nearest* one, so a
+  plate on four posts fused into one body passes when one post reaches
+  and three stop short.
 - **Allowed contact** — a press-fit or interference fit. Model the
   **true** interference (don't oversize a bore to appease
   `assert_no_interference` — the model then lies about the fit) and

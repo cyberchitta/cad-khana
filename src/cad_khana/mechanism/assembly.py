@@ -857,7 +857,9 @@ class Assembly:
         ``outer``'s: ``inner`` less ``outer`` swept along the axis across
         ``inner``'s whole extent is empty. A plan-view claim, so the
         parts need not overlap — a foot resting on a rail, a ring over
-        its seat — and holes in ``outer``'s footprint count. ``along``
+        its seat — and holes in ``outer``'s footprint count. The footprint
+        is all of ``outer`` at every height, so material below the contact
+        covers too: within is not rests-on. ``along``
         is required — the axis is the claim — and is an axis name or
         vector in this assembly's frame, as for ``assert_distance``; its
         sign does not matter. ``value`` is the
@@ -934,8 +936,9 @@ class Assembly:
         (foot-on-rail, plate-on-flange) — ``assert_no_interference``
         alone also passes with the parts floating apart; this fails on
         the gap. ``tol_mm`` absorbs placement/solver noise, not design
-        gaps. The measured gap is recorded in the result even on pass,
-        so ``khana diff`` sees drift."""
+        gaps. The gap is the pair's nearest, so one of several fused
+        supports touching is enough. The measured gap is recorded in
+        the result even on pass, so ``khana diff`` sees drift."""
         assertion = TangentContact(
             a=a,
             b=b,
