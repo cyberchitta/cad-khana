@@ -48,6 +48,7 @@ from cad_khana.mechanism.assertions import (
     ScalarClaim,
     SolidCount,
     TangentContact,
+    Within,
     contact_claims,
     core,
     evaluate_one,
@@ -145,13 +146,13 @@ def _is_absolute(claim: Assertion) -> bool:
     """A claim against something fixed in its declaring frame — a datum
     plane, a direction, a keep-out — depends on where its part stands,
     not only on where it stands relative to another part."""
-    return isinstance(claim, KeepOut) or (
+    return isinstance(claim, KeepOut | Within) or (
         isinstance(claim, Distance)
         and (claim.along is not None or isinstance(claim.b, Plane))
     )
 
 
-def _direction_signature(claim: Distance) -> tuple[float, ...]:
+def _direction_signature(claim: Distance | Within) -> tuple[float, ...]:
     return (
         ()
         if claim.along is None
@@ -206,7 +207,9 @@ def _slack(assertion: Assertion, state: str, result: AssertionResult) -> float |
     return (
         claim.slack(result.value)
         if result.value is not None
-        and isinstance(claim, Distance | KeepOut | TangentContact | AllowedContact)
+        and isinstance(
+            claim, Distance | KeepOut | Within | TangentContact | AllowedContact
+        )
         else None
     )
 

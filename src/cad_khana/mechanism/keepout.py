@@ -47,9 +47,7 @@ def swept(body: Part, by: VectorLike) -> Part:
     """
     travel = Vector(by)
     direction = travel.normalized()
-    refused = sorted(
-        {f.geom_type.name for f in body.faces()} - {g.name for g in EXACT_SILHOUETTES}
-    )
+    refused = inexact_faces(body)
     if refused:
         raise ValueError(
             f"swept() is exact only on planes, cylinders, cones and spheres; "
@@ -63,6 +61,17 @@ def swept(body: Part, by: VectorLike) -> Part:
         if _facing(piece, direction) > FACING_EPSILON
     ]
     return Part([body.fuse(*prisms).clean()])
+
+
+def inexact_faces(body: Part) -> tuple[str, ...]:
+    """The face kinds of ``body`` that ``swept`` refuses, sorted; empty
+    when it can sweep the body exactly."""
+    return tuple(
+        sorted(
+            {f.geom_type.name for f in body.faces()}
+            - {g.name for g in EXACT_SILHOUETTES}
+        )
+    )
 
 
 def _split_at_silhouette(face: Face, direction: Vector) -> list[Face]:

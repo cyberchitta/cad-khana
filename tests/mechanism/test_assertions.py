@@ -1,3 +1,4 @@
+import math
 from collections.abc import Callable
 
 import pytest
@@ -13,6 +14,7 @@ from build123d import (
     Pos,
     Rot,
     Shell,
+    Torus,
 )
 
 from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
@@ -1561,3 +1563,143 @@ def test_solids_alone_are_untouched_by_the_surface_rule():
     (result,) = evaluate(a)
     assert result.passed is False
     assert result.detail == "interference volume 200.0000mm^3"
+
+
+# --- footprint containment along an axis ------------------------------------
+
+
+def _ring(r_in: float, r_out: float, height: float, z0: float) -> Part:
+    """An annulus about Z standing on ``z = z0``."""
+    ring = Cylinder(r_out, height) - Cylinder(r_in, height)
+    return Part(ring.solids()).moved(Location((0, 0, z0 + height / 2)))
+
+
+def _seated(ring: Part, seat: Part) -> Assembly:
+    return (
+        Assembly()
+        .with_part("seat", seat)
+        .with_part("ring", ring)
+        .assert_within("ring", "seat", along="Z")
+    )
+
+
+def _footprint(ring: Part, seat: Part) -> tuple[bool | None, float, str | None]:
+    (result,) = evaluate(_seated(ring, seat))
+    assert result.value is not None
+    return result.passed, result.value, result.detail
+
+
+TURNTABLE = _ring(10, 20, 5, 10)  # ID 20, OD 40, on top of the seat
+
+
+def test_a_ring_inside_a_wider_seat_is_within_and_records_zero():
+    passed, value, detail = _footprint(TURNTABLE, _ring(9, 22, 10, 0))
+    assert passed
+    assert abs(value) < 1e-6
+    assert detail is None
+
+
+def test_a_ring_overhanging_the_seat_od_fails_with_the_sliver_volume():
+    # seat OD 38: the sliver r 19..20, 5 high, is pi * (20^2 - 19^2) * 5
+    passed, value, detail = _footprint(TURNTABLE, _ring(9, 19, 10, 0))
+    assert passed is False
+    assert abs(value - math.pi * 39 * 5) < 1e-3
+    assert detail is not None and detail.startswith(
+        f"ring outside seat's footprint along (0.00, 0.00, 1.00): {value:.4f}mm^3"
+    )
+
+
+def test_a_ring_reaching_inside_the_seat_id_fails_where_a_bbox_would_pass():
+    # ring ID 16 against seat ID 18: the inner sliver r 8..9 is
+    # pi * (9^2 - 8^2) * 5, though the ring's box sits inside the seat's
+    passed, value, detail = _footprint(_ring(8, 20, 5, 10), _ring(9, 22, 10, 0))
+    assert passed is False
+    assert abs(value - math.pi * 17 * 5) < 1e-3
+    assert detail is not None and "in 1 piece" in detail
+
+
+def _rail_and_foot(foot_x0: float, along: str = "Z") -> Assembly:
+    """A rail x 0..100, y -5..5, z 0..10, and a 20 x 6 x 4 foot resting
+    on its top face starting at ``x = foot_x0``."""
+    return (
+        Assembly()
+        .with_part("rail", Pos(50, 0, 5) * Box(100, 10, 10))
+        .with_part("foot", Pos(foot_x0 + 10, 0, 12) * Box(20, 6, 4))
+        .assert_within("foot", "rail", along=along)
+    )
+
+
+def test_a_foot_resting_on_the_rail_is_within_its_footprint():
+    (result,) = evaluate(_rail_and_foot(40))
+    assert result.name == "within:foot/rail@Z"
+    assert result.passed
+    assert result.value is not None and abs(result.value) < 1e-6
+
+
+def test_a_foot_flush_with_the_rail_end_is_within():
+    (result,) = evaluate(_rail_and_foot(80))
+    assert result.passed
+
+
+def test_a_foot_running_off_the_rail_end_fails_with_the_overhang():
+    # 3 mm past x = 100: 3 x 6 x 4 = 72 mm^3, centred at (101.5, 0, 12)
+    (result,) = evaluate(_rail_and_foot(83))
+    assert result.passed is False
+    assert result.value is not None and abs(result.value - 72.0) < 1e-6
+    assert result.detail == (
+        "foot outside rail's footprint along (0.00, 0.00, 1.00): "
+        "72.0000mm^3 in 1 piece; largest centred at (101.50, 0.00, 12.00), "
+        "spanning (100.00, -3.00, 10.00) to (103.00, 3.00, 14.00)"
+    )
+    assert result.witness_mm is None
+
+
+def test_the_footprint_is_read_along_the_declared_axis():
+    """Along X the rail's footprint is its 10 x 10 end; the foot stands
+    above it, wholly outside, whatever its overhang."""
+    (result,) = evaluate(_rail_and_foot(40, along="X"))
+    assert result.name == "within:foot/rail@X"
+    assert result.passed is False
+    assert result.value is not None and abs(result.value - 480.0) < 1e-6
+
+
+def test_an_unknown_axis_name_raises_at_the_call():
+    with pytest.raises(ValueError, match="along='W'"):
+        _rail_and_foot(40, along="W")
+
+
+def test_the_axis_rides_the_declaring_unit_into_a_rotated_parent():
+    """Declared along the unit's Z, where the foot rests within the rail.
+    The parent turns the unit 90deg about X, so an axis left in the root
+    frame would read the rail's side and fail."""
+    a = Assembly().with_subassembly(
+        "unit", _rail_and_foot(40), location=Location((0, 0, 0), (90, 0, 0))
+    )
+    (result,) = evaluate(a)
+    assert result.name == "unit.within:foot/rail@Z"
+    assert result.passed
+
+
+def test_within_through_a_surface_fails_rather_than_reading_zero():
+    a = (
+        Assembly()
+        .with_part("rail", Pos(50, 0, 5) * Box(100, 10, 10))
+        .with_part("skin", _shell(), location=Location((120, 0, 0)))
+        .assert_within("skin", "rail", along="Z")
+    )
+    (result,) = evaluate(a)
+    assert result.passed is False
+    assert result.detail is not None and "surface" in result.detail
+
+
+def test_a_footprint_the_sweep_cannot_build_exactly_fails_naming_why():
+    a = (
+        Assembly()
+        .with_part("donut", Torus(20, 5))
+        .with_part("pin", Pos(20, 0, 0) * Box(2, 2, 2))
+        .assert_within("pin", "donut", along="Z")
+    )
+    (result,) = evaluate(a)
+    assert result.passed is False
+    assert result.value is None
+    assert result.detail is not None and "TORUS" in result.detail

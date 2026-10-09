@@ -69,7 +69,9 @@ its claims filtered, sorted or grouped; see `references/cli.md`.
   the seat under `seat=`, and `null` when no part has material there),
   the claimed number for `assert_scalar`, the gap in
   mm for `assert_tangent_contact`, the overlap in mm³ for
-  `assert_allowed_contact`, the count for `assert_solid_count`. It is
+  `assert_allowed_contact`, the count for `assert_solid_count`, the
+  volume outside the footprint in mm³ for `assert_within` (`null` when
+  the footprint could not be swept). It is
   `null` for the boolean-only kinds — `assert_no_interference`,
   `assert_interference` and `assert_anchors_coincident` record **no
   measurement**, only a verdict.

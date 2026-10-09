@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from build123d import Compound, Keep, Location, Part, Plane, Shape, Vector
+from build123d import Compound, Keep, Location, Part, Plane, Shape, Solid, Vector
 
 from cad_khana.mechanism.diagnostics import (
     BOUND_EPSILON,
@@ -15,6 +15,7 @@ from cad_khana.mechanism.diagnostics import (
     has_surface,
     intersection_volume,
 )
+from cad_khana.mechanism.keepout import inexact_faces, swept
 
 if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
@@ -534,6 +535,93 @@ class KeepOut:
         return value - self.min_mm
 
 
+# How far past the inner part's extent the footprint prism reaches at
+# each end, so its caps never coincide with the inner part's faces. Any
+# positive length gives the same prism over that extent.
+FOOTPRINT_MARGIN_MM = 1.0
+
+
+def _footprint(outer: Part, along: Vector, span: tuple[float, float]) -> Part:
+    """``outer`` swept both ways along ``along`` far enough to cover
+    ``span`` (a projection interval on it): every point within ``span``
+    whose line along the axis meets ``outer`` lies in it."""
+    lo, hi = span
+    o_lo, o_hi = _extent(outer, along)
+    start = lo - o_hi - FOOTPRINT_MARGIN_MM
+    travel = (hi - lo) + (o_hi - o_lo) + 2 * FOOTPRINT_MARGIN_MM
+    return swept(outer.moved(Location(tuple(along * start))), along * travel)
+
+
+def _protrusion(name: str, outer: str, along: Vector, pieces: list[Solid]) -> str:
+    volume = sum(p.volume for p in pieces)
+    largest = max(pieces, key=lambda p: p.volume)
+    box = largest.bounding_box()
+    count = f"{len(pieces)} piece{'' if len(pieces) == 1 else 's'}"
+    return (
+        f"{name} outside {outer}'s footprint along ({_at(along)}): "
+        f"{volume:.4f}mm^3 in {count}; largest centred at "
+        f"({_at(largest.center())}), spanning ({_at(box.min)}) to ({_at(box.max)})"
+    )
+
+
+@dataclass(frozen=True)
+class Within:
+    """``a``'s footprint along ``along`` lies within ``b``'s: what is
+    left of ``a`` once the prism of ``b`` swept along the axis across
+    all of ``a``'s extent is cut away is empty. A plan-view claim — a
+    foot resting *on* a rail stays on it, a ring stays over its seat —
+    so ``a`` need not overlap ``b`` at all, and holes in ``b``'s
+    footprint count: a ring reaching inside a seat's bore fails where a
+    bounding-box comparison would pass.
+
+    ``value`` is the protrusion's volume in mm³, on a pass too; up to
+    ``INTERFERENCE_VOLUME_EPSILON_MM3`` it is within. ``along`` is
+    declared in the asserting assembly's frame and composed through
+    placements, as for ``Distance``. The prism is ``keepout.swept``,
+    exact only on planes and the quadrics; a ``b`` with any other face
+    fails naming it rather than read an approximate footprint."""
+
+    a: str
+    b: str
+    name: str
+    along: Vector
+
+    @property
+    def part_refs(self) -> tuple[str, ...]:
+        return (self.a, self.b)
+
+    def qualified(self, prefix: str, location: Location) -> Within:
+        return replace(
+            self,
+            a=f"{prefix}.{self.a}",
+            b=f"{prefix}.{self.b}",
+            along=_qualified_direction(self.along, location),
+            name=f"{prefix}.{self.name}",
+        )
+
+    def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
+        if undefined := _surfaces(parts, self.part_refs):
+            return AssertionResult(self.name, False, undefined)
+        inner, outer = parts[self.a], parts[self.b]
+        if refused := inexact_faces(outer):
+            return AssertionResult(
+                self.name,
+                False,
+                f"{self.b}'s footprint cannot be swept exactly: it has "
+                f"{', '.join(refused)} faces (swept() takes planes, cylinders, "
+                "cones and spheres)",
+            )
+        prism = _footprint(outer, self.along, _extent(inner, self.along))
+        pieces = list((inner - prism).solids())
+        volume = sum(p.volume for p in pieces)
+        passed = volume <= INTERFERENCE_VOLUME_EPSILON_MM3
+        detail = None if passed else _protrusion(self.a, self.b, self.along, pieces)
+        return AssertionResult(self.name, passed, detail, value=volume)
+
+    def slack(self, value: float) -> float:
+        return INTERFERENCE_VOLUME_EPSILON_MM3 - value
+
+
 @dataclass(frozen=True)
 class ScalarClaim:
     """A named, recorded claim about a non-geometric scalar (a friction
@@ -690,6 +778,7 @@ PartAssertion = (
     | ExpectedInterference
     | Distance
     | KeepOut
+    | Within
 )
 
 
@@ -701,7 +790,7 @@ class Phased:
 
     Outside the phase a claim says nothing, and what "nothing" means
     follows from its kind. A *requirement* (no-interference, distance, tangent
-    contact, expected interference) lapses —
+    contact, expected interference, footprint) lapses —
     ``passed: null``, skip class ``out_of_phase``. A *permission*
     (``AllowedContact``) lapses to the default it was an exception to,
     no contact — unless another contact claim on the same pair is in
@@ -781,8 +870,8 @@ def drop_contact_shadowed(
         a
         for a in assertions
         if not (
-            isinstance(core(a), NoInterference)
-            and core(a).from_group
+            isinstance(claim := core(a), NoInterference)
+            and claim.from_group
             and frozenset(a.part_refs) in contacts
         )
     )
@@ -835,6 +924,8 @@ def resolved(assertion: Assertion, state: str) -> Assertion:
     return (
         assertion.inner.forbidden(assertion.describe())
         if state == FORBID
+        and isinstance(assertion, Phased)
+        and isinstance(assertion.inner, AllowedContact)
         else core(assertion)
     )
 
@@ -876,7 +967,7 @@ def evaluate_one(
         return assertion.evaluate()
     assertion = bound(assertion, assembly)
     state = phase(assertion, values, contacts)
-    if state == ABSENT_JOINT:
+    if isinstance(assertion, Phased) and state == ABSENT_JOINT:
         joints = ", ".join(assertion.absent_joints(values))
         return _skipped(
             assertion.name,
@@ -890,7 +981,7 @@ def evaluate_one(
             "absent_part",
             f"part(s) absent from this run: {', '.join(missing)}",
         )
-    if state == OUT:
+    if isinstance(assertion, Phased) and state == OUT:
         return _skipped(
             assertion.name,
             OUT,
@@ -900,7 +991,7 @@ def evaluate_one(
     result = resolved(assertion, state).evaluate(parts)
     return (
         replace(result, detail=f"{result.detail}; {assertion.state(values)}")
-        if state == FORBID and result.detail
+        if state == FORBID and result.detail and isinstance(assertion, Phased)
         else result
     )
 

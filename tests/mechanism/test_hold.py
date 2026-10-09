@@ -573,3 +573,62 @@ def test_only_keeps_the_phase_its_unselected_siblings_give_a_contact_claim():
     )
     (low,) = hold(a, only=("low",)).assertions
     assert low.passed is True
+
+
+# --- footprint containment over a motion ------------------------------------
+
+
+def _foot_on_turning_rail(during: JointWindow | None = None):
+    """A 20 x 6 x 4 foot resting at x 40..60 on a rail x 0..100,
+    y -5..5, z 0..10 that turns about Z under it. From 60deg on the
+    rail is wholly clear of the foot's footprint: the foot's 480 mm^3
+    is all outside."""
+    rail = Assembly().with_part("rail", Pos(50, 0, 5) * Box(100, 10, 10))
+    return (
+        Assembly()
+        .with_part("foot", Pos(50, 0, 12) * Box(20, 6, 4))
+        .with_subassembly("swing", rail, joint=RevoluteJoint(axis=Axis.Z))
+        .assert_within("foot", "swing.rail", along="Z", during=during)
+        .with_motion(_swing(90, step=30))
+    )
+
+
+def test_a_footprint_claim_fails_at_the_pose_the_rail_turns_away():
+    result = _only(_foot_on_turning_rail())
+    assert result.passed is False
+    assert result.poses is not None
+    assert result.poses.failed == 3  # 30, 60, 90deg
+    assert result.value is not None and abs(result.value - 480.0) < 1e-6
+    assert result.worst_at is not None
+    # every failing pose reads the whole foot; the tie goes to the first
+    assert abs(result.worst_at.joints_deg["swing"] - 30.0) < 1e-9
+    assert "failed at 3 of 5 poses; worst at swing_in t=" in (result.detail or "")
+
+
+def test_a_footprint_claim_lapses_outside_its_window():
+    result = _only(_foot_on_turning_rail(JointWindow("swing", max_deg=10)))
+    assert result.passed
+    assert result.poses is not None
+    assert result.poses.in_phase == 2  # as built and 0deg
+
+
+def test_a_footprint_axis_fixed_above_a_joint_turning_both_parts_is_re_read():
+    """Foot and rail turn together about X, so their relative placement
+    never changes; the axis, declared at the root, stays put. At 90deg
+    the foot stands beside the rail as seen along the root's Z."""
+    unit = (
+        Assembly()
+        .with_part("rail", Pos(50, 0, 5) * Box(100, 10, 10))
+        .with_part("foot", Pos(50, 0, 12) * Box(20, 6, 4))
+    )
+    a = (
+        Assembly()
+        .with_subassembly("tilt", unit, joint=RevoluteJoint(axis=Axis.X))
+        .assert_within("tilt.foot", "tilt.rail", along="Z")
+        .with_motion(Motion.over_joint("tilt_up", "tilt", 0.0, 90.0, 90.0))
+    )
+    result = _only(a)
+    assert result.passed is False
+    assert result.poses is not None
+    assert result.poses.failed == 1
+    assert result.value is not None and abs(result.value - 480.0) < 1e-6

@@ -30,6 +30,7 @@ from cad_khana.mechanism.assertions import (
     ScalarClaim,
     SolidCount,
     TangentContact,
+    Within,
     drop_contact_shadowed,
 )
 from cad_khana.mechanism.motion import Motion, Pose
@@ -122,6 +123,10 @@ def _plane_label(plane: Plane) -> str:
     return f"plane(n=({n.X:.3g},{n.Y:.3g},{n.Z:.3g}),d={o.dot(n):.6g})"
 
 
+def _axis_label(along: str | VectorLike) -> str:
+    return f"@{along if isinstance(along, str) else tuple(Vector(along))}"
+
+
 def _distance_name(
     a: str,
     b: str | Plane,
@@ -130,11 +135,7 @@ def _distance_name(
     max_mm: float | None,
 ) -> str:
     target = b if isinstance(b, str) else _plane_label(b)
-    axis = (
-        ""
-        if along is None
-        else f"@{along if isinstance(along, str) else tuple(Vector(along))}"
-    )
+    axis = "" if along is None else _axis_label(along)
     bounds = "".join(
         s
         for s, v in ((f">={min_mm}", min_mm), (f"<={max_mm}", max_mm))
@@ -840,6 +841,36 @@ class Assembly:
             name=claim_name,
             min_mm=min_mm,
             seat=seat,
+        )
+        return self._asserting(assertion, during)
+
+    def assert_within(
+        self,
+        inner: str,
+        outer: str,
+        *,
+        along: str | VectorLike,
+        name: str | None = None,
+        during: During = None,
+    ) -> Assembly:
+        """Assert ``inner``'s footprint along ``along`` lies within
+        ``outer``'s: ``inner`` less ``outer`` swept along the axis across
+        ``inner``'s whole extent is empty. A plan-view claim, so the
+        parts need not overlap — a foot resting on a rail, a ring over
+        its seat — and holes in ``outer``'s footprint count. ``along``
+        is required — the axis is the claim — and is an axis name or
+        vector in this assembly's frame, as for ``assert_distance``; its
+        sign does not matter. ``value`` is the
+        protrusion volume in mm³, on a pass too; a failure's ``detail``
+        locates the protrusion. ``outer`` must have only planar,
+        cylindrical, conical and spherical faces, or the claim fails
+        naming the others."""
+        assertion = Within(
+            a=inner,
+            b=outer,
+            name=name
+            or f"within:{inner}/{outer}{_axis_label(along)}{_phase_label(during)}",
+            along=_direction(along),
         )
         return self._asserting(assertion, during)
 

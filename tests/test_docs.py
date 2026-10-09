@@ -69,6 +69,7 @@ CLAIMS: dict[str, Callable[[Assembly], Assembly]] = {
     ),
     "assert_interference": lambda x: x.assert_interference("a", "b"),
     "assert_anchors_coincident": lambda x: x.assert_anchors_coincident("p", "q"),
+    "assert_within": lambda x: x.assert_within("a", "b", along="Z"),
     "assert_no_interference_between": lambda x: x.assert_no_interference_between(
         ("a",), ("b",)
     ),

@@ -26,6 +26,7 @@ JSON stale from a previous run while it still reads as current.
 | `.assert_no_interference(a, b)` | Parts `a` and `b` don't overlap (intersection volume ≤ 0.001 mm³). |
 | `.assert_distance(a, b, min_mm=…, max_mm=…)` | Bounded distance from part `a` to part `b` **or a datum `Plane`**. Either bound alone, or both for "close but not touching" (a gear mesh). See below for `along=` and `grow_*_mm`. |
 | `.assert_clear_of(parts, keepout, name=…, min_mm=0, seat=None)` | Parts stay out of a **keep-out solid that is not a part**: a driver's corridor, a bolt's drop-in path, an RF zone. `keepout` is the solid, or the path of one a unit declared with `with_keepout`. One result per call: `value` is the least distance over the parts. Any overlap fails; `min_mm` is clearance past touching, or past the `seat`. See below. |
+| `.assert_within(inner, outer, along="Z")` | `inner`'s **footprint** along the axis lies within `outer`'s — a foot resting *on* a rail stays on it, a ring stays over its seat. Holes count. `value` is the volume outside, in mm³. See below. |
 | `.assert_scalar(name, value, ge=…, le=…)` | A named claim about a non-geometric scalar (friction budget, torque margin). No bounds = pure recorder. |
 | `.assert_tangent_contact(a, b, tol_mm=…)` | Parts `a` and `b` **touch**: surface gap ≤ `tol_mm` (default 1e-3, noise allowance — not a design gap) and no real overlap. A gap fails, an overlap fails. See below. |
 | `.assert_allowed_contact(a, b, max_overlap_mm3=…, min_overlap_mm3=…)` | Design-intended overlap stays within bounds (a press-fit modeled at its true interference). A gap passes unless `min_overlap_mm3` makes engagement itself the claim. See below. |
@@ -275,6 +276,38 @@ any selected part moving re-measures the whole claim at that pose.
 
 Where the claim is declared decides when it holds. See
 `composition.md` §Where a claim lives.
+
+## Footprint claims: within, seen along an axis
+
+`assert_distance(along=)` ignores footprints and
+`assert_no_interference` is green for a foot that has walked off its
+rail. `assert_within` holds the footprint itself: `inner` less `outer`
+swept along the axis across `inner`'s whole extent must be empty. The
+parts need not overlap, so a foot standing on a rail's top face is
+within it.
+
+```python
+# the foot rests on the rail and must not run off its +X end
+a = a.assert_within("drive_foot", "cross_rail", along="Z")
+
+# the seat ring covers the turntable ring in plan — bore included, which
+# a bounding-box comparison (or one on the ODs) would miss
+a = a.assert_within("turntable_ring", "seat_ring", along="Z")
+```
+
+Named `within:<inner>/<outer>@<axis>`. `along` is required — there is
+no default up — and is an axis name or a vector in this assembly's frame, like `assert_distance`'s, and its
+sign does not matter. `value` is the volume of `inner` outside the
+footprint, recorded on a pass too; up to 0.001 mm³ counts as within.
+A failure's `detail` gives the volume, how many pieces, and the
+largest one's centroid and bounding box — its span is how far, and
+in which direction, the part overhangs:
+`foot outside rail's footprint along (0.00, 0.00, 1.00): 72.0000mm^3 in 1 piece; largest centred at (101.50, 0.00, 12.00), spanning (100.00, -3.00, 10.00) to (103.00, 3.00, 14.00)`.
+
+The footprint is `swept()`, so `outer` must have only plane,
+cylinder, cone and sphere faces. A torus fillet or a B-spline fails
+the claim, naming the face kinds, rather than read an approximate
+footprint.
 
 ## Contact claims
 

@@ -9,6 +9,7 @@ from cad_khana.mechanism.assembly import (
     RevoluteJoint,
 )
 from cad_khana.mechanism.assertions import (
+    ExpectedInterference,
     JointWindow,
     NoInterference,
     evaluate,
@@ -449,6 +450,7 @@ def test_between_known_overlap_downgrades_order_independent():
         ("a1",), ("b1",), known_overlaps=(("b1", "a1", "documented"),)
     )
     (assertion,) = grouped.assertions
+    assert isinstance(assertion, ExpectedInterference)
     assert assertion.name == "interference:a1/b1"
     assert assertion.reason == "documented"
 
