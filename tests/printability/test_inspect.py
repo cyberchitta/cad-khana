@@ -7,12 +7,16 @@ from build123d import (
     Box,
     BuildPart,
     Cylinder,
+    Face,
     Location,
     Locations,
     Part,
     Pos,
     Rot,
     Shell,
+    Solid,
+    Vector,
+    Wire,
 )
 from pytest import approx
 
@@ -842,6 +846,16 @@ def test_overhang_failure_detail_names_where_the_largest_region_is(tmp_path: Pat
     (failure,) = [a for a in data["assertions"] if a["name"].startswith("overhang_max")]
     assert "2 regions" in failure["detail"]
     assert "largest 200.00mm² at (15.00, 0.00, 3.00)" in failure["detail"]
+
+
+def test_an_empty_solid_is_refused_since_it_holds_no_material(tmp_path: Path):
+    outline = Wire.make_polygon(
+        [Vector(0, 0), Vector(5, 0), Vector(8, 0), Vector(5, 0)], close=True
+    )
+    folded = Part([Solid.extrude(Face(outline), Vector(0, 0, 5))])
+    with pytest.raises(ValueError, match="zero volume"):
+        inspect(folded, method=FDM(), out=tmp_path, name="probe")
+    assert not (tmp_path / "probe-printability.json").exists()
 
 
 _SURFACES: dict[str, Part] = {

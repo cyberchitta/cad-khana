@@ -3,7 +3,19 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from build123d import Axis, Box, BuildPart, Location, Locations, Part, Shell
+from build123d import (
+    Axis,
+    Box,
+    BuildPart,
+    Face,
+    Location,
+    Locations,
+    Part,
+    Shell,
+    Solid,
+    Vector,
+    Wire,
+)
 from pytest import approx
 
 from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
@@ -171,7 +183,7 @@ def test_check_skipped_assertion_does_not_fail_the_run(tmp_path: Path):
 def test_check_with_nothing_skipped_still_lists_every_skip_class(tmp_path: Path):
     check(Assembly().with_part("a", _cube()), out=tmp_path)
     data = json.loads((tmp_path / "mechanism.json").read_text())
-    assert data["schema_version"] == "0.20"
+    assert data["schema_version"] == "0.21"
     assert data["skipped_counts"] == {
         "absent_part": 0,
         "absent_joint": 0,
@@ -404,6 +416,52 @@ def test_not_solid_is_named_in_the_stderr_roll_up(
 ):
     check(_sunk(_shell()), out=tmp_path)
     assert "1 not_solid" in capsys.readouterr().err
+
+
+# --- empty_solid --------------------------------------------------------
+
+
+def _folded() -> Part:
+    """An outline run out and back along one line, extruded: one valid
+    solid of volume 0."""
+    outline = Wire.make_polygon(
+        [Vector(0, 0), Vector(5, 0), Vector(8, 0), Vector(5, 0)], close=True
+    )
+    return Part([Solid.extrude(Face(outline), Vector(0, 0, 5))])
+
+
+def _swallowed(part: Part) -> Assembly:
+    return Assembly().with_part("cube", Box(20, 20, 20)).with_part("probe", part)
+
+
+def test_an_empty_solid_is_warned_about_and_left_out_of_interferences(tmp_path: Path):
+    """The kernel intersects it with the cube round it as the cube's
+    whole 8000 mm³, which read as an interference of that size."""
+    check(_swallowed(_folded()), out=tmp_path)
+    data = _read(tmp_path)
+    assert data["interferences"] == []
+    assert data["parts"]["probe"]["solid_count"] == 1
+    assert data["warnings"] == [
+        {"kind": "empty_solid", "part": "probe", "empty_solids": 1}
+    ]
+
+
+def test_a_solid_beside_an_empty_one_is_warned_about(tmp_path: Path):
+    mixed = Part([Box(2, 2, 2).moved(Location((0, 0, 30))), *_folded().solids()])
+    check(_swallowed(mixed).assert_solid_count("probe", eq=2), out=tmp_path)
+    assert _read(tmp_path)["warnings"] == [
+        {"kind": "empty_solid", "part": "probe", "empty_solids": 1}
+    ]
+
+
+def test_solids_with_volume_draw_no_empty_solid_warning(tmp_path: Path):
+    check(
+        Assembly()
+        .with_part("cube", Box(20, 20, 20))
+        .with_part("probe", Box(1, 1, 1), location=Location((30, 0, 0))),
+        out=tmp_path,
+    )
+    assert _read(tmp_path)["warnings"] == []
 
 
 def test_check_prints_what_each_motion_moved(tmp_path: Path, capsys):

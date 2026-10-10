@@ -3,10 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import asin, degrees
 
-from build123d import Part, Plane, Vector
+from build123d import Face, Part, Plane, Vector
 
-from cad_khana.core.tessellation import Triangle, _tessellate_faces, on_surface
-from cad_khana.mechanism.diagnostics import BBox
+from cad_khana.core.tessellation import Triangle, _tessellate_faces, normals, on_surface
+from cad_khana.mechanism.diagnostics import BOUND_EPSILON, BBox
 
 BUILD_PLATE_EPSILON_MM = 1e-3
 # Below this a facet is a vertical wall carrying solver noise (a
@@ -85,27 +85,42 @@ def _region(facets: tuple[_Facet, ...]) -> OverhangRegion:
     )
 
 
+def _surface_angle_deg(face: Face, triangle: Triangle, up: Vector) -> float:
+    """The steepest the face reads over one facet. The facet's own plane
+    is a chord: a cone meshes into long triangles tilted off it, whose
+    normals read 46.7° on a 45° cone and scatter to both sides of it, so
+    the angle is the surface's — at the facet's corners as well as its
+    middle, since a curved face is steepest at one end of a facet."""
+    return max(
+        (_overhang_angle_deg(n, up) for n in normals(face, triangle)),
+        default=0.0,
+    )
+
+
 def _facing_down(part: Part, up: Vector) -> tuple[tuple[_Facet, ...], ...]:
     min_up = _build_plate_level(part, up)
     return tuple(
         tuple(
             _Facet(t, ang)
-            for t in face
-            if (ang := _overhang_angle_deg(t.normal, up)) > FACING_DOWN_EPSILON_DEG
+            for t in facets
+            if (ang := _surface_angle_deg(face, t, up)) > FACING_DOWN_EPSILON_DEG
             and not _on_build_plate(t, up, min_up)
         )
-        for face in _tessellate_faces(part)
+        for face, facets in zip(part.faces(), _tessellate_faces(part), strict=True)
     )
+
+
+def _past(facets: tuple[_Facet, ...], threshold: float) -> tuple[_Facet, ...]:
+    """The facets counted toward area: past the threshold by more than
+    the tolerance ``passed`` is judged with, so a face at the threshold
+    counts none."""
+    return tuple(f for f in facets if f.angle_deg > threshold + BOUND_EPSILON)
 
 
 def _over(
     facing_down: tuple[tuple[_Facet, ...], ...], threshold: float
 ) -> tuple[tuple[_Facet, ...], ...]:
-    return tuple(
-        counted
-        for face in facing_down
-        if (counted := tuple(f for f in face if f.angle_deg > threshold))
-    )
+    return tuple(counted for face in facing_down if (counted := _past(face, threshold)))
 
 
 def _largest_first(
@@ -158,11 +173,7 @@ def regions_with_points(
                     + tuple(on_surface(face, f.triangle).centroid for f in counted),
                 )
                 for face, facets in zip(part.faces(), facing_down, strict=True)
-                if (
-                    counted := tuple(
-                        f for f in facets if f.angle_deg > angle_threshold_deg
-                    )
-                )
+                if (counted := _past(facets, angle_threshold_deg))
             ),
             key=lambda pair: -pair[0].area_mm2,
         )

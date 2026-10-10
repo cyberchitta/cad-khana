@@ -32,8 +32,9 @@ from cad_khana.mechanism.assembly import Assembly
 from cad_khana.mechanism.diagnostics import (
     INTERFERENCE_VOLUME_EPSILON_MM3,
     bboxes_apart,
-    has_surface,
+    has_material,
     intersection_volume,
+    overlap_undefined,
     part_bbox,
 )
 from cad_khana.mechanism.motion import Motion
@@ -141,16 +142,11 @@ def _bbox_candidates(shapes: dict[str, Part]) -> tuple[Pair, ...]:
 
 
 def _measurable(shapes: dict[str, Part], pairs: tuple[Pair, ...]) -> tuple[Pair, ...]:
-    """``pairs``, or a refusal when one runs through a surface: its
-    boolean is empty however deep it sinks, and a recorded ``0.0`` would
-    classify the pair ``never``."""
-    surfaces = sorted({n for pair in pairs for n in pair if has_surface(shapes[n])})
-    if surfaces:
-        raise ValueError(
-            f"overlap is undefined for a surface ({', '.join(surfaces)} has "
-            "faces outside any solid, so no material to intersect); measure "
-            "it with assert_distance"
-        )
+    """``pairs``, or a refusal when one runs through a surface or an
+    empty solid: its boolean says nothing about the part, and a recorded
+    ``0.0`` would classify the pair ``never``."""
+    if undefined := overlap_undefined(shapes, sorted({n for p in pairs for n in p})):
+        raise ValueError(undefined)
     return pairs
 
 
@@ -164,7 +160,7 @@ def _frame_volumes(
 ) -> dict[Pair, float]:
     shapes = _shapes(assembly)
     candidates = (
-        _bbox_candidates({n: s for n, s in shapes.items() if not has_surface(s)})
+        _bbox_candidates({n: s for n, s in shapes.items() if has_material(s)})
         if pairs is None
         else _measurable(shapes, tuple(pairs))
     )

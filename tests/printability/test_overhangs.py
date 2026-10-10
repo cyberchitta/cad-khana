@@ -1,12 +1,17 @@
-from math import atan, cos, degrees, radians, sin, sqrt
+from math import atan, cos, degrees, pi, radians, sin, sqrt, tan
+from typing import cast
 
+import pytest
 from build123d import (
+    Align,
     Box,
     BuildPart,
     BuildSketch,
+    Cone,
     Cylinder,
     Locations,
     Mode,
+    Part,
     Plane,
     Polygon,
     Pos,
@@ -17,7 +22,7 @@ from build123d import (
 from pytest import approx
 
 from cad_khana.core.tessellation import _tessellate, _tessellate_faces
-from cad_khana.printability.overhangs import detect_overhang
+from cad_khana.printability.overhangs import Overhang, detect_overhang
 
 
 def _cube(size: float = 10):
@@ -166,6 +171,56 @@ def test_regions_hold_only_area_past_the_threshold():
 def test_the_build_plate_face_is_never_a_region():
     overhang = detect_overhang(_two_ledges())
     assert all(r.bbox.min[2] > -10.0 for r in overhang.regions)
+
+
+def _flare(overhang_deg: float, r0: float = 48.0, r1: float = 90.0) -> Part:
+    """A cone standing on its small end: its side is an underside at
+    ``overhang_deg`` from vertical between ``r0`` and ``r1``."""
+    return Cone(r0, r1, (r1 - r0) * tan(radians(90 - overhang_deg)))
+
+
+def _measured(part: Part) -> Overhang:
+    overhang = detect_overhang(part)
+    assert overhang is not None
+    return overhang
+
+
+def _flare_underside_area(
+    overhang_deg: float, r0: float = 48.0, r1: float = 90.0
+) -> float:
+    return pi * (r1**2 - r0**2) / sin(radians(overhang_deg))
+
+
+@pytest.mark.parametrize("deg", [40.0, 45.0, 50.0, 60.0])
+def test_a_cone_reads_its_own_angle(deg: float):
+    """A facet's plane is a chord: the mesher spans a cone with long
+    triangles tilted off it, and their normals read 46.7° on a 45° cone."""
+    assert _measured(_flare(deg)).max_angle_deg == approx(deg, abs=1e-6)
+
+
+def test_a_cone_at_the_threshold_counts_no_area():
+    overhang = _measured(_flare(45.0))
+    assert overhang.area_mm2 == 0.0 and overhang.regions == ()
+
+
+def test_a_cone_past_the_threshold_counts_all_of_its_underside():
+    """Facet normals scattered to both sides of the surface's angle, so a
+    cone just past the threshold counted a fifth of its area."""
+    overhang = _measured(_flare(46.0))
+    assert overhang.area_mm2 == approx(_flare_underside_area(46.0), rel=5e-3)
+
+
+def test_a_trimmed_cone_reads_its_own_angle():
+    part = cast("Part", _flare(43.0) - Pos(70, 0, 0) * Box(20, 20, 200))
+    assert _measured(part).max_angle_deg == approx(43.0, abs=1e-6)
+
+
+def test_a_sphere_on_a_stem_reads_the_angle_where_the_stem_meets_it():
+    """Steepest at the Ø4 stem's rim, a mesh vertex ring: 78.46° there."""
+    stem = Cylinder(2, 10, align=(Align.CENTER, Align.CENTER, Align.MIN))
+    ball = cast("Part", Pos(0, 0, 10) * Sphere(10) + stem)
+    reading = _measured(ball).max_angle_deg
+    assert reading == approx(degrees(atan(sqrt(96) / 2)), abs=1e-3)
 
 
 def test_regions_sum_to_the_aggregate_on_curved_geometry():

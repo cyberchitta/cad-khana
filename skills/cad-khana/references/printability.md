@@ -201,8 +201,13 @@ the lips down to traces to that cutter, not to the lips, and a bore
 crown inside a block traces to the bore. A face on two features'
 surfaces (a bracket top flush with the seat plane) traces to both,
 counts toward both features' bounds, and needs both to waive it.
-Declaring a feature that waives nothing is how you make a failure on
-it count rather than fall through as untraced. Because a wall has two
+Declaring a feature that waives nothing makes a failure on it count
+rather than fall through as untraced, but only while no body-wide
+`waive=` names that kind: the fallback below covers what a feature
+leaves, a waiverless feature's failures included. To keep one feature
+unwaived beside a standing body-wide waiver, bound that waiver
+(`max_area_mm2`, `max_regions`) so the feature's failure exceeds it.
+Because a wall has two
 ends, a thin wall between a waived knife edge and a new hole traces to
 the hole, and it fails unless the hole also waives `wall_min`.
 
@@ -358,13 +363,20 @@ wrong.
 
 ### Algorithm
 
-Tessellate each part. For each triangle with outward normal `N` and
-print-orientation up vector `u` (from `FDM.up_axis`), compute the
-overhang angle from vertical:
+Tessellate each part. For each triangle, with `N` the outward normal
+of the face it lies on and `u` the print-orientation up vector (from
+`FDM.up_axis`), compute the overhang angle from vertical:
 
 ```
 overhang_angle = asin(max(0, -N · u))
 ```
+
+`N` is the surface's normal, not the triangle's own: a triangle is a
+chord of a curved face, and a cone meshes into long ones tilted off it
+(a true 45° cone read 46.7°). It is read at the triangle's three corners
+and under its centroid, and the triangle takes the steepest of the four,
+so a cone reads its own angle and a 45° cone passes `overhang_max_deg=45`.
+A triangle straddling the threshold counts whole toward `area_mm2`.
 
 A vertical wall gives 0°, a horizontal downward-facing ceiling gives
 90°. Two kinds of triangle are dropped first: the build-plate face —

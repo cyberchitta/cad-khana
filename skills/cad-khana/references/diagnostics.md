@@ -24,7 +24,8 @@ its claims filtered, sorted or grouped; see `references/cli.md`.
   and `status: "ok"` means *those* held. The file also carries a
   `partial_run` warning; `khana diff` refuses it against a file of a
   different selection.
-- `parts[name].volume_mm3` — sanity-check a part is not empty. `null`
+- `parts[name].volume_mm3` — sanity-check a part is not empty; `0` on
+  one solid is an `empty_solid` warning (`SKILL.md`). `null`
   for a part with a surface (`not_solid` in `SKILL.md`): a closed shell
   encloses a volume the kernel would report, but no boolean finds
   material there.

@@ -254,7 +254,7 @@ A module the import-model verbs consume never calls `check()`,
 full design, its phases, and what is still owed:
 `_notes/draft-script-decomposition.md`.
 
-## Diagnostics JSON schemas (v0.20)
+## Diagnostics JSON schemas (v0.21)
 
 Version these from day one. Agents depend on field stability.
 
@@ -275,7 +275,7 @@ for three bumps.
 
 ```json
 {
-  "schema_version": "0.20",
+  "schema_version": "0.21",
   "status": "ok | error | assertion_failed",
   "error": null,
   "hint": "Missing .part accessor — use `with BuildPart() as p: ...; return p.part`.",
@@ -313,7 +313,8 @@ for three bumps.
     {"kind": "motion_moved_nothing", "motion": "lift", "moved": 0, "movable": 2082},
     {"kind": "interferences_rest_pose_only"},
     {"kind": "multi_solid", "part": "glow_band", "solid_count": 5},
-    {"kind": "not_solid", "part": "datum_sheet", "solid_count": 0}
+    {"kind": "not_solid", "part": "datum_sheet", "solid_count": 0},
+    {"kind": "empty_solid", "part": "probe", "empty_solids": 1}
   ]
 }
 ```
@@ -367,6 +368,19 @@ Maintainer facts behind those fields:
   `assert_solid_count(eq=0)` declares it — declared, never inferred from
   the type, because the dangerous case is the shell that looks solid to
   its author. `eq=0` silences only the warning.
+- **Empty solids** (0.21): an outline folded onto itself extrudes to
+  a valid solid of volume 0, and the kernel's boolean against it is
+  nothing or, with the other operand round it, that operand whole — a
+  probe read as overlapping a keep-out by the keep-out's own
+  23.6 × 10⁶ mm³, and four other folds read 0 wherever they sat. Handled
+  as a surface is, for the same reason (`diagnostics.overlap_undefined`
+  is the one predicate): overlap claims fail naming it, the
+  interference pass and `sweep` leave it out, `inspect()` refuses it.
+  `empty_solid` has no declaring claim, unlike `not_solid`: nobody
+  means one. "Empty" is volume at most
+  `INTERFERENCE_VOLUME_EPSILON_MM3`, the size below which no overlap
+  claim could see the part anyway, so the bound flags and never hides.
+  `volume_mm3` stays the kernel's number: unlike a shell's it is true.
 - **Regions** (0.20): a claim's operands were whole parts, so tangent
   contact read green on one fused post of four and an `excluding` entry
   dropped a whole bowl to let one screw through. `part@region` is
@@ -426,7 +440,7 @@ Maintainer facts behind those fields:
 
 ```json
 {
-  "schema_version": "0.20",
+  "schema_version": "0.21",
   "kind": "printability",
   "status": "ok | assertion_failed",
   "name": "housing",
@@ -507,6 +521,15 @@ style enforcement on part functions. Region points include facet
 centroids projected onto the face, because a ruled face's long facets
 have every corner on the faces the feature passes through. No schema
 bump: only `waived`/`detail` text changes.
+**An overhang angle is the surface's, not the facet's** (0.21): each
+facet takes the steepest of its face's normals at its corners and under
+its centroid. Facet planes read a true 45° cone at 46.7° and scattered to
+both sides of it, so a cone just past the threshold counted a fifth of
+its area. Corners as well as the centroid because a curved face is
+steepest at one end of a facet, and the centroid alone would trade the
+over-read for an under-read. Area counts past `threshold + BOUND_EPSILON`,
+the tolerance `passed` already had, so a face at the threshold has none.
+Readings on curved faces move with this; no field changed.
 **A threshold decides `passed` and what area counts, never whether the
 reading exists** (0.14): `overhang.max_angle_deg` is reported whatever
 `overhang_max_deg` says, because consumers raised it to 90° to keep the

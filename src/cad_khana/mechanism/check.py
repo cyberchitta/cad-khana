@@ -15,6 +15,7 @@ from cad_khana.mechanism.diagnostics import (
     Selection,
     Warning,
     compute,
+    empty_solid_warnings,
     multi_solid_warnings,
     not_solid_warnings,
     skipped_counts,
@@ -86,6 +87,7 @@ def check(
         + held_warnings
         + multi_solid_warnings(computed.parts, claimed)
         + not_solid_warnings(computed.parts, claimed)
+        + empty_solid_warnings(assembly)
     )
     diagnostics = replace(
         computed,

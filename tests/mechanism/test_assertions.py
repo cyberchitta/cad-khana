@@ -7,6 +7,7 @@ from build123d import (
     Box,
     BuildPart,
     Cylinder,
+    Face,
     Location,
     Locations,
     Part,
@@ -14,8 +15,11 @@ from build123d import (
     Pos,
     Rot,
     Shell,
+    Solid,
     Sphere,
     Torus,
+    Vector,
+    Wire,
 )
 
 from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
@@ -1724,6 +1728,63 @@ def test_a_surface_still_has_a_distance():
     (result,) = evaluate(a)
     assert result.passed
     assert result.value is not None and abs(result.value - 5.0) < 1e-9
+
+
+def _folded() -> Part:
+    """An outline that runs out and back along one line, extruded: one
+    valid solid of volume 0. The kernel intersects this one with a box
+    round it as the whole box."""
+    outline = Wire.make_polygon(
+        [Vector(0, 0), Vector(5, 0), Vector(8, 0), Vector(5, 0)], close=True
+    )
+    return Part([Solid.extrude(Face(outline), Vector(0, 0, 5))])
+
+
+def _folded_in_cube(x: float) -> Assembly:
+    return (
+        Assembly()
+        .with_part("cube", _solid(20))
+        .with_part("skin", _folded(), location=Location((x, 0, 0)))
+    )
+
+
+_EMPTY_CLAIMS: dict[str, Callable[[Assembly], Assembly]] = {
+    **{k: v for k, v in _OVERLAP_CLAIMS.items() if k != "clear_of"},
+    # build123d leaves Shape's type parameter unbound in this signature
+    "clear_of": lambda a: a.assert_clear_of(  # pyright: ignore[reportUnknownMemberType]
+        "skin", _solid(20), name="corridor"
+    ),
+    "within": lambda a: a.assert_within("skin", "cube", along="Z"),
+}
+
+
+def test_a_folded_outline_is_a_valid_solid_of_no_volume():
+    folded = _folded()
+    assert folded.is_valid and len(folded.solids()) == 1
+    assert folded.volume == 0.0
+
+
+@pytest.mark.parametrize("kind", sorted(_EMPTY_CLAIMS))
+@pytest.mark.parametrize("x", [0.0, 100.0])
+def test_an_overlap_claim_through_an_empty_solid_fails(kind: str, x: float):
+    """Inside the cube its boolean is the cube's whole 8000 mm³; apart
+    from it, nothing. Neither is a reading of the part."""
+    (result,) = evaluate(_EMPTY_CLAIMS[kind](_folded_in_cube(x)))
+    assert result.passed is False
+    assert result.detail is not None
+    assert "zero volume" in result.detail and "skin" in result.detail
+
+
+def test_a_solid_beside_an_empty_one_is_empty_for_overlap():
+    mixed = Part([_solid(2).moved(Location((0, 0, 30))), *_folded().solids()])
+    a = (
+        Assembly()
+        .with_part("cube", _solid(20))
+        .with_part("mixed", mixed)
+        .assert_no_interference("mixed", "cube")
+    )
+    (result,) = evaluate(a)
+    assert result.passed is False
 
 
 def test_solids_alone_are_untouched_by_the_surface_rule():

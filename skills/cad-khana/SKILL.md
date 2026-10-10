@@ -283,6 +283,10 @@ before believing an exit 0. Every kind:
   it is left out of `interferences[]`, its `volume_mm3` is `null`, and
   every overlap claim on it fails. A surface on purpose declares
   `assert_solid_count(part, eq=0)`; otherwise wrap it in `Solid(...)`.
+- `empty_solid` (`part`, `empty_solids`) — a part with a solid of zero
+  volume, which an outline folded onto itself extrudes to. It is valid
+  and counts as a solid, but holds no material: it is left out of
+  `interferences[]` and every overlap claim on it fails. Rebuild it.
 - `waived_failure` (printability) — a failed check you waived; carries
   the reason and the failure detail. The reading is still a failure.
 - `stale_waiver` (printability) — a waiver whose check now passes:

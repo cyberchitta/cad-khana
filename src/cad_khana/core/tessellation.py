@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from itertools import accumulate, pairwise
 
-from build123d import Face, Part, Vector
+from build123d import Face, GeomType, Part, Vector
 from OCP.BRep import BRep_Tool
 from OCP.BRepGProp import BRepGProp_Face
 from OCP.GeomAPI import GeomAPI_ProjectPointOnSurf
@@ -67,9 +67,33 @@ def on_surface(face: Face, triangle: Triangle) -> Triangle:
     is what makes a facet ray perpendicular to its entry face, and what a
     crease is judged by.
     """
+    foot = _projected(face, triangle)
+    return replace(foot, normal=foot.normal.normalized())
+
+
+def _projected(face: Face, triangle: Triangle) -> Triangle:
+    """``triangle`` with its centroid projected onto ``face``'s surface and
+    the face's outward normal there, unnormalised: it has no length where
+    the surface has no normal, at a cone's apex or a sphere's pole."""
     u, v = GeomAPI_ProjectPointOnSurf(
         triangle.centroid.to_pnt(), face.geom_adaptor()
     ).LowerDistanceParameters()
     point, normal = gp_Pnt(), gp_Vec()
     BRepGProp_Face(face.wrapped).Normal(u, v, point, normal)
-    return replace(triangle, centroid=Vector(point), normal=Vector(normal).normalized())
+    return replace(triangle, centroid=Vector(point), normal=Vector(normal))
+
+
+def normals(face: Face, triangle: Triangle) -> tuple[Vector, ...]:
+    """The face's outward normals over one facet: at its corners, which
+    the mesher put on the surface, and at its centroid's projection. A
+    planar face has the facet's own normal throughout. A point where the
+    surface has no normal contributes none."""
+    at = (
+        _projected(face, replace(triangle, centroid=p)).normal
+        for p in (*triangle.corners, triangle.centroid)
+    )
+    return (
+        (triangle.normal,)
+        if face.geom_type == GeomType.PLANE
+        else tuple(n.normalized() for n in at if n.length > 0)
+    )

@@ -1,6 +1,17 @@
 from collections.abc import Callable
 
-from build123d import Axis, Box, BuildPart, Location, Part, Shell
+from build123d import (
+    Axis,
+    Box,
+    BuildPart,
+    Face,
+    Location,
+    Part,
+    Shell,
+    Solid,
+    Vector,
+    Wire,
+)
 from pytest import raises
 
 from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
@@ -208,6 +219,26 @@ def test_sweep_refuses_a_named_pair_through_a_surface():
     for skin in (_skin(), _mixed()):
         with raises(ValueError, match="skin.*assert_distance"):
             sweep(_sunk(skin), (0.0, 1.0), pairs=(("a", "skin"),))
+
+
+def _folded() -> Part:
+    """An outline run out and back along one line, extruded: one valid
+    solid of volume 0, which the kernel intersects with a cube round it
+    as the whole cube."""
+    outline = Wire.make_polygon(
+        [Vector(0, 0), Vector(5, 0), Vector(8, 0), Vector(5, 0)], close=True
+    )
+    return Part([Solid.extrude(Face(outline), Vector(0, 0, 5))])
+
+
+def test_sweep_leaves_an_empty_solid_out_of_the_every_pair_pass():
+    result = sweep(_sunk(_folded()), (0.0, 1.0))
+    assert [(p.a, p.b) for p in result.pairs] == [("a", "b")]
+
+
+def test_sweep_refuses_a_named_pair_through_an_empty_solid():
+    with raises(ValueError, match="skin.*zero volume"):
+        sweep(_sunk(_folded()), (0.0, 1.0), pairs=(("a", "skin"),))
 
 
 def test_onset_refuses_a_pair_through_a_surface():

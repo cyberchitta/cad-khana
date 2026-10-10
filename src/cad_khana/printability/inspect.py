@@ -14,6 +14,7 @@ from cad_khana.mechanism.diagnostics import (
     SCHEMA_VERSION,
     AssertionResult,
     BBox,
+    empty_solids,
     has_surface,
     part_bbox,
 )
@@ -418,12 +419,19 @@ def inspect(
     A part with a surface — faces outside any solid — is refused: a wall
     is the material between two faces and an overhang the underside of
     material, and a surface has none. Any reading of it would be a
-    number about nothing."""
+    number about nothing. A solid of zero volume is refused for the same
+    reason."""
     if has_surface(part):
         raise ValueError(
             f"inspect({name!r}): the part has faces outside any solid (a "
             "surface), and wall thickness and overhang need material — "
             "make it a Solid, or inspect only its solids"
+        )
+    if empty_solids(part):
+        raise ValueError(
+            f"inspect({name!r}): the part has a solid of zero volume, and wall "
+            "thickness and overhang need material — rebuild it; an outline "
+            "folded onto itself extrudes to one"
         )
     out_path = resolve_out(out)
     out_path.mkdir(parents=True, exist_ok=True)

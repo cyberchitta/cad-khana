@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from itertools import combinations
 from typing import TYPE_CHECKING
@@ -9,7 +10,7 @@ from build123d import Face, Part, Solid
 if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
 
-SCHEMA_VERSION = "0.20"
+SCHEMA_VERSION = "0.21"
 INTERFERENCE_VOLUME_EPSILON_MM3 = 0.001
 
 # Absolute tolerance on assertion bound comparisons, in the bound's own
@@ -242,6 +243,42 @@ def surface_faces(shape: Part) -> tuple[Face, ...]:
     return tuple(f for f in shape.faces() if f not in in_solids)
 
 
+def empty_solids(shape: Part) -> int:
+    """How many solids of ``shape`` bound no material: volume at most the
+    overlap epsilon, so no overlap with one could register. An outline
+    folded onto itself extrudes to one — valid, counted as a solid,
+    volume 0 — and the kernel's boolean against it is nothing or, with
+    the other operand round it, the whole of that operand."""
+    return sum(s.volume <= INTERFERENCE_VOLUME_EPSILON_MM3 for s in shape.solids())
+
+
+def overlap_undefined(shapes: Mapping[str, Part], names: Iterable[str]) -> str | None:
+    """Why an overlap through these parts cannot be measured, or ``None``
+    when it can. A surface and an empty solid both bound no material, so
+    a boolean against either says nothing about the part — a zero that
+    would pass every no-overlap claim. Distance is still defined."""
+    named = tuple(names)
+    surfaces = tuple(n for n in named if has_surface(shapes[n]))
+    empty = tuple(n for n in named if empty_solids(shapes[n]))
+    return (
+        f"overlap is undefined for a surface ({', '.join(surfaces)} has faces "
+        "outside any solid, so no material to intersect); measure it with "
+        "assert_distance"
+        if surfaces
+        else f"overlap is undefined for an empty solid ({', '.join(empty)} has a "
+        "solid of zero volume, so no material to intersect); rebuild it — an "
+        "outline folded onto itself extrudes to one"
+        if empty
+        else None
+    )
+
+
+def has_material(shape: Part) -> bool:
+    """Whether a boolean against ``shape`` reads the part: no surface,
+    no empty solid."""
+    return not (has_surface(shape) or empty_solids(shape))
+
+
 def _placed(p: PlacedPart) -> Part:
     return p.part.moved(p.location)
 
@@ -366,14 +403,27 @@ def interferences(assembly: Assembly) -> tuple[Interference, ...]:
     boxes are apart skips the boolean: on a large tree most pairs are,
     and the box test costs microseconds against a boolean's ~1 ms. A
     part with a surface is left out: its overlap is undefined, and its
-    ``volume_mm3: null`` and ``not_solid`` warning say so."""
+    ``volume_mm3: null`` and ``not_solid`` warning say so. So is one with
+    an empty solid, which ``empty_solid`` warns of."""
     posed = tuple(
-        _Posed.create(p) for p in assembly.placed_parts if not has_surface(p.part)
+        _Posed.create(p) for p in assembly.placed_parts if has_material(p.part)
     )
     return tuple(
         r
         for a, b in combinations(posed, 2)
         if not bboxes_apart(a.bbox, b.bbox) and (r := _interference(a, b)) is not None
+    )
+
+
+def empty_solid_warnings(assembly: Assembly) -> tuple[Warning, ...]:
+    """One warning per part with a solid of no volume. It counts as a
+    solid and is valid, so nothing else distinguishes it from a part;
+    the interference pass leaves it out and an overlap claim through it
+    fails. No claim declares one: an empty solid is never on purpose."""
+    return tuple(
+        {"kind": "empty_solid", "part": p.name, "empty_solids": n}
+        for p in assembly.placed_parts
+        if (n := empty_solids(p.part))
     )
 
 
