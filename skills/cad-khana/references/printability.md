@@ -376,7 +376,13 @@ chord of a curved face, and a cone meshes into long ones tilted off it
 (a true 45° cone read 46.7°). It is read at the triangle's three corners
 and under its centroid, and the triangle takes the steepest of the four,
 so a cone reads its own angle and a 45° cone passes `overhang_max_deg=45`.
-A triangle straddling the threshold counts whole toward `area_mm2`.
+A triangle straddling the threshold is cut where the angle crosses it,
+taken as linear between those four readings, and only the part past it
+counts toward `area_mm2`: a bore's crown reads the same area however the
+bore is turned. The mesh is chords, so a curved area reads a little
+under its exact value: 0.1% on a bore's crown and about 1% on a
+spherical cavity's cap at the default tolerance. Leave a `max_area_mm2`
+on a curved face that much room and no more.
 
 A vertical wall gives 0°, a horizontal downward-facing ceiling gives
 90°. Two kinds of triangle are dropped first: the build-plate face —
@@ -386,9 +392,9 @@ points straight along `-u` — and triangles within
 a wall (a tessellated cylinder reads ~1e-16°), not a face pointing
 down. Over what remains, the diagnostic reports `max_angle_deg`, the
 steepest downward-facing triangle **whatever the threshold**, and
-`area_mm2`, the area of triangles with `overhang_angle >
-FDM.overhang_max_deg` (default 45°) — `0.0` when none are — and
-`regions`, those same triangles grouped by the B-rep face they lie on
+`area_mm2`, the area where `overhang_angle >
+FDM.overhang_max_deg` (default 45°) — `0.0` when there is none — and
+`regions`, that same area grouped by the B-rep face it lies on
 (area, steepest angle, centroid, bbox each; largest first; no size
 floor, so they sum to `area_mm2`). The
 threshold decides the pass and which area counts, never whether the

@@ -185,6 +185,12 @@ def _measured(part: Part) -> Overhang:
     return overhang
 
 
+def _measured_at(part: Part, threshold: float) -> float:
+    overhang = detect_overhang(part, angle_threshold_deg=threshold)
+    assert overhang is not None
+    return overhang.area_mm2
+
+
 def _flare_underside_area(
     overhang_deg: float, r0: float = 48.0, r1: float = 90.0
 ) -> float:
@@ -248,3 +254,43 @@ def test_per_face_facets_are_exactly_the_whole_part_facets():
     assert [tuple(t.centroid) for face in grouped for t in face] == [
         tuple(t.centroid) for t in whole
     ]
+
+
+# --- area on a curved face: a facet straddling the threshold --------------
+
+
+def _bored(turned_deg: float, r: float = 2.7, length: float = 5.0) -> Part:
+    """A block with one horizontal bore, turned about its own axis so the
+    mesh seam falls elsewhere. Past 45° is the top quarter of the bore:
+    r·(π/2)·L, whatever the turn."""
+    bore = Rot(0, turned_deg, 0) * Rot(90, 0, 0) * Cylinder(r, length + 2)
+    return cast("Part", Pos(0, 0, 15) * (Box(30, length, 30) - bore))
+
+
+@pytest.mark.parametrize("turned_deg", [0.0, 7.0, 13.0, 22.5])
+def test_a_bore_crown_reads_its_area_wherever_the_seam_falls(turned_deg: float):
+    """A facet straddling the threshold counted whole, so the same bore
+    read 22.19 or 24.21 mm² against an exact 21.21 as it turned."""
+    exact = 2.7 * (pi / 2) * 5.0
+    assert _measured(_bored(turned_deg)).area_mm2 == approx(exact, rel=5e-3)
+
+
+def test_a_crown_between_two_mesh_rows_still_counts():
+    """Past 85° is the 10° at the very top: narrower than two facets, so
+    the reading under a facet's centroid has to carry it when the seam
+    puts a facet across the crown."""
+    exact = 10.0 * radians(10.0) * 20.0
+    readings = [
+        _measured_at(_bored(t, r=10.0, length=20.0), 85.0) for t in (0.0, 7.0, 13.0)
+    ]
+    assert readings == [approx(exact, rel=0.1)] * 3
+
+
+def test_a_split_region_keeps_its_centroid_and_bbox_on_the_counted_part():
+    region = _measured(_bored(13.0, r=10.0, length=20.0)).regions[0]
+    # The top quarter of an r=10 bore centred at z=15: from z=15+10·sin45°
+    # to the crown, centred on the bore's axis.
+    assert region.bbox.min[2] == approx(15 + 10 * sin(radians(45)), abs=0.05)
+    assert region.bbox.max[2] == approx(25.0, abs=0.05)
+    assert region.centroid_mm[0] == approx(0.0, abs=0.05)
+    assert region.max_angle_deg == approx(90.0, abs=0.5)

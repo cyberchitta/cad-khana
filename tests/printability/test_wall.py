@@ -20,8 +20,8 @@ from build123d import (
 from pytest import approx
 
 from cad_khana.core.tessellation import (
+    Triangle,
     _tessellate,  # pyright: ignore[reportPrivateUsage]
-    _triangle,  # pyright: ignore[reportPrivateUsage]
 )
 from cad_khana.printability.wall import (
     _apexes,  # pyright: ignore[reportPrivateUsage]
@@ -221,7 +221,7 @@ def test_sharp_cone_pocket_apex_reads_the_floor_under_it():
 def _facet_over(z: float, up: bool):
     # A facet centred on the Z axis, so its ray runs through any apex there.
     a, b, c = Vector(1, 0, z), Vector(-0.5, 0.866, z), Vector(-0.5, -0.866, z)
-    return _triangle(a, b, c) if up else _triangle(a, c, b)
+    return Triangle.create(a, b, c) if up else Triangle.create(a, c, b)
 
 
 def test_facet_ray_through_a_cone_apex_reads_the_wall_under_it():

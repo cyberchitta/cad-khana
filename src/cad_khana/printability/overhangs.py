@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from itertools import pairwise
 from math import asin, degrees
 
 from build123d import Face, Part, Plane, Vector
@@ -35,8 +36,15 @@ class Overhang:
 
 @dataclass(frozen=True)
 class _Facet:
+    """A facet with the face's angle at its three corners, then under its
+    centroid. A counted piece of one keeps the whole facet's angles."""
+
     triangle: Triangle
-    angle_deg: float
+    angles_deg: tuple[float, ...]
+
+    @property
+    def angle_deg(self) -> float:
+        return max(self.angles_deg)
 
 
 def _overhang_angle_deg(normal: Vector, up: Vector) -> float:
@@ -85,36 +93,95 @@ def _region(facets: tuple[_Facet, ...]) -> OverhangRegion:
     )
 
 
-def _surface_angle_deg(face: Face, triangle: Triangle, up: Vector) -> float:
-    """The steepest the face reads over one facet. The facet's own plane
-    is a chord: a cone meshes into long triangles tilted off it, whose
-    normals read 46.7° on a 45° cone and scatter to both sides of it, so
-    the angle is the surface's — at the facet's corners as well as its
-    middle, since a curved face is steepest at one end of a facet."""
-    return max(
-        (_overhang_angle_deg(n, up) for n in normals(face, triangle)),
-        default=0.0,
+def _surface_angles_deg(
+    face: Face, triangle: Triangle, up: Vector
+) -> tuple[float, ...]:
+    """What the face reads over one facet. The facet's own plane is a
+    chord: a cone meshes into long triangles tilted off it, whose normals
+    read 46.7° on a 45° cone and scatter to both sides of it, so the
+    angles are the surface's — at the facet's corners as well as its
+    middle, since a curved face is steepest at one end of a facet. Where
+    the surface has no normal the facet's steepest reading stands in."""
+    read = tuple(
+        None if n is None else _overhang_angle_deg(n, up)
+        for n in normals(face, triangle)
     )
+    steepest = max((a for a in read if a is not None), default=0.0)
+    return tuple(steepest if a is None else a for a in read)
 
 
 def _facing_down(part: Part, up: Vector) -> tuple[tuple[_Facet, ...], ...]:
     min_up = _build_plate_level(part, up)
     return tuple(
         tuple(
-            _Facet(t, ang)
+            facet
             for t in facets
-            if (ang := _surface_angle_deg(face, t, up)) > FACING_DOWN_EPSILON_DEG
+            if (facet := _Facet(t, _surface_angles_deg(face, t, up))).angle_deg
+            > FACING_DOWN_EPSILON_DEG
             and not _on_build_plate(t, up, min_up)
         )
         for face, facets in zip(part.faces(), _tessellate_faces(part), strict=True)
     )
 
 
+def _above(
+    points: tuple[Vector, ...], angles: tuple[float, ...], limit: float
+) -> tuple[Triangle, ...]:
+    """The part of one triangle where the angle, taken as linear between
+    its corners, is past ``limit``."""
+    ring = tuple(zip(points, angles, strict=True))
+    kept = tuple(
+        v
+        for (p, a), (q, b) in zip(ring, ring[1:] + ring[:1], strict=True)
+        for v in (
+            *((p,) if a > limit else ()),
+            *(
+                (p + (q - p) * ((limit - a) / (b - a)),)
+                if (a > limit) != (b > limit)
+                else ()
+            ),
+        )
+    )
+    return tuple(Triangle.create(kept[0], b, c) for b, c in pairwise(kept[1:]))
+
+
+def _counted(facet: _Facet, limit: float) -> tuple[Triangle, ...]:
+    """The part of a facet past ``limit``. A facet straddling it is cut
+    where the angle crosses, in the three triangles its centroid makes
+    with its edges: counted whole, the same bore read 4.7% or 14.2% over
+    as the mesh seam turned, and the centroid's own reading is what sees
+    a crown narrower than the facet across it."""
+    *corners, middle = facet.angles_deg
+    return (
+        (facet.triangle,)
+        if min(facet.angles_deg) > limit
+        else ()
+        if facet.angle_deg <= limit
+        else tuple(
+            piece
+            for i, j in ((0, 1), (1, 2), (2, 0))
+            for piece in _above(
+                (
+                    facet.triangle.corners[i],
+                    facet.triangle.corners[j],
+                    facet.triangle.centroid,
+                ),
+                (corners[i], corners[j], middle),
+                limit,
+            )
+        )
+    )
+
+
 def _past(facets: tuple[_Facet, ...], threshold: float) -> tuple[_Facet, ...]:
-    """The facets counted toward area: past the threshold by more than
-    the tolerance ``passed`` is judged with, so a face at the threshold
-    counts none."""
-    return tuple(f for f in facets if f.angle_deg > threshold + BOUND_EPSILON)
+    """What counts toward area, as facets and cut pieces of facets: past
+    the threshold by more than the tolerance ``passed`` is judged with,
+    so a face at the threshold counts none."""
+    return tuple(
+        replace(f, triangle=piece)
+        for f in facets
+        for piece in _counted(f, threshold + BOUND_EPSILON)
+    )
 
 
 def _over(
@@ -136,7 +203,7 @@ def detect_overhang(
     angle_threshold_deg: float = 45.0,
 ) -> Overhang | None:
     """Every down-facing facet off the build plate sets ``max_angle_deg``;
-    those past the threshold count toward ``area_mm2`` and are grouped
+    what lies past the threshold counts toward ``area_mm2`` and is grouped
     by B-rep face into ``regions``, largest first — every region, with
     no size floor, so the regions' areas sum to ``area_mm2``."""
     facing_down = _facing_down(part, Vector(*up_axis).normalized())

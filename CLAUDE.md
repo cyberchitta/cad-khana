@@ -529,6 +529,13 @@ its area. Corners as well as the centroid because a curved face is
 steepest at one end of a facet, and the centroid alone would trade the
 over-read for an under-read. Area counts past `threshold + BOUND_EPSILON`,
 the tolerance `passed` already had, so a face at the threshold has none.
+A facet straddling the threshold is cut where the angle crosses it, in
+the three triangles its centroid makes with its edges: counted whole, as
+the steepest-of-four rule first had it, one bore read 4.7% or 14.2% over
+as the mesh seam turned, and four consumer bounds went red on parts that
+had not moved. The fan is what keeps the centroid's reading, which alone
+sees a crown narrower than the facet across it. `passed` still reads the
+steepest sample, so the cut moves area and never the verdict.
 Readings on curved faces move with this; no field changed.
 **A threshold decides `passed` and what area counts, never whether the
 reading exists** (0.14): `overhang.max_angle_deg` is reported whatever

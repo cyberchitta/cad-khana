@@ -21,23 +21,23 @@ class Triangle:
     normal: Vector
     area: float
 
-
-def _triangle(a: Vector, b: Vector, c: Vector) -> Triangle:
-    cross = (b - a).cross(c - a)
-    length = cross.length
-    return Triangle(
-        corners=(a, b, c),
-        centroid=(a + b + c) / 3,
-        normal=cross / length if length > 0 else cross,
-        area=length / 2,
-    )
+    @staticmethod
+    def create(a: Vector, b: Vector, c: Vector) -> Triangle:
+        cross = (b - a).cross(c - a)
+        length = cross.length
+        return Triangle(
+            corners=(a, b, c),
+            centroid=(a + b + c) / 3,
+            normal=cross / length if length > 0 else cross,
+            area=length / 2,
+        )
 
 
 def _tessellate(part: Part) -> tuple[Triangle, ...]:
     verts, tris = part.tessellate(
         TESSELLATION_TOLERANCE_MM, TESSELLATION_ANGULAR_TOLERANCE
     )
-    return tuple(_triangle(verts[a], verts[b], verts[c]) for a, b, c in tris)
+    return tuple(Triangle.create(verts[a], verts[b], verts[c]) for a, b, c in tris)
 
 
 def _tessellate_faces(part: Part) -> tuple[tuple[Triangle, ...], ...]:
@@ -83,17 +83,17 @@ def _projected(face: Face, triangle: Triangle) -> Triangle:
     return replace(triangle, centroid=Vector(point), normal=Vector(normal))
 
 
-def normals(face: Face, triangle: Triangle) -> tuple[Vector, ...]:
-    """The face's outward normals over one facet: at its corners, which
-    the mesher put on the surface, and at its centroid's projection. A
-    planar face has the facet's own normal throughout. A point where the
-    surface has no normal contributes none."""
+def normals(face: Face, triangle: Triangle) -> tuple[Vector | None, ...]:
+    """The face's outward normals over one facet: at its three corners,
+    which the mesher put on the surface, then at its centroid's
+    projection. A planar face has the facet's own normal throughout.
+    ``None`` where the surface has no normal."""
     at = (
         _projected(face, replace(triangle, centroid=p)).normal
         for p in (*triangle.corners, triangle.centroid)
     )
     return (
-        (triangle.normal,)
+        (triangle.normal,) * 4
         if face.geom_type == GeomType.PLANE
-        else tuple(n.normalized() for n in at if n.length > 0)
+        else tuple(n.normalized() if n.length > 0 else None for n in at)
     )
