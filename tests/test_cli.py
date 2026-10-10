@@ -1514,6 +1514,114 @@ def test_diff_reads_two_partial_runs_of_the_same_selection(tmp_path: Path):
     assert result.exit_code == 0, result.output
 
 
+# --- named regions: claim names carry "@" ----------------------------------
+
+
+def _regions_module(short: float) -> str:
+    """A slab with two posts under a plate; the ``short`` post stops that
+    far below it. Each post has a region, and a claim of its own."""
+    return (
+        "from build123d import Box, Part, Pos\n"
+        "from cad_khana.mechanism.assembly import Assembly\n"
+        "\n"
+        f"SHORT = {short}\n"
+        "posts = [Pos(-10, 0, 6) * Box(4, 4, 8),\n"
+        "         Pos(10, 0, 6 - SHORT / 2) * Box(4, 4, 8 - SHORT)]\n"
+        "body = Part((Part() + [Pos(0, 0, 1) * Box(30, 10, 2), *posts]).solids())\n"
+        "assembly = (\n"
+        "    Assembly()\n"
+        "    .with_part('body', body)\n"
+        "    .with_part('plate', Pos(0, 0, 11) * Box(30, 10, 2))\n"
+        "    .with_region('body', 'tall', Pos(-10, 0, 6.5) * Box(6, 6, 8))\n"
+        "    .with_region('body', 'short', Pos(10, 0, 6.5) * Box(6, 6, 8))\n"
+        "    .assert_tangent_contact('plate', 'body')\n"
+        "    .assert_tangent_contact('plate', 'body@tall')\n"
+        "    .assert_tangent_contact('plate', 'body@short')\n"
+        ")\n"
+    )
+
+
+def _checked_regions(tmp_path: Path, short: float, *args: str) -> tuple[int, Path]:
+    module = tmp_path / f"posts_{short}.py".replace(".", "_", 1)
+    module.write_text(_regions_module(short))
+    out = tmp_path / f"out_{short}"
+    result = runner.invoke(app, ["check", str(module), "--out", str(out), *args])
+    return result.exit_code, out / "mechanism.json"
+
+
+def test_check_only_selects_a_region_claim_by_its_name(tmp_path: Path):
+    code, path = _checked_regions(tmp_path, 0.3, "--only", "*body@short")
+    assert code == 1
+    data = json.loads(path.read_text())
+    (claim,) = data["assertions"]
+    assert claim["name"] == "tangent_contact:plate/body@short"
+    assert claim["passed"] is False and abs(claim["value"] - 0.3) < 1e-6
+    assert data["selection"]["only"] == ["*body@short"]
+    code, path = _checked_regions(tmp_path, 0.3, "--only", "*@tall")
+    assert code == 0
+    assert [a["name"] for a in json.loads(path.read_text())["assertions"]] == [
+        "tangent_contact:plate/body@tall"
+    ]
+
+
+def test_a_region_adds_nothing_to_parts_or_interferences(tmp_path: Path):
+    code, path = _checked_regions(tmp_path, 0.0)
+    assert code == 0
+    data = json.loads(path.read_text())
+    assert sorted(data["parts"]) == ["body", "plate"]
+    assert data["interferences"] == []
+    assert [a["passed"] for a in data["assertions"]] == [True, True, True]
+
+
+def test_diff_reports_a_region_claim_by_its_name(tmp_path: Path):
+    _, before = _checked_regions(tmp_path, 0.0)
+    _, after = _checked_regions(tmp_path, 0.3)
+    result = runner.invoke(app, ["diff", str(before), str(after)])
+    assert result.exit_code == 1, result.output
+    assert "tangent_contact:plate/body@short" in result.output
+    assert "tangent_contact:plate/body@tall" not in result.output
+    assert "tangent_contact:plate/body:" not in result.output  # whole part: green
+
+
+def test_show_greps_and_lists_a_region_claim(tmp_path: Path):
+    _, path = _checked_regions(tmp_path, 0.3)
+    result = runner.invoke(app, ["show", str(path), "--grep", "@short"])
+    assert result.exit_code == 0, result.output
+    rows = [line for line in result.stdout.splitlines() if "body@" in line]
+    assert len(rows) == 1 and rows[0].startswith("FAIL")
+    assert "tangent_contact:plate/body@short" in rows[0]
+    grouped = runner.invoke(app, ["show", str(path), "--group", r"@(\w+)$"])
+    assert grouped.exit_code == 0, grouped.output
+    assert "short" in grouped.stdout and "tall" in grouped.stdout
+
+
+def test_view_and_export_see_no_region(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    names: list[object] = []
+
+    def fake_show(*cad_objs: object, **kwargs: object) -> None:
+        names.append(kwargs.get("names"))
+
+    monkeypatch.setattr(viewer, "show", fake_show)
+    module = _write(tmp_path / "assembly.py", _regions_module(0.0))
+    assert runner.invoke(app, ["view", str(module)]).exit_code == 0
+    assert names == [["body", "plate"]]
+    result = runner.invoke(app, ["export", str(module)])
+    assert result.exit_code == 0, result.output
+    (tmp_path / "bare").mkdir()
+    bare = _write(
+        tmp_path / "bare" / "assembly.py",
+        "\n".join(
+            line
+            for line in _regions_module(0.0).splitlines()
+            if "with_region" not in line and "body@" not in line
+        )
+        + "\n",
+    )
+    assert runner.invoke(app, ["export", str(bare)]).exit_code == 0
+    with_regions = (tmp_path / "outputs" / "assembly.stl").read_bytes()
+    assert with_regions == (tmp_path / "bare" / "outputs" / "assembly.stl").read_bytes()
+
+
 def _stale(path: Path, was: str, now: str) -> None:
     """Leave ``path`` holding ``now`` behind a ``.pyc`` compiled from
     ``was`` at the same size and mtime — an edit and its restore landing

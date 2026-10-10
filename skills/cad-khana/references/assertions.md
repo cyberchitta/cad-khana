@@ -25,7 +25,7 @@ JSON stale from a previous run while it still reads as current.
 |---|---|
 | `.assert_no_interference(a, b)` | Parts `a` and `b` don't overlap (intersection volume ≤ 0.001 mm³). |
 | `.assert_distance(a, b, min_mm=…, max_mm=…)` | Bounded distance from part `a` to part `b` **or a datum `Plane`**. Either bound alone, or both for "close but not touching" (a gear mesh). See below for `along=` and `grow_*_mm`. |
-| `.assert_clear_of(parts, keepout, name=…, min_mm=0, seat=None)` | Parts stay out of a **keep-out solid that is not a part**: a driver's corridor, a bolt's drop-in path, an RF zone. `keepout` is the solid, or the path of one a unit declared with `with_keepout`. One result per call: `value` is the least distance over the parts. Any overlap fails; `min_mm` is clearance past touching, or past the `seat`. See below. |
+| `.assert_clear_of(parts, keepout, name=…, min_mm=0, seat=None, excluding=…)` | Parts stay out of a **keep-out solid that is not a part**: a driver's corridor, a bolt's drop-in path, an RF zone. `keepout` is the solid, or the path of one a unit declared with `with_keepout`. One result per call: `value` is the least distance over the parts. Any overlap fails; `min_mm` is clearance past touching, or past the `seat`. See below. |
 | `.assert_within(inner, outer, along="Z")` | `inner`'s **footprint** along the axis lies within `outer`'s — a foot resting *on* a rail stays on it, a ring stays over its seat. Holes count. `value` is the volume outside, in mm³. See below. |
 | `.assert_scalar(name, value, ge=…, le=…)` | A named claim about a non-geometric scalar (friction budget, torque margin). No bounds = pure recorder. |
 | `.assert_tangent_contact(a, b, tol_mm=…)` | Parts `a` and `b` **touch**: surface gap ≤ `tol_mm` (default 1e-3, noise allowance — not a design gap) and no real overlap. A gap fails, an overlap fails. See below. |
@@ -36,6 +36,11 @@ JSON stale from a previous run while it still reads as current.
 
 Give assertions a `name=` when you'd benefit from a specific label in
 the diagnostics; otherwise they get an auto-generated one.
+
+`a`, `b`, `inner`, `outer` and `parts` name whole parts. To claim
+something about **one feature of a part** — one post of four, a boss, a
+seat — name the feature as a region and write `part@region`; see
+[Regions](#regions-a-claim-about-one-feature-of-a-part).
 
 ## One piece, or several on purpose
 
@@ -280,9 +285,12 @@ the keep-out or not, is held only to no overlap. A seat that is not a
 plane (a countersink cone) cannot be named; exclude that part, as the
 second example does.
 
-`excluding` drops whole parts. A thin wall of the excluded part right
-beside the corridor is not held by the claim. A second keep-out that
-starts past the excluded feature can hold that part too.
+`excluding` drops whole parts: a thin wall of the excluded part right
+beside the corridor is not held by the claim. Prefer excluding a
+**region** of the part (`excluding=["stage_1.sector_2@screw"]`), which
+drops only the material round the feature the corridor starts in and
+keeps the rest of the part held; see
+[Regions](#regions-a-claim-about-one-feature-of-a-part).
 
 **Every selected part is measured, with no bounding-box pruning.** A
 consumer's whole-machine claim of 4 corridors against 357 parts (1428
@@ -322,12 +330,116 @@ in which direction, the part overhangs:
 The footprint is all of `outer`, at every height along the axis, so
 material below the contact covers too: a ring overhanging its seat
 passes wherever a lower saddle of the same part lies beneath it.
-Within is not *rests on*.
+Within is not *rests on*. To hold the ring to the seat alone, name the
+seat as a region and claim `assert_within("ring", "spider@seat",
+along="Z")`.
 
 The footprint is `swept()`, so `outer` must have only plane,
 cylinder, cone and sphere faces. A torus fillet or a B-spline fails
 the claim, naming the face kinds, rather than read an approximate
 footprint.
+
+## Regions: a claim about one feature of a part
+
+A claim's operands are whole parts, and what a claim is about is often
+one feature of one. A plate has to rest on *each* of four posts that
+are fused into one body, but tangent contact reads the nearest gap, so
+the whole-part claim is green on one post of four. A boss has to clear
+a corridor that its own sector spans, so the whole-part claim is red by
+construction. A driver corridor has to clear a bowl everywhere but
+round the screw it reaches, and `excluding` the bowl drops all of it.
+
+`with_region(part, name, solid)` names a region on a part: a solid in
+**the part's own frame**, the one its builder draws in (see
+`composition.md` §Regions ride their part). As a claim operand,
+`part@name` is then *the part's material inside that solid*:
+
+```python
+a = (
+    Assembly()
+    .with_part("body", body())        # a slab carrying four posts, one solid
+    .with_part("plate", Box(40, 40, 2), location=Pos(0, 0, 13))
+    .with_region("body", "post_sw", Pos(-15, -15, 7.75) * Box(6, 6, 10.5))
+    .with_region("body", "post_ne", Pos(15, 15, 7.75) * Box(6, 6, 10.5))
+)
+a = a.assert_tangent_contact("plate", "body")          # green: the nearest post touches
+a = a.assert_tangent_contact("plate", "body@post_sw")  # green: this post touches
+a = a.assert_tangent_contact("plate", "body@post_ne")  # red: this one stops 0.3 short
+```
+
+**The measuring claims take a region**, on any part operand:
+`assert_distance`, `assert_tangent_contact`, `assert_within` (as
+`inner` or `outer`) and `assert_clear_of` (in `parts`, and in
+`excluding`, below). The claims about a part pair or a whole part
+raise `ValueError` when given one — `assert_no_interference`,
+`assert_allowed_contact`, `assert_interference`, `assert_solid_count`,
+and both group forms, in their groups and in `known_overlaps=` /
+`suppressed=`.
+
+**In `excluding`, `part@region` keeps the part held and drops only the
+material inside the region**:
+
+```python
+# a 20 mm cube with a radius-1 rod through it as the keep-out; the plug
+# is the radius-3 cylinder round the rod, in the cube's frame
+b = b.with_region("box", "plug", Cylinder(3, 30))
+b = b.assert_clear_of(["box", "far"], rod, name="rod", min_mm=1,
+                      excluding=["box@plug"])
+```
+
+The whole cube overlaps the rod by 62.8 mm³. Less the plug it reads
+2.0 mm, and `measured` still counts it. Excluding `"box"` outright
+reads 48 mm, the distance to the other part: the cube is then not held
+at all. Several regions of one part
+may be excluded; each must be on a part the claim holds, or the call
+raises.
+
+**Read `detail` on a green region claim.** It ends with how much of the
+part the operand holds, on a pass too:
+
+- as an operand: `body@post_sw: 152.0000mm^3 of body's 3835.2000mm^3`
+- in `excluding`: `excluding box@plug: 7434.5133mm^3 of box's
+  8000.0000mm^3 held`
+
+A region drawn too small measures less than the feature and stays
+green, and one that has drifted onto other material measures the wrong
+place; no check can know what you meant, so the number is what tells
+you what was looked at. Compare it with the feature's volume when you
+write the claim. An excluded region that misses its part drops nothing
+and reads `8000.0000mm^3 of box's 8000.0000mm^3 held`: the whole part
+is held, which is the strict side, and the number shows the exclusion
+is doing nothing.
+
+**A region that holds nothing fails the claim**, `passed: false` and
+never a skip: `region body@miss holds no material of body: its solid
+misses the part`. A part left with nothing by its exclusions fails the
+same way: `excluding box@all leaves nothing of box to hold clear`.
+The material is cut from the geometry the run actually has, so under
+`with_detailed_geometry` the region reads the detail body, and a detail
+body that has lost the feature fails the claim.
+
+What else to know:
+
+- **One region, one claim.** There is no "every post": four posts are
+  four regions and four claims.
+- **Declare the region before the claim that reads it.** A region the
+  part does not have raises `KeyError` at the claim, naming the ones it
+  has. A part absent from the run skips the claim as `absent_part`, as
+  for any claim; if the part then arrives without the region, the claim
+  fails.
+- **Names.** A region name has no `.` and no `@`, and is unique on its
+  part; two parts may each have a `seat`. Part and sub-assembly names
+  cannot contain `@`. The auto-name carries the operand
+  (`tangent_contact:plate/body@post_ne`), so converting a whole-part
+  claim to a region claim renames it: `khana diff` shows one `removed`
+  and one `added`.
+- **Solids only.** A region is cut from material. A part with faces
+  outside any solid (the `not_solid` warning, or a solid with a stray
+  face beside it) takes no region: the claim fails with `… has faces
+  outside any solid, so a region of it would leave them out`, because
+  the cut would drop those faces and measure the part without them.
+- **Not a part.** Like a keep-out, a region is never exported, drawn,
+  pushed to the viewer or listed in `parts`.
 
 ## Contact claims
 
@@ -342,7 +454,8 @@ Two contact assertions, split by what the design intends:
   assert the tangent contact against the surface it must face; that
   pins the orientation too. The gap is the pair's *nearest* one, so a
   plate on four posts fused into one body passes when one post reaches
-  and three stop short.
+  and three stop short. Claim each post through a region
+  (`"body@post_sw"`, §Regions) when every one must touch.
 - **Allowed contact** — a press-fit or interference fit. Model the
   **true** interference (don't oversize a bore to appease
   `assert_no_interference` — the model then lies about the fit) and

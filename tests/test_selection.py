@@ -14,6 +14,20 @@ def test_claims_keeps_names_matching_any_glob():
     assert claims(names, ("clear_of:a", "distance:*")) == (True, False, True)
 
 
+def test_claims_globs_reach_a_region_operand_in_a_name():
+    names = (
+        "tangent_contact:plate/body",
+        "tangent_contact:plate/body@sw",
+        "u.within:ring/spider@seat@Z",
+        "no_interference:a/b@swing [0, 10]deg",
+    )
+    assert claims(names, ("*body@sw",)) == (False, True, False, False)
+    assert claims(names, ("*@seat@*",)) == (False, False, True, False)
+    assert claims(names, ("tangent_contact:plate/body",)) == (True, False, False, False)
+    with pytest.raises(SelectionError, match="'\\*body@ws'"):
+        claims(names, ("*body@ws",))
+
+
 def test_claims_is_case_sensitive():
     with pytest.raises(SelectionError):
         claims(("Clear",), ("clear",))

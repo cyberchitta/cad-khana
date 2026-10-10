@@ -254,7 +254,7 @@ A module the import-model verbs consume never calls `check()`,
 full design, its phases, and what is still owed:
 `_notes/draft-script-decomposition.md`.
 
-## Diagnostics JSON schemas (v0.19)
+## Diagnostics JSON schemas (v0.20)
 
 Version these from day one. Agents depend on field stability.
 
@@ -275,7 +275,7 @@ for three bumps.
 
 ```json
 {
-  "schema_version": "0.19",
+  "schema_version": "0.20",
   "status": "ok | error | assertion_failed",
   "error": null,
   "hint": "Missing .part accessor — use `with BuildPart() as p: ...; return p.part`.",
@@ -367,6 +367,29 @@ Maintainer facts behind those fields:
   `assert_solid_count(eq=0)` declares it — declared, never inferred from
   the type, because the dangerous case is the shell that looks solid to
   its author. `eq=0` silences only the warning.
+- **Regions** (0.20): a claim's operands were whole parts, so tangent
+  contact read green on one fused post of four and an `excluding` entry
+  dropped a whole bowl to let one screw through. `part@region` is
+  resolved at evaluation (`assertions._measured`), not at
+  `with_region`, because `with_detailed_geometry` swaps the part
+  afterwards. The boolean is taken in the part's own frame and kept per
+  (part geometry, region) for the run (`Cuts`), so held evaluation pays
+  it once and keys the claim on the part's placement. An empty operand
+  fails: measured, a region that misses its part is the vacuous green;
+  skipped, a claim that never looked. A pass's `detail` carries the
+  operand's volume because the green that remains, a region drawn too
+  small, is one no check can see. A part with a surface is refused a
+  region for the reason overlap is undefined for it: the cut keeps only
+  solids, and a stray face 14.5 mm from a lid read 34.5 once dropped.
+  Only the measuring claims take one.
+  The pair claims and `assert_solid_count` refuse as they are built
+  (`refuse_regions` in `__post_init__`), so no group expansion or
+  qualified claim puts an `@` where `contact_claims` keys a pair;
+  whether the rest of a pair stays held under a region-scoped
+  permission is undecided. No field was added — names gain `@region` —
+  and the one bump also covers `assert_distance` reading 0 for a
+  contained part (`f300fe6`), which shipped at 0.19 with `value`,
+  `witness_mm` and a pass's `detail` changed.
 - **`detail` on a pass carries labels, never failure hypotheses.**
   `assert_scalar`'s `detail=` and a contact claim's `reason=`
   (`assert_allowed_contact`, `assert_interference`, `known_overlaps`)
@@ -403,7 +426,7 @@ Maintainer facts behind those fields:
 
 ```json
 {
-  "schema_version": "0.19",
+  "schema_version": "0.20",
   "kind": "printability",
   "status": "ok | assertion_failed",
   "name": "housing",

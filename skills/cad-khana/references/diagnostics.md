@@ -79,10 +79,21 @@ its claims filtered, sorted or grouped; see `references/cli.md`.
   Held over a motion, `value` and `detail` are the **worst pose's**
   (least slack to the claim's own bound; for a kind with no measured
   value, the first failing pose — the onset).
+- `assertions[].detail` — on a failure, what failed and where. On a
+  pass it is `null` unless the claim has a **label**, text that is true
+  whether or not the claim holds: `assert_scalar`'s `detail=`; a
+  contact claim's `reason=`; the nearest part for `assert_clear_of`;
+  which part lies inside which for an `assert_distance` reading 0 by
+  containment; and, for any claim on a region (`part@region`,
+  `assertions.md` §Regions), how much of its part each operand holds —
+  `body@post_sw: 152.0000mm^3 of body's 3835.2000mm^3`, or `excluding
+  box@plug: 7434.5133mm^3 of box's 8000.0000mm^3 held`. Labels come
+  after the failure text, joined by `; `. A region that holds nothing
+  is `passed: false` with `value: null`, never a skip.
 - `assertions[].measured` — how many parts a claim that folds several
   into one result measured: the selection size for `assert_clear_of`,
   on pass and fail alike (`excluding` applied, parts wholly on the
-  seat side counted). `null` for every other kind and on a skip. A
+  seat side counted; a part held less an excluded region still counts). `null` for every other kind and on a skip. A
   selection that shrank — a renamed subtree, a wider `excluding` —
   keeps the claim green; `khana diff` reports the count's change.
 - `assertions[].witness_mm` — the nearest pair a distance was read

@@ -56,6 +56,33 @@ def _surfaces(parts: dict[str, Part], names: Iterable[str]) -> str | None:
     )
 
 
+# Separates a part path from a region of that part in a claim operand:
+# ``unit.body@post_sw``. ``.`` is the tree path, and ``:`` and ``/``
+# already appear in claim names.
+REGION = "@"
+
+
+def part_of(operand: str) -> str:
+    """The part an operand is on: itself, or a region operand's part."""
+    return operand.partition(REGION)[0]
+
+
+def refuse_regions(claim: str, operands: Iterable[str]) -> None:
+    """Raise if any operand names a region. The claims that key on a
+    part pair or speak for a whole part call this as they are built, so
+    no route (a group expansion, a sub-assembly's qualified claim, a
+    claim built by hand) puts a region where the pair grouping, a
+    permission or a solid count would read it as a part."""
+    regions = tuple(o for o in operands if REGION in o)
+    if regions:
+        raise ValueError(
+            f"{claim}: a region ({', '.join(regions)}) is not accepted here — "
+            "this claim is about the whole part or the part pair; a region is "
+            "an operand of assert_distance, assert_tangent_contact, "
+            "assert_within and assert_clear_of"
+        )
+
+
 def _extent(shape: Part, d: Vector) -> tuple[float, float]:
     """Projection interval of ``shape`` onto the unit direction ``d``:
     ``(min, max)`` of ``p . d`` over the shape's points. Computed by
@@ -137,6 +164,9 @@ class NoInterference:
     name: str
     from_group: bool = False
 
+    def __post_init__(self):
+        refuse_regions("assert_no_interference", (self.a, self.b))
+
     @property
     def part_refs(self) -> tuple[str, ...]:
         return (self.a, self.b)
@@ -175,7 +205,7 @@ class TangentContact:
 
     @property
     def part_refs(self) -> tuple[str, ...]:
-        return (self.a, self.b)
+        return (part_of(self.a), part_of(self.b))
 
     def qualified(self, prefix: str, location: Location) -> TangentContact:
         return replace(
@@ -236,6 +266,9 @@ class AllowedContact:
     max_overlap_mm3: float
     min_overlap_mm3: float | None = None
     reason: str | None = None
+
+    def __post_init__(self):
+        refuse_regions("assert_allowed_contact", (self.a, self.b))
 
     @property
     def part_refs(self) -> tuple[str, ...]:
@@ -407,7 +440,11 @@ class Distance:
 
     @property
     def part_refs(self) -> tuple[str, ...]:
-        return (self.a,) if isinstance(self.b, Plane) else (self.a, self.b)
+        return (
+            (part_of(self.a),)
+            if isinstance(self.b, Plane)
+            else (part_of(self.a), part_of(self.b))
+        )
 
     def qualified(self, prefix: str, location: Location) -> Distance:
         b = (
@@ -566,6 +603,11 @@ class KeepOut:
     whole part. A part with nothing past the seat has no distance, and
     when no part has any, ``value`` is ``None``.
 
+    An entry of ``parts`` may be a region operand (``part@region``),
+    held as that part's material inside the region. ``less`` holds the
+    region operands of ``excluding``: each names a part in ``parts``,
+    which is held less the material inside those regions.
+
     A part in ``parts`` absent from the run skips the whole claim as
     ``absent_part``, as for every claim naming its parts: a minimum
     taken over the parts that happen to be present would read as
@@ -576,15 +618,17 @@ class KeepOut:
     name: str
     min_mm: float = 0.0
     seat: Plane | None = None
+    less: tuple[str, ...] = ()
 
     @property
     def part_refs(self) -> tuple[str, ...]:
-        return self.parts
+        return tuple(dict.fromkeys(part_of(n) for n in self.parts))
 
     def qualified(self, prefix: str, location: Location) -> KeepOut:
         return replace(
             self,
             parts=tuple(f"{prefix}.{n}" for n in self.parts),
+            less=tuple(f"{prefix}.{n}" for n in self.less),
             keepout=(
                 f"{prefix}.{self.keepout}"
                 if isinstance(self.keepout, str)
@@ -689,7 +733,7 @@ class Within:
 
     @property
     def part_refs(self) -> tuple[str, ...]:
-        return (self.a, self.b)
+        return (part_of(self.a), part_of(self.b))
 
     def qualified(self, prefix: str, location: Location) -> Within:
         return replace(
@@ -775,6 +819,9 @@ class SolidCount:
     name: str
     detail: str | None = None
 
+    def __post_init__(self):
+        refuse_regions("assert_solid_count", (self.part,))
+
     @property
     def part_refs(self) -> tuple[str, ...]:
         return (self.part,)
@@ -804,6 +851,9 @@ class ExpectedInterference:
     b: str
     name: str
     reason: str | None = None
+
+    def __post_init__(self):
+        refuse_regions("assert_interference", (self.a, self.b))
 
     @property
     def part_refs(self) -> tuple[str, ...]:
@@ -881,6 +931,18 @@ PartAssertion = (
     | KeepOut
     | Within
 )
+# The claims between two operands, ``a`` and ``b``.
+PairClaim = (
+    NoInterference
+    | TangentContact
+    | AllowedContact
+    | ExpectedInterference
+    | Distance
+    | Within
+)
+# The claims that measure, and so can read a region of a part in place
+# of the part; the rest refuse one as they are built (``refuse_regions``).
+Measuring = TangentContact | Distance | Within | KeepOut
 
 
 @dataclass(frozen=True)
@@ -1048,12 +1110,176 @@ def _skipped(name: str, kind: str, detail: str) -> AssertionResult:
     return AssertionResult(name, None, f"skipped: {detail}", skipped=kind)
 
 
+@dataclass(frozen=True)
+class _Cut:
+    """What a region leaves of a part, in the part's own frame, so it is
+    the same at every pose: ``shape`` is the part's material inside the
+    region, or the part less its excluded regions, and ``None`` when
+    that is nothing. ``surface`` marks a part with faces outside any
+    solid, which is not cut at all: a boolean keeps only material, so
+    the cut would drop those faces and the claim would measure a part
+    without them. ``part`` and ``tools`` are kept so the identities a
+    ``Cuts`` entry is keyed by stay those of live objects."""
+
+    part: Part
+    tools: tuple[Compound | Solid, ...]
+    shape: Part | None
+    volume: float
+    whole: float
+    surface: bool
+
+    def refusal(self, path: str) -> str | None:
+        return (
+            f"{path} has faces outside any solid, so a region of it would leave "
+            "them out; a region is cut from material"
+            if self.surface
+            else None
+        )
+
+
+# One boolean per (part geometry, region), whatever the number of poses
+# and of claims that read it: the cache ``evaluate`` and ``hold`` each
+# hand to every ``evaluate_one`` of a run. Keyed by identity, so a part
+# swapped by ``with_detailed_geometry`` is cut afresh.
+Cuts = dict[tuple[object, ...], _Cut]
+
+
+def _boolean(
+    part: Part, tools: tuple[Compound | Solid, ...], inside: bool
+) -> list[Solid]:
+    """The solids of ``part`` inside ``tools[0]``, or of ``part`` less
+    every one of ``tools``. Solids only: a region holds material."""
+    made = part & tools[0] if inside else part - list(tools)
+    return list(made.solids()) if made else []
+
+
+def _cut(
+    part: Part, tools: tuple[Compound | Solid, ...], inside: bool, cuts: Cuts
+) -> _Cut:
+    key = (inside, id(part), *(id(t) for t in tools))
+    if key not in cuts:
+        surface = has_surface(part)
+        solids = [] if surface else _boolean(part, tools, inside)
+        volume = sum(s.volume for s in solids)
+        cuts[key] = _Cut(
+            part,
+            tools,
+            Part(solids) if volume > INTERFERENCE_VOLUME_EPSILON_MM3 else None,
+            volume,
+            part.volume,
+            surface,
+        )
+    return cuts[key]
+
+
+@dataclass(frozen=True)
+class _Operand:
+    """One region operand resolved where the assembly stands: the placed
+    shape the claim measures under ``key`` in place of a whole part, the
+    label saying how much of the part that is, or why there is nothing
+    to measure."""
+
+    key: str
+    shape: Part | None
+    label: str | None
+    failure: str | None
+
+
+def _inside(operand: str, assembly: Assembly, cuts: Cuts) -> _Operand:
+    """``part@region``: the part's material inside the region's solid."""
+    path, _, name = operand.partition(REGION)
+    placed = assembly.part(path)
+    region = next((r for r in placed.regions if r.name == name), None)
+    if region is None:
+        declared = ", ".join(sorted(r.name for r in placed.regions)) or "none"
+        failure = f"{path} has no region named {name!r} (declared: {declared})"
+        return _Operand(operand, None, None, failure)
+    cut = _cut(placed.part, (region.solid,), True, cuts)
+    if cut.shape is None:
+        failure = cut.refusal(path) or (
+            f"region {operand} holds no material of {path}: its solid misses the part"
+        )
+        return _Operand(operand, None, None, failure)
+    label = f"{operand}: {cut.volume:.4f}mm^3 of {path}'s {cut.whole:.4f}mm^3"
+    return _Operand(operand, cut.shape.moved(placed.location), label, None)
+
+
+def _less(
+    path: str, operands: tuple[str, ...], assembly: Assembly, cuts: Cuts
+) -> _Operand:
+    """``path`` less the material inside each of ``operands``' regions."""
+    placed = assembly.part(path)
+    names = tuple(o.partition(REGION)[2] for o in operands)
+    solids = {r.name: r.solid for r in placed.regions}
+    listed = ", ".join(operands)
+    if unknown := tuple(n for n in names if n not in solids):
+        declared = ", ".join(sorted(solids)) or "none"
+        failure = (
+            f"{path} has no region named {', '.join(map(repr, unknown))} "
+            f"(declared: {declared})"
+        )
+        return _Operand(path, None, None, failure)
+    cut = _cut(placed.part, tuple(solids[n] for n in names), False, cuts)
+    if cut.shape is None:
+        failure = cut.refusal(path) or (
+            f"excluding {listed} leaves nothing of {path} to hold clear"
+        )
+        return _Operand(path, None, None, failure)
+    label = (
+        f"excluding {listed}: {cut.volume:.4f}mm^3 of {path}'s {cut.whole:.4f}mm^3 held"
+    )
+    return _Operand(path, cut.shape.moved(placed.location), label, None)
+
+
+def _region_operands(
+    claim: Measuring, assembly: Assembly, cuts: Cuts
+) -> tuple[_Operand, ...]:
+    """Every region a claim reads, resolved against the tree as it
+    stands."""
+    if isinstance(claim, KeepOut):
+        by_part = {
+            path: tuple(o for o in claim.less if part_of(o) == path)
+            for path in dict.fromkeys(part_of(o) for o in claim.less)
+        }
+        return tuple(
+            _inside(o, assembly, cuts) for o in claim.parts if REGION in o
+        ) + tuple(
+            _less(path, operands, assembly, cuts) for path, operands in by_part.items()
+        )
+    regions = (o for o in (claim.a, claim.b) if isinstance(o, str) and REGION in o)
+    return tuple(_inside(o, assembly, cuts) for o in dict.fromkeys(regions))
+
+
+def _measured(
+    claim: Measuring, operands: tuple[_Operand, ...], parts: dict[str, Part]
+) -> AssertionResult:
+    """The claim's result, each region operand standing in for its part.
+    A region with nothing in it fails the claim: measured, a region that
+    misses its part would be the vacuous green, and skipped it would be
+    a claim that never looked. Otherwise ``detail`` ends with how much
+    of its part each operand holds — the green that is left is a region
+    drawn too small, and only the number says what was looked at. It is
+    a label, true whether or not the claim holds."""
+    if failures := tuple(o.failure for o in operands if o.failure):
+        return AssertionResult(
+            claim.name,
+            False,
+            "; ".join(failures),
+            measured=len(claim.parts) if isinstance(claim, KeepOut) else None,
+        )
+    shapes = {o.key: o.shape for o in operands if o.shape is not None}
+    result = claim.evaluate(parts | shapes)
+    labels = (o.label for o in operands)
+    return replace(result, detail="; ".join(s for s in (result.detail, *labels) if s))
+
+
 def evaluate_one(
     assertion: Assertion,
     assembly: Assembly,
     parts: dict[str, Part],
     values: dict[str, float],
     contacts: Contacts,
+    cuts: Cuts,
 ) -> AssertionResult:
     """One assertion at one pose. Absence — of a joint, then of a part —
     is reported ahead of the phase: it is the same at every pose, and a
@@ -1089,6 +1315,11 @@ def evaluate_one(
             f"out of phase — holds only during {assertion.describe()}; "
             f"{assertion.state(values)}",
         )
+    claim = resolved(assertion, state)
+    if isinstance(claim, Measuring) and (
+        operands := _region_operands(claim, assembly, cuts)
+    ):
+        return _measured(claim, operands, parts)
     result = resolved(assertion, state).evaluate(parts)
     return (
         replace(result, detail=f"{result.detail}; {assertion.state(values)}")
@@ -1104,4 +1335,7 @@ def evaluate(assembly: Assembly) -> tuple[AssertionResult, ...]:
     values = assembly.joint_angles
     assertions = assembly.all_assertions
     contacts = contact_claims(assertions)
-    return tuple(evaluate_one(a, assembly, parts, values, contacts) for a in assertions)
+    cuts: Cuts = {}
+    return tuple(
+        evaluate_one(a, assembly, parts, values, contacts, cuts) for a in assertions
+    )

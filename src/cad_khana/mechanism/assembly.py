@@ -13,11 +13,13 @@ from build123d import (
     Plane,
     Shape,
     ShapeList,
+    Solid,
     Vector,
     VectorLike,
 )
 
 from cad_khana.mechanism.assertions import (
+    REGION,
     AllowedContact,
     AnchorsCoincident,
     Assertion,
@@ -32,6 +34,8 @@ from cad_khana.mechanism.assertions import (
     TangentContact,
     Within,
     drop_contact_shadowed,
+    part_of,
+    refuse_regions,
 )
 from cad_khana.mechanism.motion import Motion, Pose
 
@@ -48,6 +52,36 @@ def _normalize_pair_maps(
     reasons = {frozenset((a, b)): reason for a, b, reason in known_overlaps}
     sup = {frozenset(p) for p in suppressed}
     return reasons, sup
+
+
+def _entries(group: str | Iterable[str]) -> tuple[str, ...]:
+    return (group,) if isinstance(group, str) else tuple(group)
+
+
+def _refuse_group_regions(
+    claim: str,
+    groups: Iterable[tuple[str, ...]],
+    reasons: dict[frozenset[str], str],
+    sup: set[frozenset[str]],
+) -> None:
+    """A group form is about whole parts, in its selectors and in the
+    pairs its options name: a region in ``known_overlaps`` or
+    ``suppressed`` would match no pair and be dropped in silence."""
+    refuse_regions(
+        claim,
+        (
+            *(entry for group in groups for entry in group),
+            *(name for pair in (*reasons, *sup) for name in sorted(pair)),
+        ),
+    )
+
+
+def _check_separator(kind: str, name: str) -> None:
+    if REGION in name:
+        raise ValueError(
+            f"{kind} name {name!r} contains {REGION!r} — reserved as the "
+            f"region separator in a claim operand (part{REGION}region)"
+        )
 
 
 def _windows(during: During) -> tuple[JointWindow, ...]:
@@ -160,12 +194,33 @@ def _allowed_contact_name(
 
 
 @dataclass(frozen=True)
+class Region:
+    """A named solid in its part's own frame — the frame the part's
+    builder draws in, before ``PlacedPart.location`` — marking one
+    feature of the part: a post, a boss, a seat.
+
+    A claim operand ``part@region`` is the part's material inside the
+    solid, and in ``assert_clear_of(excluding=…)`` the part less that
+    material. The geometry always comes from the part as it stands in
+    the run, so a region that drifts measures the wrong place but never
+    material that is not there. In the part's frame it rides the part's
+    placement and every joint above it with nothing to keep in step,
+    and a part function can hand out its own regions. Like an anchor or
+    a keep-out it is not a part: nothing exports, draws or lists it.
+    """
+
+    name: str
+    solid: Compound | Solid
+
+
+@dataclass(frozen=True)
 class PlacedPart:
     name: str
     part: Part
     location: Location
     color: Color | None = None
     material: str | None = None
+    regions: tuple[Region, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -364,6 +419,7 @@ class Assembly:
                 f"with_part({name!r}): expected a build123d Part, got "
                 f"{type(part).__name__}{fix}"
             )
+        _check_separator("part", name)
         self._check_sibling_name(name)
         placed = PlacedPart(name, part, location or Location(), color, material)
         return replace(self, parts=self.parts + (placed,))
@@ -380,6 +436,7 @@ class Assembly:
                 f"sub-assembly name {name!r} contains '.' — reserved "
                 f"as the tree-path separator"
             )
+        _check_separator("sub-assembly", name)
         self._check_sibling_name(name)
         sub = SubAssembly(
             name=name,
@@ -458,6 +515,84 @@ class Assembly:
             if k.name == head:
                 return k
         raise KeyError(f"no keep-out named {head!r}")
+
+    def with_region(self, part: str, name: str, solid: Compound | Solid) -> Assembly:
+        """Declare a named region on ``part`` (see ``Region``): ``solid``
+        in the part's own frame, the one its builder draws in. A claim
+        then reads ``part@name`` as the part's material inside it.
+
+        ``part`` is a part of this assembly or, by dotted path, of a
+        sub-assembly below it: the frame is the part's either way, so
+        the level that knows the feature can declare it, as
+        ``with_detailed_geometry`` reaches a part by path. Names cannot
+        contain ``.`` or ``@`` and are unique on their part; two parts
+        may each have a region of one name. Raises ``KeyError`` if a
+        path segment is missing.
+
+        The measuring claims take a region operand: ``assert_distance``,
+        ``assert_tangent_contact``, ``assert_within`` and
+        ``assert_clear_of``. The claims about a part pair or a whole
+        part raise ``ValueError`` on one. Declare the region before the
+        claim that reads it: a region the part does not have raises
+        there."""
+        if not name or "." in name or REGION in name:
+            raise ValueError(
+                f"region name {name!r} must be one non-empty segment — '.' is "
+                f"the tree-path separator and {REGION!r} the region separator"
+            )
+        return self._with_region(part, Region(name, solid))
+
+    def _with_region(self, path: str, region: Region) -> Assembly:
+        head, _, rest = path.partition(".")
+        if rest:
+            if all(s.name != head for s in self.subassemblies):
+                raise KeyError(f"no sub-assembly named {head!r}")
+            return replace(
+                self,
+                subassemblies=tuple(
+                    replace(s, assembly=s.assembly._with_region(rest, region))
+                    if s.name == head
+                    else s
+                    for s in self.subassemblies
+                ),
+            )
+        if any(r.name == region.name for r in self.part(head).regions):
+            raise ValueError(f"duplicate region name {region.name!r} on {head!r}")
+        return replace(
+            self,
+            parts=tuple(
+                replace(p, regions=p.regions + (region,)) if p.name == head else p
+                for p in self.parts
+            ),
+        )
+
+    def _check_operand(self, operand: str) -> None:
+        """A region operand (``part@region``) is well formed and names a
+        declared region. A part absent here passes: it may be detail
+        geometry, and the claim then skips as ``absent_part`` like any
+        other. Evaluation fails a region still missing once the part is
+        there."""
+        path, sep, name = operand.partition(REGION)
+        if not sep:
+            return
+        if not path or not name or "." in name or REGION in name:
+            raise ValueError(
+                f"{operand!r}: a region operand is <part path>{REGION}<region name>"
+            )
+        if path in self._all_subassembly_paths():
+            raise ValueError(
+                f"{operand!r}: {path!r} is a sub-assembly — a region is "
+                "declared on one part"
+            )
+        if path not in self._all_part_names():
+            return
+        declared = sorted(r.name for r in self.part(path).regions)
+        if name not in declared:
+            raise KeyError(
+                f"no region named {name!r} on {path!r} "
+                f"(declared: {', '.join(declared) or 'none'}) — declare it "
+                "with with_region before the claim"
+            )
 
     def part(self, path: str) -> PlacedPart:
         """Resolve a dotted part ``path`` to its ``PlacedPart`` in this
@@ -748,6 +883,9 @@ class Assembly:
         """
         if min_mm is None and max_mm is None:
             raise ValueError("assert_distance needs min_mm and/or max_mm")
+        self._check_operand(a)
+        if isinstance(b, str):
+            self._check_operand(b)
         d = None if along is None else _direction(along)
         if isinstance(b, Plane) and d is not None and abs(d.dot(b.z_dir)) < 1 - 1e-9:
             raise ValueError(
@@ -793,9 +931,13 @@ class Assembly:
         assert it where the parts are.
 
         ``parts`` is a part path, a dotted sub-assembly path (every part
-        under it), or an iterable of either; ``excluding`` drops whole
+        under it), or an iterable of either; an entry may be a region
+        operand (``part@region``, see ``with_region``), held as that
+        part's material inside the region. ``excluding`` drops whole
         parts from that set, such as the part whose countersink the
-        corridor starts in. The claim is one result, named
+        corridor starts in; a region operand there keeps its part held
+        and drops only the material inside the region. An operand left
+        with nothing fails the claim. The claim is one result, named
         ``clear_of:<name>>=<min_mm>``: ``value`` is the least distance
         over the parts, and a second call under the same name at this
         level raises. Any overlap fails; ``min_mm`` is the clearance past
@@ -820,7 +962,9 @@ class Assembly:
                 "declare it with with_keepout and assert it by path"
             )
         label = name or keepout
-        dropped = set(excluding)
+        excluded = tuple(excluding)
+        less = tuple(e for e in excluded if REGION in e)
+        dropped = set(excluded) - set(less)
         names = tuple(
             n
             for n in self._resolve_group((parts,) if isinstance(parts, str) else parts)
@@ -828,6 +972,14 @@ class Assembly:
         )
         if not names:
             raise ValueError(f"assert_clear_of({label!r}): no part left to hold clear")
+        for operand in (*names, *less):
+            self._check_operand(operand)
+        if unheld := tuple(e for e in less if part_of(e) not in names):
+            raise ValueError(
+                f"assert_clear_of({label!r}): excluding {', '.join(unheld)} — "
+                "its part is not among the parts held, so there is nothing to "
+                "take the region out of"
+            )
         claim_name = f"clear_of:{label}>={min_mm:g}{_phase_label(during)}"
         if any(a.name == claim_name for a in self.assertions):
             raise ValueError(
@@ -841,6 +993,7 @@ class Assembly:
             name=claim_name,
             min_mm=min_mm,
             seat=seat,
+            less=less,
         )
         return self._asserting(assertion, during)
 
@@ -867,6 +1020,8 @@ class Assembly:
         locates the protrusion. ``outer`` must have only planar,
         cylindrical, conical and spherical faces, or the claim fails
         naming the others."""
+        self._check_operand(inner)
+        self._check_operand(outer)
         assertion = Within(
             a=inner,
             b=outer,
@@ -939,6 +1094,8 @@ class Assembly:
         gaps. The gap is the pair's nearest, so one of several fused
         supports touching is enough. The measured gap is recorded in
         the result even on pass, so ``khana diff`` sees drift."""
+        self._check_operand(a)
+        self._check_operand(b)
         assertion = TangentContact(
             a=a,
             b=b,
@@ -1122,9 +1279,17 @@ class Assembly:
         this call leaves ``mechanism.json`` unchanged. ``during`` holds
         every emitted pair to one phase, as it would on each by hand.
         """
-        a_names = self._resolve_group(group_a)
-        b_names = self._resolve_group(group_b)
         reasons, sup = _normalize_pair_maps(known_overlaps, suppressed)
+        entries_a, entries_b = _entries(group_a), _entries(group_b)
+        _refuse_group_regions(
+            "assert_no_interference_between", (entries_a, entries_b), reasons, sup
+        )
+        a_names = self._resolve_group(
+            group_a if isinstance(group_a, str) else entries_a
+        )
+        b_names = self._resolve_group(
+            group_b if isinstance(group_b, str) else entries_b
+        )
         new: list[Assertion] = []
         seen: set[frozenset[str]] = set()
         for a in a_names:
@@ -1153,8 +1318,10 @@ class Assembly:
         name-stability semantics are exactly as in
         ``assert_no_interference_between``.
         """
-        names = self._resolve_group(group)
         reasons, sup = _normalize_pair_maps(known_overlaps, suppressed)
+        entries = _entries(group)
+        _refuse_group_regions("assert_no_interference_within", (entries,), reasons, sup)
+        names = self._resolve_group(group if isinstance(group, str) else entries)
         new: list[Assertion] = []
         for i in range(len(names)):
             for j in range(i + 1, len(names)):

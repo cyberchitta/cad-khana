@@ -21,7 +21,10 @@ direction or a keep-out is declared in its unit's frame and rides the
 joints above it, not any named part: those claims are re-derived at
 every pose (a named keep-out resolved against the posed tree), looked
 at every time, and key on absolute placement plus the direction, or
-plus the keep-out's and its seat's placement.
+plus the keep-out's and its seat's placement. A region operand
+(``part@region``) is cut in its part's own frame, so it stands where its
+part does and keys as the part; the cut itself is made once per part
+geometry and region for the whole run (``Cuts``), not once per pose.
 
 Pure: no file I/O. ``check()`` writes what this returns.
 """
@@ -42,8 +45,10 @@ from cad_khana.mechanism.assertions import (
     AnchorsCoincident,
     Assertion,
     Contacts,
+    Cuts,
     Distance,
     KeepOut,
+    PairClaim,
     Phased,
     ScalarClaim,
     SolidCount,
@@ -52,6 +57,7 @@ from cad_khana.mechanism.assertions import (
     contact_claims,
     core,
     evaluate_one,
+    part_of,
     phase,
     resolved,
 )
@@ -173,7 +179,7 @@ def _keepout_key(claim: KeepOut, frame: _Frame) -> Key:
     moves none of the parts is still a new measurement."""
     placed = claim.bound(frame.assembly)
     return (
-        tuple(frame.signatures[n] for n in placed.parts),
+        tuple(frame.signatures[part_of(n)] for n in placed.parts),
         _signature(placed.keepout.location),
         None if placed.seat is None else _signature(placed.seat.location),
     )
@@ -192,14 +198,27 @@ def _geometry(assertion: Assertion, frame: _Frame) -> Key:
         return ("absent",)
     if isinstance(claim, KeepOut):
         return _keepout_key(claim, frame)
-    if _is_absolute(claim):
+    if isinstance(claim, PairClaim):
+        return _pair_key(claim, frame)
+    raise TypeError(f"no placement key for {type(claim).__name__}")
+
+
+def _pair_key(claim: PairClaim, frame: _Frame) -> Key:
+    """Where a two-operand claim's parts stand: relative to each other,
+    or absolutely once a datum plane or a direction is in it. A region
+    is cut in its part's own frame and rides the part, so a region
+    operand stands where its part does."""
+    a, b = part_of(claim.a), claim.b
+    if isinstance(claim, Distance | Within) and _is_absolute(claim):
         target = (
-            _signature(claim.b.location)
-            if isinstance(claim.b, Plane)
-            else frame.signatures[claim.b]
+            _signature(b.location)
+            if isinstance(b, Plane)
+            else frame.signatures[part_of(b)]
         )
-        return frame.signatures[claim.a] + target + _direction_signature(claim)
-    return _signature(locations[claim.a].inverse() * locations[claim.b])
+        return frame.signatures[a] + target + _direction_signature(claim)
+    if isinstance(b, Plane):
+        raise TypeError("a datum plane is a distance claim's target")
+    return _signature(frame.locations[a].inverse() * frame.locations[part_of(b)])
 
 
 def _slack(assertion: Assertion, state: str, result: AssertionResult) -> float | None:
@@ -451,6 +470,7 @@ def hold(assembly: Assembly, only: tuple[str, ...] = ()) -> Held:
     # pose; otherwise the list is the same at every pose.
     rederive = any(_is_absolute(core(a)) for a in assertions)
     evaluated: dict[tuple[int, Key], tuple[AssertionResult, float | None]] = {}
+    cuts: Cuts = {}
 
     def visit(i: int, frame: _Frame) -> _Visit:
         assertion = frame.assertions[i]
@@ -458,7 +478,7 @@ def hold(assembly: Assembly, only: tuple[str, ...] = ()) -> Held:
         key = (state, _geometry(assertion, frame))
         if (i, key) not in evaluated:
             result = evaluate_one(
-                assertion, frame.assembly, frame.parts, frame.values, contacts
+                assertion, frame.assembly, frame.parts, frame.values, contacts, cuts
             )
             evaluated[i, key] = (result, _slack(assertion, state, result))
         return _Visit(frame.sample, key, state, *evaluated[i, key])

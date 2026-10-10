@@ -19,7 +19,9 @@ its claims hold wherever it is placed and however it is posed.
   information and costs the searchable name.
   Sibling names must be unique within a level (`with_part` /
   `with_subassembly` enforce this) and sub-assembly names cannot
-  contain `.`.
+  contain `.`. Neither a part name nor a sub-assembly name can contain
+  `@`, which separates a part from one of its regions in a claim
+  operand (§Regions ride their part).
 
 ## Declare assertions where the knowledge lives
 
@@ -93,6 +95,57 @@ where the parts are (`top.assert_clear_of([...],
 "m02_chain.s1.arc_screw_driver")`), the way an anchor is exported low
 and asserted high (§Named interface anchors). It rides the stage's
 placement and joints into the claim at every pose.
+
+## Regions ride their part
+
+A region (`assertions.md` §Regions) names one feature of a part for a
+claim to read: `with_region(part, name, solid)`, then `part@name` as an
+operand. The solid is in **the part's own frame**: the frame the part
+function draws in, before `with_part(..., location=)` places it. So a
+part function can hand out its own regions beside the part, and the
+region needs no upkeep when the part is placed, re-placed, composed
+into a parent or turned by a joint:
+
+```python
+# body() draws its posts at (±15, ±15); the region is written there too
+unit = (
+    Assembly()
+    .with_part("body", body(), location=placed)      # turned 37°, shifted
+    .with_part("plate", Box(40, 40, 2), location=placed * Pos(0, 0, 13))
+    .with_region("body", "post_ne", Pos(15, 15, 7.75) * Box(6, 6, 10.5))
+    .assert_tangent_contact("plate", "body@post_ne")
+)
+```
+
+A solid you hold in the *unit's* frame is not the region: carry it into
+the part's frame with the part's own placement,
+`unit.part("body").location.inverse() * solid`. For a part placed at
+identity the two frames are the same. **Passed as it is under a
+non-identity placement, it measures the wrong place, and that can be
+green.** In the example above it misses the body, and the claim fails
+with `region body@post_ne holds no material of body`. With the body
+only shifted 30 mm along X, the same mistake put the short post's box
+on its full-height neighbour: the claim passed, and the one sign was
+the volume in `detail`, `152.0000mm^3` where the short post holds
+`147.2000mm^3`.
+
+Declare a region at the level that knows the feature. That is usually
+the level that places the part, but `part` may be a dotted path to a
+part of a sub-assembly, since the frame is the part's either way: a
+screw's plug round a bowl sector is known to the unit that places the
+screw, not to the drive that builds the bowl.
+
+```python
+top = top.with_region("table.body", "post_ne", Pos(15, 15, 7.75) * Box(6, 6, 10.5))
+top = top.assert_tangent_contact("table.plate", "table.body@post_ne")
+```
+
+A claim reaches a region by the part's path from wherever it is
+declared (`"unit.drive.bowl_2@screw"`), and a unit's own region claims
+qualify into a parent like any other
+(`u.tangent_contact:plate/body@post_ne`). A region lives on the part as
+it stands in the tree it was declared in: a parent that declares one
+has it; the sub-assembly built on its own does not.
 
 A claim declared at the wrong level fails in one of two ways. Declared
 in the builder, the step claim reads red on a correct design. Declared
