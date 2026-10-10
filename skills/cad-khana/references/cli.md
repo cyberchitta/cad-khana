@@ -81,7 +81,11 @@ imported by its composing parent and addressed standalone with no
 `khana run` also puts the **current directory** on `sys.path`, after
 the script's own root, so a scratch probe outside the repo
 (`khana run /tmp/probe.py` from the repo root) imports the repo's
-packages without `PYTHONPATH=.`.
+packages without `PYTHONPATH=.`. **The import verbs do not**: `khana
+check|draw|view|export` on a scratch module outside the repo see only
+the module's own directory, so a module that imports the repo's packages
+fails with `ModuleNotFoundError` until you run it as
+`PYTHONPATH=. khana check /tmp/probe.py`.
 
 `khana run` passes the script no arguments: anything after the script's
 path is parsed as an option of `run` itself, so it fails. Parametrize a
