@@ -150,7 +150,9 @@ how many transitions the samples actually showed.
 A part with a surface (`not_solid`) or a solid of zero volume
 (`empty_solid`) has no overlap to measure: `sweep`'s
 every-pair pass leaves it out, and naming it in `pairs=` or to `onset`
-raises `ValueError` — measure it with `assert_distance`.
+raises `ValueError` — measure it with `assert_distance`. A region
+operand (`part@region`) in `pairs=` raises `ValueError` too: a sweep
+measures whole parts.
 
 **A sweep is never a substitute for holding the claims.** The two look
 alike from outside — both are "the mechanism at N poses" — and are

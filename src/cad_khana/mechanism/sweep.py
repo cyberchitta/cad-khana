@@ -29,6 +29,7 @@ from itertools import combinations
 from build123d import Part
 
 from cad_khana.mechanism.assembly import Assembly
+from cad_khana.mechanism.assertions import refuse_regions
 from cad_khana.mechanism.diagnostics import (
     INTERFERENCE_VOLUME_EPSILON_MM3,
     bboxes_apart,
@@ -144,8 +145,16 @@ def _bbox_candidates(shapes: dict[str, Part]) -> tuple[Pair, ...]:
 def _measurable(shapes: dict[str, Part], pairs: tuple[Pair, ...]) -> tuple[Pair, ...]:
     """``pairs``, or a refusal when one runs through a surface or an
     empty solid: its boolean says nothing about the part, and a recorded
-    ``0.0`` would classify the pair ``never``."""
-    if undefined := overlap_undefined(shapes, sorted({n for p in pairs for n in p})):
+    ``0.0`` would classify the pair ``never``. A region operand and a
+    part the assembly lacks are refused by name first."""
+    names = sorted({n for p in pairs for n in p})
+    refuse_regions("sweep", names)
+    if missing := [n for n in names if n not in shapes]:
+        raise KeyError(
+            f"sweep: no part {', '.join(map(repr, missing))} in the assembly "
+            f"(it has {', '.join(sorted(shapes))})"
+        )
+    if undefined := overlap_undefined(shapes, names):
         raise ValueError(undefined)
     return pairs
 
@@ -178,7 +187,9 @@ def sweep(
     """Sample ``factory`` at each ``t`` and measure pairwise overlap.
 
     With ``pairs``, only those pairs are measured — a named part
-    missing from the assembly raises ``KeyError`` on its path. Without,
+    missing from the assembly raises ``KeyError`` naming it, and a
+    region operand (``part@region``) raises ``ValueError``: a sweep
+    measures whole parts. Without,
     every pair in the tree is a candidate, bbox-prefiltered per frame;
     a pair whose boxes are disjoint in some frame records ``0.0``
     there, which is a measurement rather than a default. A part with a

@@ -221,6 +221,24 @@ def test_sweep_refuses_a_named_pair_through_a_surface():
             sweep(_sunk(skin), (0.0, 1.0), pairs=(("a", "skin"),))
 
 
+def test_sweep_refuses_a_region_operand_by_name():
+    """Only the measuring claims take a region; a bare ``KeyError:
+    'a@tip'`` did not say so."""
+
+    def with_tip(t: float) -> Assembly:
+        return _slider(5).with_region("a", "tip", Box(2, 2, 2))
+
+    with raises(ValueError, match=r"sweep.*a@tip.*assert_distance"):
+        sweep(with_tip, (0.0, 1.0), pairs=(("a@tip", "b"),))
+    with raises(ValueError, match="a@tip"):
+        onset(with_tip, ("a@tip", "b"), (0.0, 1.0))
+
+
+def test_sweep_names_a_part_the_assembly_does_not_have():
+    with raises(KeyError, match="no part 'c'.*a, b, skin"):
+        sweep(_sunk(_skin()), (0.0, 1.0), pairs=(("a", "c"),))
+
+
 def _folded() -> Part:
     """An outline run out and back along one line, extruded: one valid
     solid of volume 0, which the kernel intersects with a cube round it
