@@ -64,7 +64,8 @@ its claims filtered, sorted or grouped; see `references/cli.md`.
   assertion that is *always* skipped, which usually means a typo'd
   part name. `value` is the measured/claimed scalar, recorded **even on
   pass** so `khana diff` reports its drift: the distance for
-  `assert_distance` (0 when overlapping), the least distance over the
+  `assert_distance` (0 when overlapping, and when one part lies inside
+  the other's material, which `detail` then says), the least distance over the
   claim's parts for `assert_clear_of` (0 when one overlaps; measured past
   the seat under `seat=`, and `null` when no part has material there),
   the claimed number for `assert_scalar`, the gap in
@@ -90,7 +91,9 @@ its claims filtered, sorted or grouped; see `references/cli.md`.
   between two parts with no `along=`; pass and fail alike, on the
   modelled surfaces (before any `grow_*_mm`). `null` for every other
   kind, and for a directed or datum-plane distance, which is read off a
-  projection rather than between two points. A feature that becomes
+  projection rather than between two points. When one part lies inside
+  the other the two points are the same one: a vertex of the inner part,
+  in the outer's material. A feature that becomes
   the nearest pair can leave the value nearly where it was and the
   claim green while it now measures something else; `khana diff` shows
   the points beside a value change, and alone when only they moved.

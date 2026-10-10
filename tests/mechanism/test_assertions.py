@@ -14,6 +14,7 @@ from build123d import (
     Pos,
     Rot,
     Shell,
+    Sphere,
     Torus,
 )
 
@@ -616,6 +617,178 @@ def test_a_directed_or_datum_plane_distance_records_no_witness():
         .assert_distance("a", Plane.XY.offset(-20), min_mm=5)
     )
     assert [r.witness_mm for r in evaluate(a)] == [None, None]
+
+
+# --- distance: one part inside another ----------------------------------
+#
+# The kernel's distance between two parts is shell to shell, so it is
+# positive when one solid lies wholly inside the other.
+
+
+def _cube_in_rod() -> Assembly:
+    """A 4 mm cube centred in a Ø8 x 60 rod: shells 1.17 mm apart."""
+    return (
+        Assembly().with_part("cube", Box(4, 4, 4)).with_part("rod", Cylinder(4.0, 60.0))
+    )
+
+
+def test_distance_reads_zero_for_a_part_inside_another():
+    (result,) = evaluate(_cube_in_rod().assert_distance("cube", "rod", min_mm=0.5))
+    assert result.passed is False
+    assert result.value == 0.0
+    assert result.detail is not None and "cube lies inside rod" in result.detail
+
+
+def test_distance_names_the_inner_part_whichever_side_it_is_declared_on():
+    (result,) = evaluate(_cube_in_rod().assert_distance("rod", "cube", min_mm=0.5))
+    assert result.passed is False
+    assert result.value == 0.0
+    assert result.detail is not None and "cube lies inside rod" in result.detail
+
+
+def test_distance_inside_another_part_witnesses_a_point_in_both():
+    """The pair a zero is read between is one point: on the inner part's
+    surface and in the outer's material."""
+    (result,) = evaluate(_cube_in_rod().assert_distance("cube", "rod", min_mm=0.5))
+    assert result.witness_mm is not None
+    on_a, on_b = result.witness_mm
+    assert on_a == on_b
+    assert all(_close(abs(c), 2.0) for c in on_a)
+
+
+def test_distance_inside_another_part_is_labelled_on_a_pass():
+    """A ``max_mm`` holds at 0, and the label is as true as on a fail."""
+    (result,) = evaluate(_cube_in_rod().assert_distance("cube", "rod", max_mm=3.0))
+    assert result.passed
+    assert result.value == 0.0
+    assert result.detail == "cube lies inside rod"
+
+
+def test_distance_grow_is_taken_off_the_zero_of_a_part_inside_another():
+    (result,) = evaluate(
+        _cube_in_rod().assert_distance("cube", "rod", min_mm=0.5, grow_a_mm=0.25)
+    )
+    assert result.passed is False
+    assert result.value is not None and _close(result.value, -0.25)
+
+
+def test_distance_stays_positive_for_a_part_in_another_parts_cavity():
+    """A ball in a hollow shell's void is clear of its material: 6 mm
+    from the Ø4 ball to the R8 inner wall."""
+    a = (
+        Assembly()
+        .with_part("ball", Sphere(2))
+        .with_part("hollow", Part([Sphere(10) - Sphere(8)]))
+        .assert_distance("ball", "hollow", min_mm=0.5)
+        .assert_distance("hollow", "ball", min_mm=0.5)
+    )
+    results = evaluate(a)
+    assert [r.passed for r in results] == [True, True]
+    assert all(
+        r.value is not None and _close(r.value, 6.0) and r.detail is None
+        for r in results
+    )
+
+
+def test_distance_reads_zero_when_one_solid_of_several_is_inside():
+    """Each solid is classified on its own: the detached one out at
+    x=50 says nothing for the one in the rod."""
+    two = Part([Box(4, 4, 4).moved(Location((50, 0, 0))), Box(4, 4, 4)])
+    a = (
+        Assembly()
+        .with_part("two", two)
+        .with_part("rod", Cylinder(4.0, 60.0))
+        .assert_distance("two", "rod", min_mm=0.5)
+        .assert_distance("rod", "two", min_mm=0.5)
+    )
+    results = evaluate(a)
+    assert [r.passed for r in results] == [False, False]
+    assert all(r.value == 0.0 for r in results)
+    assert all("a solid of two lies inside rod" in (r.detail or "") for r in results)
+
+
+def test_distance_reads_zero_inside_one_solid_of_several():
+    rods = Part([Cylinder(4.0, 60.0).moved(Location((50, 0, 0))), Cylinder(4.0, 60.0)])
+    a = (
+        Assembly()
+        .with_part("cube", Box(4, 4, 4))
+        .with_part("rods", rods)
+        .assert_distance("cube", "rods", min_mm=0.5)
+    )
+    (result,) = evaluate(a)
+    assert result.passed is False
+    assert result.value == 0.0
+    assert result.detail is not None and "cube lies inside rods" in result.detail
+
+
+def test_distance_is_unchanged_for_a_part_in_anothers_bounding_box_only():
+    """A ring's hole: the cube sits within the ring's box and outside
+    its material, its corners sqrt(2) from the axis of an R8 hole."""
+    a = (
+        Assembly()
+        .with_part("cube", Box(2, 2, 2))
+        .with_part("ring", Torus(10, 2))
+        .assert_distance("cube", "ring", min_mm=0.5)
+    )
+    (result,) = evaluate(a)
+    assert result.passed
+    assert result.value is not None and _close(result.value, 8 - math.sqrt(2))
+    assert result.detail is None
+
+
+def test_distance_is_unchanged_for_disjoint_and_touching_parts():
+    apart, touching = (
+        evaluate(_boxes(at).assert_distance("a", "b", max_mm=20))[0]
+        for at in ((20, 0, 0), (10, 0, 0))
+    )
+    assert apart.value is not None and _close(apart.value, 10.0)
+    assert apart.detail is None
+    assert apart.witness_mm is not None
+    assert _close(apart.witness_mm[0][0], 5.0) and _close(apart.witness_mm[1][0], 15.0)
+    assert touching.value == 0.0 and touching.detail is None
+
+
+def test_distance_does_not_read_a_touching_part_as_inside_on_solver_noise():
+    """Flush cubes a rounding error apart: ``b``'s corner rests on
+    ``a``'s face, which is on its boundary, not in its material."""
+    (result,) = evaluate(_boxes((10 + 1e-12, 0, 0)).assert_distance("a", "b", max_mm=1))
+    assert result.passed
+    assert result.value is not None and 0.0 < result.value < 1e-9
+    assert result.detail is None
+
+
+def _open_box(size: float) -> Part:
+    """The six faces of a cube as a closed shell: no solid, so no
+    material and no inside."""
+    return Part([Shell(Box(size, size, size).faces())])
+
+
+def test_distance_reads_zero_for_a_surface_inside_a_solid():
+    a = (
+        Assembly()
+        .with_part("skin", _open_box(4))
+        .with_part("rod", Cylinder(4.0, 60.0))
+        .assert_distance("skin", "rod", min_mm=0.5)
+    )
+    (result,) = evaluate(a)
+    assert result.passed is False
+    assert result.value == 0.0
+    assert "a face of skin lies inside rod" in (result.detail or "")
+
+
+def test_distance_stays_positive_for_a_part_enclosed_by_a_surface():
+    """A surface bounds no material, so nothing is inside it: the ball
+    is 18 mm from the shell around it."""
+    a = (
+        Assembly()
+        .with_part("ball", Sphere(2))
+        .with_part("skin", _open_box(40))
+        .assert_distance("ball", "skin", min_mm=0.5)
+    )
+    (result,) = evaluate(a)
+    assert result.passed
+    assert result.value is not None and _close(result.value, 18.0)
+    assert result.detail is None
 
 
 def test_distance_max_bound_fails_when_too_far():

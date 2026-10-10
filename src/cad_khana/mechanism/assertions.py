@@ -6,14 +6,28 @@ from typing import TYPE_CHECKING
 
 from build123d import Compound, Keep, Location, Part, Plane, Shape, Solid, Vector
 
+# OCP ships no type stubs.
+from OCP.BRepClass3d import (  # pyright: ignore[reportMissingTypeStubs]
+    BRepClass3d_SolidClassifier,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
+)
+from OCP.gp import (  # pyright: ignore[reportMissingTypeStubs]
+    gp_Pnt,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
+)
+from OCP.TopAbs import (  # pyright: ignore[reportMissingTypeStubs]
+    TopAbs_State,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
+)
+
 from cad_khana.mechanism.diagnostics import (
     BOUND_EPSILON,
     INTERFERENCE_VOLUME_EPSILON_MM3,
     AssertionResult,
     Point,
     Witness,
+    box_holds,
     has_surface,
     intersection_volume,
+    part_bbox,
+    surface_faces,
 )
 from cad_khana.mechanism.keepout import inexact_faces, swept
 
@@ -282,6 +296,67 @@ class AllowedContact:
         )
 
 
+# A point within the kernel's own coincidence tolerance of a solid's
+# boundary is on it, and a point on it is not inside: parts that touch
+# can read a gap of solver noise, and a vertex resting on the other's
+# face must not then be found in its material.
+ON_BOUNDARY_MM = 1e-7
+
+
+def _probes(part: Part) -> tuple[tuple[str, Point], ...]:
+    """One point on each piece of ``part`` that can lie in another
+    part's material, with the piece's kind: every solid, and every face
+    outside any solid. A vertex, so it is on the piece's own boundary."""
+    pieces = (
+        *(("solid", s) for s in part.solids()),
+        *(("face", f) for f in surface_faces(part)),
+    )
+    return tuple((kind, _point(piece.vertices()[0].center())) for kind, piece in pieces)
+
+
+def _in_material(solid: Solid, point: Point) -> bool:
+    """``point`` strictly inside ``solid``'s material: not on its
+    boundary, and not in a cavity, which is outside it."""
+    classifier = BRepClass3d_SolidClassifier(solid.wrapped)  # pyright: ignore[reportUnknownVariableType]
+    classifier.Perform(gp_Pnt(*point), ON_BOUNDARY_MM)  # pyright: ignore[reportUnknownMemberType]
+    return classifier.State() == TopAbs_State.TopAbs_IN  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+
+
+@dataclass(frozen=True)
+class _Enclosure:
+    """A piece of ``inner`` lying in ``outer``'s material, found ``at``
+    a point of both. ``piece`` is its kind when ``inner`` is several
+    pieces, ``None`` when it is the whole part."""
+
+    inner: str
+    outer: str
+    piece: str | None
+    at: Point
+
+    def describe(self) -> str:
+        whole = "" if self.piece is None else f"a {self.piece} of "
+        return f"{whole}{self.inner} lies inside {self.outer}"
+
+
+def _enclosed(inner: str, outer: str, parts: dict[str, Part]) -> _Enclosure | None:
+    """Where a piece of ``inner`` lies in a solid of ``outer``, given
+    that their boundaries do not meet. A piece is connected, so with no
+    boundary to cross it is in a solid's material wholly or not at all,
+    and one point of it decides. The box test is exact: a point outside
+    a solid's box is outside the solid."""
+    probes = _probes(parts[inner])
+    solids = tuple((s, part_bbox(s)) for s in parts[outer].solids())
+    return next(
+        (
+            _Enclosure(inner, outer, kind if len(probes) > 1 else None, at)
+            for kind, at in probes
+            for solid, box in solids
+            if box_holds(box, at) and _in_material(solid, at)
+        ),
+        None,
+    )
+
+
 @dataclass(frozen=True)
 class Distance:
     """Bounded distance from part ``a`` to target ``b`` — another part,
@@ -290,7 +365,14 @@ class Distance:
     through placements like everything else.
 
     Without ``along``: the minimum surface-to-surface distance (0 when
-    touching or overlapping). With ``along`` (a unit direction from
+    touching or overlapping). One part wholly inside another's material
+    is past contact, so it reads 0 too, though no surfaces meet: the
+    kernel's distance between two compounds is positive there, and a
+    ``min_mm`` would pass. ``detail`` then names the inner part, on a
+    pass as well, and ``witness_mm`` is a point of it twice over. A part
+    in another's cavity is clear of its material and keeps its distance;
+    a surface has no material, so nothing is inside one.
+    With ``along`` (a unit direction from
     ``a`` toward ``b``): the directed gap between the projection
     intervals — ``a``'s far extent to ``b``'s near extent, whatever
     their footprints across ``along``; negative when the projections
@@ -344,25 +426,40 @@ class Distance:
             name=f"{prefix}.{self.name}",
         )
 
-    def _measure(self, parts: dict[str, Part]) -> tuple[float, Witness | None]:
-        """The distance, and the nearest pair when it is read between two
-        points rather than off a projection."""
+    def _measure(
+        self, parts: dict[str, Part]
+    ) -> tuple[float, Witness | None, str | None]:
+        """The distance, the nearest pair when it is read between two
+        points rather than off a projection, and what put it at 0 when
+        that was one part inside the other."""
         shape = parts[self.a]
         if isinstance(self.b, Plane):
-            return _plane_distance(shape, self.b, self.along), None
+            return _plane_distance(shape, self.b, self.along), None, None
         other = parts[self.b]
-        if self.along is None:
-            # build123d leaves Shape's type parameter unbound in this signature
-            gap, on_a, on_b = shape.distance_to_with_closest_points(other)  # pyright: ignore[reportUnknownMemberType]
-            return gap, (_point(on_a), _point(on_b))
-        return _extent(other, self.along)[0] - _extent(shape, self.along)[1], None
+        if self.along is not None:
+            gap = _extent(other, self.along)[0] - _extent(shape, self.along)[1]
+            return gap, None, None
+        # build123d leaves Shape's type parameter unbound in this signature
+        gap, on_a, on_b = shape.distance_to_with_closest_points(other)  # pyright: ignore[reportUnknownMemberType]
+        # A positive gap is between boundaries that do not meet, which
+        # is all the kernel reads between two compounds.
+        inside = (
+            _enclosed(self.a, self.b, parts) or _enclosed(self.b, self.a, parts)
+            if gap > 0.0
+            else None
+        )
+        return (
+            (gap, (_point(on_a), _point(on_b)), None)
+            if inside is None
+            else (0.0, (inside.at, inside.at), inside.describe())
+        )
 
     def evaluate(self, parts: dict[str, Part]) -> AssertionResult:
-        gap, witness = self._measure(parts)
+        gap, witness, inside = self._measure(parts)
         measured = gap - self.grow_a_mm - self.grow_b_mm
         below = self.min_mm is not None and measured < self.min_mm - BOUND_EPSILON
         above = self.max_mm is not None and measured > self.max_mm + BOUND_EPSILON
-        detail = (
+        failure = (
             f"distance {measured:.4f}mm below min {self.min_mm}mm"
             if below
             else f"distance {measured:.4f}mm above max {self.max_mm}mm"
@@ -370,7 +467,11 @@ class Distance:
             else None
         )
         return AssertionResult(
-            self.name, not (below or above), detail, value=measured, witness_mm=witness
+            self.name,
+            not (below or above),
+            "; ".join(s for s in (failure, inside) if s) or None,
+            value=measured,
+            witness_mm=witness,
         )
 
     def slack(self, value: float) -> float:

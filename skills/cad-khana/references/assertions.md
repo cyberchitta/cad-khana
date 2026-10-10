@@ -118,6 +118,21 @@ moved. A gap that barely changed but whose points jumped is a claim
 now measuring a different pair of features — say, a guide wall you
 just added — not the one its name describes.
 
+**A part wholly inside another reads 0, not the gap between their
+skins.** The distance is surface to surface, so it is 0 for parts that
+touch or overlap; a bushing lost inside a block touches nothing, and
+still reads 0, because it is past contact. `detail` says which part is
+inside (`distance 0.0000mm below min 0.5mm; cube lies inside rod`, or
+`a solid of cube …` when only one of its solids is), on a pass under a
+bare `max_mm` too, and `witness_mm` is one point of the inner part given
+twice. Inside means inside material: a ball in a hollow shell's cavity
+is clear of it and keeps its distance to the inner wall, and nothing is
+inside a surface part, which has no material — a part enclosed by a
+closed shell reads its distance to the shell (the `not_solid` warning is
+what says the shell is not a solid). `assert_distance` does not forbid
+overlap (`min_mm=0` passes at 0 either way); that is
+`assert_no_interference` or `assert_clear_of`.
+
 Promoting a bare assert is not free, though: it **widens the claim's
 scope** from the one pose its constants came from to every pose a
 motion builds. See `SKILL.md` §What a green check does not mean.

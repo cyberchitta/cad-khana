@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from itertools import combinations
 from typing import TYPE_CHECKING
 
-from build123d import Part
+from build123d import Face, Part, Solid
 
 if TYPE_CHECKING:
     from cad_khana.mechanism.assembly import Assembly, PlacedPart
@@ -151,6 +151,8 @@ class AssertionResult:
     reported pose (``assert_distance`` without ``along=`` or a datum
     plane), so a feature that became the nearest pair shows under
     ``khana diff`` while the value barely moves; ``None`` otherwise.
+    For one part inside the other it is one point of the inner part,
+    twice.
     ``waived`` is the waiver rationale when a failure was waived
     (printability ``inspect(..., waive=...)``); ``passed`` stays
     honestly ``False`` — a waived failure just doesn't fail the run.
@@ -231,15 +233,20 @@ def has_surface(shape: Part) -> bool:
     or a solid with either beside it. A surface bounds no material, so a
     boolean against it is empty however deep it sinks — overlap is
     undefined for it, where distance is not."""
+    return bool(surface_faces(shape))
+
+
+def surface_faces(shape: Part) -> tuple[Face, ...]:
+    """The faces of ``shape`` outside any solid."""
     in_solids = {f for s in shape.solids() for f in s.faces()}
-    return any(f not in in_solids for f in shape.faces())
+    return tuple(f for f in shape.faces() if f not in in_solids)
 
 
 def _placed(p: PlacedPart) -> Part:
     return p.part.moved(p.location)
 
 
-def part_bbox(part: Part) -> BBox:
+def part_bbox(part: Part | Solid) -> BBox:
     bb = part.bounding_box()
     return BBox(
         min=(bb.min.X, bb.min.Y, bb.min.Z),
@@ -313,6 +320,16 @@ def bboxes_apart(a: BBox, b: BBox) -> bool:
     return any(
         a_max + BBOX_GAP_MARGIN_MM < b_min or b_max + BBOX_GAP_MARGIN_MM < a_min
         for a_min, a_max, b_min, b_max in zip(a.min, a.max, b.min, b.max, strict=True)
+    )
+
+
+def box_holds(box: BBox, point: Point) -> bool:
+    """``point`` within ``box`` grown by ``BBOX_GAP_MARGIN_MM``. A point
+    outside it is outside whatever the box bounds, so this only ever
+    rules a point out."""
+    return all(
+        lo - BBOX_GAP_MARGIN_MM <= c <= hi + BBOX_GAP_MARGIN_MM
+        for lo, c, hi in zip(box.min, point, box.max, strict=True)
     )
 
 
