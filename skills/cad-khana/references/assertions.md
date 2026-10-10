@@ -430,9 +430,11 @@ What else to know:
 - **Names.** A region name has no `.` and no `@`, and is unique on its
   part; two parts may each have a `seat`. Part and sub-assembly names
   cannot contain `@`. The auto-name carries the operand
-  (`tangent_contact:plate/body@post_ne`), so converting a whole-part
-  claim to a region claim renames it: `khana diff` shows one `removed`
-  and one `added`.
+  (`tangent_contact:plate/body@post_ne`), so converting an auto-named
+  whole-part claim to a region claim renames it: `khana diff` shows one
+  `removed` and one `added`. A claim given its own `name=` keeps it, and
+  if its value did not move `khana diff` shows no line for it at all:
+  the narrowed operand is visible only in the new file's `detail`.
 - **Solids only.** A region is cut from material. A part with faces
   outside any solid (the `not_solid` warning, or a solid with a stray
   face beside it) takes no region: the claim fails with `… has faces
