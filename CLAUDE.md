@@ -55,8 +55,8 @@ every `bpy` import is function-local (`tests/render/test_isolation.py`).
   it's possible without rewrites.
 - Not a general renderer. `render/` covers an `Assembly` and what showing
   one needs: camera, light, material, motion. Anything else is Blender's.
-- Not a GUI. The VS Code extension is a human convenience, documented in the
-  README. The tool doesn't manage or depend on it at runtime beyond the
+- Not a GUI. The VS Code extension is a human convenience, documented in
+  `references/cli.md`. The tool doesn't manage or depend on it at runtime beyond the
   `ocp_vscode` Python client library.
 - Not a style enforcer for user scripts. The library accepts any Build123d
   `Part`. Recommended style for user-authored scripts (functional patterns,
@@ -92,7 +92,7 @@ honest.
 
 ```
 cad-khana/
-  README.md                   # human-facing install + viewer setup
+  README.md                   # human-facing: what it is, pointers, install
   CLAUDE.md                   # this file
   _notes/                     # working notes, gitignored — see below
   pyproject.toml              # uv-managed, entry point: khana = cad_khana.cli:main
