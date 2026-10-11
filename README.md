@@ -4,13 +4,16 @@ An agent-first assembly and test layer for
 [build123d](https://build123d.readthedocs.io/): a CLI tool and agent
 skill for designing 3D-printable mechanisms.
 
-An LLM agent writes parts in plain build123d. cad-khana composes them
-into assemblies with joints and motion, holds claims about them (no
-interference, a minimum distance, a printable wall), and produces what
-the person on the other end needs: printable files, drawings and
-renders. Nobody checks the agent's work before it believes it, so the
-tool reports structured diagnostics the agent iterates on, and says
-what it looked at as well as what it found.
+An LLM agent, using cad-khana as a skill, writes parts in plain
+build123d, composes them into assemblies with joints and motion, and
+states claims about them: no interference, a minimum distance, a
+printable wall. cad-khana checks the claims on every run, reports
+structured diagnostics the agent iterates on, and writes what the
+person on the other end needs: printable files, drawings and renders.
+
+No person looks at the model while the agent iterates. The diagnostics
+are one way the agent knows whether a design is right, so cad-khana
+reports what was checked as well as what was found.
 
 *khana* (ख़ाना) is a Hindustani suffix meaning "house" or "workshop"
 — as in *kar-khana* (factory) or *dawa-khana* (pharmacy). cad-khana

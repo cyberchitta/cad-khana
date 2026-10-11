@@ -6,14 +6,14 @@ This file is the working context for the project.
 
 ## What this tool is
 
-An agent (you, or another instance) writes parts in plain Build123d.
-`cad_khana` composes them into assemblies with joints and motion, holds claims
-about them, and produces what the human on the other end needs: printable
-files, drawings, and photo-real renders. The agent runs its scripts via the
-`khana` CLI and reads structured JSON diagnostics to iterate until the design
-is clean.
+An agent (you, or another instance) writes parts in plain Build123d, composes
+them into assemblies with joints and motion, and states claims about them.
+`cad_khana` is what it does that with: the library checks the claims and
+writes what the human on the other end needs: printable files, drawings, and
+photo-real renders. The agent runs its scripts via the `khana` CLI and reads
+structured JSON diagnostics to iterate until the design is clean.
 
-Nobody checks the agent's work before it believes it, so the tool has to say
+No person looks at the model while the agent iterates, so the tool has to say
 what is true of the geometry. It does that through two channels:
 
 1. **Computed diagnostics** — interferences, clearances, wall thickness,
