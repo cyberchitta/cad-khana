@@ -24,9 +24,10 @@ is a place for CAD.
   — the machine cad-khana was built to design, every part drawn by an
   LLM. The article shows what the tool produces: interactive GLB
   models, engineering drawings and renders.
-- [60 Alternatives to CAD Khana](https://www.cyberchitta.cc/articles/cad-llm-tools.html)
-  — a survey of LLM-aided CAD tools, split by who closes the feedback
-  loop: the agent, on structured diagnostics, or a person, on renders.
+- [Tools for Vibe Cading](https://www.cyberchitta.cc/articles/cad-llm-tools.html)
+  — a survey of open source tools that connect LLMs to CAD, split by
+  who closes the feedback loop: the agent, on structured diagnostics,
+  or a person, on renders.
 - `skills/cad-khana/SKILL.md` — how the tool works. It is written for
   the agent and is the real documentation; it names the reference file
   to load for each task. `skills/cad-khana/references/examples/pin_hinge/`
