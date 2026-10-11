@@ -1,8 +1,8 @@
 # cad-khana
 
-A CLI tool and agent skill for designing 3D-printable mechanisms in
-[Build123d](https://build123d.readthedocs.io/), built for LLM-driven
-iteration.
+An agent-first assembly and test layer for
+[build123d](https://build123d.readthedocs.io/): a CLI tool and agent
+skill for designing 3D-printable mechanisms.
 
 *khana* (ख़ाना) is a Hindustani suffix meaning "house" or "workshop"
 — as in *kar-khana* (factory) or *dawa-khana* (pharmacy). cad-khana
@@ -16,43 +16,54 @@ every part drawn by an LLM via cad-khana.
 
 ## What it does
 
-`cad-khana` wraps Build123d with a diagnostics-first workflow. You
-(or an LLM agent) write Python modules that *declare* parts,
-assemblies, and the claims they must satisfy; the `khana` CLI imports
-a module and does one thing to it — check it, export STL/STEP, draw
-it, or push it to a viewer. `khana check` writes a structured
-`mechanism.json` reporting interferences, clearances, and every
-assertion's result. A violated assertion fails the run, so geometric
-constraints are enforced, not hoped for. Declare a joint's motion and
-`khana check` holds every claim at each sampled pose of it, not just
-the one you built. Per-part printability — minimum wall thickness and
-overhangs for FDM — is checked by `inspect()` calls in a script run
-with `khana run`, each writing its own JSON.
+The parts are plain build123d. cad-khana is the layer above them, and
+it does three things with an assembly.
 
-The tool is designed to close a specific gap: LLMs can reason about
-CAD geometry from code but need explicit feedback on the things a
-human would catch visually. Computed diagnostics cover the scalar
-questions; `khana draw` produces engineering-drawing PNGs (HLR
-line-art) a multimodal agent can read for shape-level questions that
-numbers don't express well.
+**It composes.** Named parts are placed into an `Assembly`; assemblies
+nest as sub-assemblies with joints and anchors, and a joint's travel is
+declared as a motion.
+
+**It holds claims.** An assembly carries assertions about itself: no
+interference, a minimum distance, a permitted or required contact, a
+part kept out of a volume another part sweeps, one footprint within
+another. A claim can be scoped to a named region of a part or to a
+phase of a motion. `khana check` evaluates every claim at the as-built
+pose and at each sampled pose of every declared motion, and writes a
+structured `mechanism.json`. A violated claim fails the run, so a
+geometric constraint is enforced, not hoped for. Per-part printability,
+minimum wall thickness and overhangs for FDM, is checked by `inspect()`
+calls in a script run with `khana run`. A reading that fails for a
+reason you accept is waived with that reason and the bounds it holds
+for, and stays a recorded failure.
+
+**It produces the outputs.** STL and STEP for the printer, hidden-line
+engineering drawings, a GLB for a web viewer, and photo-real renders
+through Blender, all from the same declaration the claims were held on.
+
+The tool reports what it looked at as well as what it found: a claim
+that was skipped, a motion that moved nothing and a part made of
+several solids are all named in the output, so a green run can be told
+apart from a question that was never asked.
 
 ## Why it exists
 
-Existing code-CAD tools (OpenSCAD, CadQuery, Build123d) assume a
-human with a render window. For agent-driven design, a different
-feedback loop works better:
+Code-CAD tools (OpenSCAD, CadQuery, build123d) assume a person at a
+viewport, checking each change by eye. An agent designing a mechanism
+works differently: it writes the geometry, and nobody looks before it
+decides the design is right. So the tool has to tell it.
 
-1. Agent writes a Build123d module declaring parts, an assembly, and
-   its assertions.
+1. The agent writes a build123d module declaring parts, an assembly,
+   and its claims.
 2. `khana check` imports it and writes diagnostics.
-3. Agent reads diagnostics, edits the module, repeats.
-4. When a shape-level question arises that diagnostics can't answer,
-   the agent runs `khana draw` and reads the PNGs directly.
-5. When the design is clean, a human reviews it in the OCP viewer, and
-   `khana export` produces the printable geometry.
+3. The agent reads them (`khana show` summarises and filters), edits
+   the module, and repeats.
+4. For a shape-level question the numbers answer poorly, the agent runs
+   `khana draw` and reads the drawings.
+5. When the design is clean, `khana export` writes the printable
+   geometry, and a render shows it to whoever it is for.
 
-Humans stay in the loop for taste and physical-world validation;
-correctness iteration happens in code.
+People stay in the loop for taste and for the physical world: whether
+the print works is not something a session can check.
 
 ## CLI
 
@@ -60,12 +71,14 @@ A **target** is `<module-path>[:<factory>]` — the module's `assembly`
 member, or a named factory called with its defaults.
 
 ```
-khana check  <target>       # diagnostics + assertions → mechanism.json
+khana check  <target>       # hold every claim → mechanism.json
 khana export <target>       # STL + STEP
 khana view   <target>       # push to the OCP viewer
 khana draw   <target>       # orthographic/iso engineering drawings (HLR line-art)
-khana run    <script>       # execute an orchestration script (batches, sweeps)
-khana diff   <old> <new>    # diff two diagnostics JSON files
+khana run    <script>       # execute a script: printability batches, sweeps, renders
+khana show   <json>         # read one diagnostics file: summary, filters, groups
+khana diff   <old> <new>    # diff two diagnostics files
+khana status                # environment and viewer reachability
 ```
 
 Declaration modules call nothing effectful; every effect happens at
@@ -107,6 +120,20 @@ As a global tool from GitHub:
 ```bash
 uv tool install git+https://github.com/cyberchitta/cad-khana
 ```
+
+Python 3.13 is required.
+
+### Rendering (optional)
+
+Photo-real rendering runs Blender as a Python module (`bpy`). The wheel
+is about 700 MB, so it is an extra and nothing else needs it:
+
+```bash
+uv tool install "cad-khana[render] @ git+https://github.com/cyberchitta/cad-khana"
+```
+
+`bpy` is licensed GPL-3.0. cad-khana is Apache-2.0 and does not include
+it; installing the extra fetches it from PyPI.
 
 ### External tools
 
@@ -192,11 +219,23 @@ khana check  assembly.py:build_mechanism  # the factory, called with defaults
 khana export assembly.py                  # → outputs/assembly.{stl,step}
 ```
 
+A render script is a few lines more, run with `khana run`:
+
+```python
+from assembly import build_mechanism
+
+from cad_khana.render.render import render
+from cad_khana.render.scene import Scene
+
+scene = Scene.from_assembly(build_mechanism()).with_materials({"lever": "steel"})
+render(scene, out="renders")                    # → renders/render.png
+```
+
 `skills/cad-khana/references/examples/pin_hinge/` is a complete worked
 example. The conventions an agent needs start at
 `skills/cad-khana/SKILL.md`, which names the reference file to load
 for each task (assertions, composition, motion, printability,
-diagnostics); this README stays deliberately thin.
+diagnostics, rendering); this README stays deliberately thin.
 
 ## Related work
 
@@ -206,8 +245,8 @@ The LLM-aided-CAD space is active. For a structured map see
 agent-driven (the LLM iterates on structured diagnostics) vs.
 human-directed (you inspect renders and steer).
 
-cad-khana sits in the agent-driven half: structured JSON diagnostics let
-an LLM iterate without human review.
+cad-khana sits in the agent-driven half: structured diagnostics let an
+LLM iterate to a clean design before a person looks at it.
 
 ## Project documents
 

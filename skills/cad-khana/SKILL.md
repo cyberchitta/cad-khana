@@ -332,6 +332,7 @@ load that file before proposing a feature.
 | `references/composition.md` | adding a sub-assembly, joint or anchor, a claim about two units, or querying a composed assembly from a script (posing a joint, finding a placed part) | `with_subassembly`, `part(path)`, `placed_parts`, `with_anchor`, `anchor`, `with_joint`, `with_joint_angle` |
 | `references/motion.md` | anything that moves or animates — declared motions, sweeps, GLB export | `Motion`, `with_motion`, `posed`, `over_joint`, `over_motion`, `sweep`, `classify`, `onset`, `export_glb`, `export_animated_glb` |
 | `references/printability.md` | an `inspect()` call, a waiver, a printability JSON, or choosing a print orientation | `inspect`, `FDM`, `Waiver`, `Feature` |
+| `references/render.md` | a photo-real render, a PBR GLB or an mp4 of an assembly, or editing a script that imports `cad_khana.render` — needs the optional `render` extra (Blender) | `Scene`, `render`, `render_animation`, `render_animation_from_glb`, `FixedPose`, the PBR `export_glb` |
 | `references/diagnostics.md` | reading any JSON field beyond `status`, `passed`, `skipped_counts` and `warnings` |  |
 | `references/drawings.md` | `khana draw` — which view answers which question |  |
 | `references/build123d_quickref.md` | selector operators, algebraic vs Builder mode, type-conversion shortcuts |  |

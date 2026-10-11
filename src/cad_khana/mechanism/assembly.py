@@ -704,7 +704,7 @@ class Assembly:
         bare names for root-level parts). Parts not in the mapping are
         unchanged.
 
-        Symmetric to ``chitra_cad.Scene.with_materials``: use this layer
+        Symmetric to ``cad_khana.render.scene.Scene.with_materials``: use this layer
         for cross-consumer experiments (render + FEA both read from the
         ``Assembly``); use the ``Scene`` layer for render-only sweeps.
         """

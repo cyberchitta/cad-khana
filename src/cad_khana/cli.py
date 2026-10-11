@@ -400,7 +400,7 @@ def draw(
 ) -> None:
     """Import a module and write orthographic + isometric engineering
     drawings (HLR line-art) for its assembly. For shaded photo-real PNGs
-    use chitra-cad's `render` instead."""
+    use `cad_khana.render` (the `render` extra) from a `khana run` script."""
     views = tuple(v.strip() for v in view.split(",")) if view else None
     if views is not None:
         unknown = tuple(v for v in views if v not in _draw.VIEW_PRESETS)

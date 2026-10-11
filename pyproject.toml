@@ -1,14 +1,14 @@
 [project]
 name = "cad-khana"
 version = "0.2.0"
-description = "Agent skill and diagnostics-first Build123d wrapper for LLM-driven design of 3D-printable mechanisms."
+description = "Agent-first assembly and test layer for build123d: compose parts into mechanisms, hold claims about them, and export, draw and render the result."
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 license = "Apache-2.0"
 authors = [
     { name = "cad-khana contributors" },
 ]
-keywords = ["cad", "build123d", "3d-printing", "llm", "agent"]
+keywords = ["cad", "build123d", "3d-printing", "blender", "cycles", "render", "llm", "agent"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Developers",
@@ -24,6 +24,13 @@ dependencies = [
     "pillow>=10",
     "pygltflib>=1.16",
     "typer>=0.12",
+]
+
+[project.optional-dependencies]
+# Photo-real rendering through Blender Cycles (`cad_khana.render`). Its own
+# extra because the wheel is ~700 MB; nothing outside that package imports it.
+render = [
+    "bpy>=5.1",
 ]
 
 [project.scripts]
@@ -43,6 +50,7 @@ packages = ["src/cad_khana"]
 [dependency-groups]
 dev = [
     "basedpyright>=1.40.1",
+    "bpy>=5.1",
     "pytest>=8",
     "ruff>=0.16.10",
 ]

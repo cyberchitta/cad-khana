@@ -86,7 +86,7 @@ For build123d's selector operators (`>`, `<`, `>>`, `<<`, `|`, `@`, `%`,
   drawings and by STEP export.
 - **Material is a first-class field on `PlacedPart`, parallel to
   color.** `.with_part()` takes an optional `material="<token>"` string that
-  downstream consumers (chitra-cad's photo-real renderer; future FEA /
+  downstream consumers (the photo-real renderer, `cad_khana.render`; future FEA /
   kinematics) resolve against their own catalogs. Same intrinsic-vs-
   placement rule as color: set it at the `.with_part()` site when the same
   part body gets placed with different materials (or when the parent
@@ -100,7 +100,7 @@ For build123d's selector operators (`>`, `<`, `>>`, `<<`, `|`, `@`, `%`,
   (a property, not a method — `top.placed_parts()` raises
   `TypeError: 'tuple' object is not callable`). For
   render-only sweeps, use the consumer's own override (e.g.
-  chitra-cad's `Scene.with_materials({...})`).
+  the render layer's `Scene.with_materials({...})`).
 - **Two fidelity tiers — keep cheap geometry in the assembly,
   apply detail as an override layer.** The geometric-iteration
   loop (interference, clearance, printability) runs on cheap

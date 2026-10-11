@@ -193,7 +193,7 @@ table can.
 GLB; each `PlacedPart` becomes a named scene node with its
 build123d `Color` baked as the glTF baseColor. No PBR, no lighting
 — the geometry-truth artifact. For PBR materials baked from
-`chitra-cad`'s catalog use `chitra_cad.export.export_glb` instead.
+the render catalog use `cad_khana.render.export.export_glb` instead.
 
 ```python
 from pathlib import Path
@@ -241,7 +241,7 @@ sRGB-encoded throughout the cad-khana export path (OCP labels it
 glTF). Pass colors authored the way humans pick them (CSS hex,
 design tokens). Pre-linearizing (`r ** 2.2`) double-converts and
 crushes the rendered output to near-black. Downstream consumers
-that need linear (e.g. chitra-cad → Blender Cycles) linearize at
+that need linear (e.g. `cad_khana.render` → Blender Cycles) linearize at
 their own input boundary.
 
 Both pipelines require `gltf-transform` on `PATH`:

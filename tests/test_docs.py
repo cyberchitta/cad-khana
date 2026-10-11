@@ -194,6 +194,11 @@ SCRIPT_MODULES = {
     "cad_khana.printability.waiver": ("Waiver",),
     "cad_khana.printability.feature": ("Feature",),
     "cad_khana.export": ("export_assembly", "export_glb", "export_animated_glb"),
+    "cad_khana.render.scene": ("Scene",),
+    "cad_khana.render.render": ("render",),
+    "cad_khana.render.animation": ("render_animation", "render_animation_from_glb"),
+    "cad_khana.render.framing": ("FixedPose",),
+    "cad_khana.render.export": ("export_glb",),
 }
 SURFACE_ROW = re.compile(r"^\| `(references/[\w./]+)` \| .* \| (.*) \|$", re.M)
 

@@ -144,8 +144,8 @@ def export_glb(
     Each PlacedPart becomes a named node in the GLB scene graph; its
     build123d ``Color`` (if set) is written as a flat sRGB baseColor.
     No PBR maps, no lighting — this is the geometry-truth artifact.
-    For PBR materials baked from chitra-cad's catalog use
-    ``chitra_cad.export.export_glb`` instead.
+    For PBR materials baked from the render catalog use
+    ``cad_khana.render.export.export_glb`` instead.
 
     ``y_up`` pre-rotates Z-up CAD coordinates to glTF's Y-up convention
     (this OCP build doesn't expose ``RWMesh_CoordinateSystemConverter``).

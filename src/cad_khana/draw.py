@@ -479,7 +479,7 @@ def draw(
     """Write orthographic + isometric engineering drawings (HLR
     line-art, no fills or shading) for ``assembly`` under ``out``.
 
-    For shaded photo-real PNGs use ``chitra_cad.render.render`` instead;
+    For shaded photo-real PNGs use ``cad_khana.render.render.render`` instead;
     for an interactive shape-truth view use ``export_glb`` and serve the
     GLB in ``<model-viewer>``.
     """

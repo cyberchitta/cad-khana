@@ -1,18 +1,20 @@
 # CLAUDE.md — cad-khana
 
-You are building `cad-khana`, a CLI tool and agent skill for designing 3D-printable
-mechanisms in Build123d. This file is the working context for the project.
+You are building `cad-khana`, an agent-first assembly and test layer for
+Build123d: a CLI tool and agent skill for designing 3D-printable mechanisms.
+This file is the working context for the project.
 
 ## What this tool is
 
-`cad-khana` wraps Build123d with a diagnostics-first workflow designed for LLM
-agents. An agent (you, or another instance) writes Python scripts that declare
-parts and assemblies using the `cad_khana` library, runs them via the `khana`
-CLI, and reads structured JSON diagnostics to iterate until the design is clean.
+An agent (you, or another instance) writes parts in plain Build123d.
+`cad_khana` composes them into assemblies with joints and motion, holds claims
+about them, and produces what the human on the other end needs: printable
+files, drawings, and photo-real renders. The agent runs its scripts via the
+`khana` CLI and reads structured JSON diagnostics to iterate until the design
+is clean.
 
-The core insight: LLMs can reason about CAD geometry from code, but need
-explicit feedback on the things a human would catch visually. The tool
-provides that through two channels:
+Nobody checks the agent's work before it believes it, so the tool has to say
+what is true of the geometry. It does that through two channels:
 
 1. **Computed diagnostics** — interferences, clearances, wall thickness,
    overhangs — returned as structured JSON the agent reads after every
@@ -27,8 +29,14 @@ Assertions make geometric constraints first-class: a failed assertion is
 a build failure, not a silent geometry bug.
 
 Humans view live geometry via the OCP CAD Viewer VS Code extension. The
-rendered PNGs are primarily for the agent; the viewer is primarily for
+line-art PNGs are primarily for the agent; the viewer is primarily for
 humans.
+
+**Photo-real rendering** (`cad_khana/render/`, Blender Cycles) is the output
+made for a human to look at, from the same `Assembly` the claims were held on.
+It is the optional `render` extra, merged in from chitra-cad on 2026-10-11:
+`bpy` is about 700 MB, so nothing outside `render/` imports it and inside it
+every `bpy` import is function-local (`tests/render/test_isolation.py`).
 
 ## Non-goals
 
@@ -45,6 +53,8 @@ humans.
   `geometry/`, so that it cannot grow into a general CAD module.
 - Not an MCP server in v0. CLI only. MCP may come later; structure code so
   it's possible without rewrites.
+- Not a general renderer. `render/` covers an `Assembly` and what showing
+  one needs: camera, light, material, motion. Anything else is Blender's.
 - Not a GUI. The VS Code extension is a human convenience, documented in the
   README. The tool doesn't manage or depend on it at runtime beyond the
   `ocp_vscode` Python client library.
@@ -100,13 +110,14 @@ cad-khana/
         printability.md       # inspect() usage + how wall/overhang are measured
         diagnostics.md        # field meanings for both JSON files
         drawings.md           # which view answers which question
+        render.md             # photo-real stills, PBR GLB, mp4 — the `render` extra
         build123d_quickref.md # selectors, algebraic vs Builder
         install.md            # one-shot install steps, linked from SKILL.md
         standard_parts.md     # bd_warehouse contents and discovery
         examples/
           pin_hinge/          # canonical reference project (clevis-tang-pin)
   src/
-    cad_khana/                # PEP 420 namespace package, no __init__.py
+    cad_khana/                # every package has an empty __init__.py
       mechanism/
         assembly.py           # Assembly class: named parts + locations
         assertions.py         # NoInterference, Distance, … + evaluate()
@@ -125,6 +136,15 @@ cad-khana/
         feature.py            # Feature: a cutter/block with waivers; traces failures to it
       core/
         tessellation.py       # shared mesh utilities (wall + overhangs)
+      render/                 # photo-real rendering — needs the `render` extra (bpy)
+        scene.py              # Scene: placed parts + materials; Scene.from_assembly
+        render.py             # render() — stills through Cycles
+        animation.py          # render_animation(), render_animation_from_glb() — mp4
+        export.py             # export_glb() with PBR materials baked
+        framing.py, camera.py # framing strategies (HERO_3Q, FixedPose, …)
+        lighting.py           # studio rigs, HDRI worlds, scan_hdri()
+        materials.py          # the named material table
+        tessellation.py       # render-mesh tolerances
       export.py               # STL, STEP (used by `khana export`)
       draw.py                 # HLR engineering drawings (PNG + SVG)
       viewer.py               # ocp_vscode push (used by `khana view`)
@@ -137,20 +157,24 @@ cad-khana/
   tests/
     mechanism/                # per-module tests for mechanism.*
     printability/             # per-module tests for printability.*
+    render/                   # bpy-free render tests + the import-isolation test
     test_cli.py, test_diff.py, test_target.py  # cross-cutting tests
     test_docs.py              # skill-doc schema facts derived from code
 ```
 
-**Discipline:** the library modules (`mechanism/*`, `printability/*`) have
-no CLI or MCP dependencies. `cli.py` imports from them. A future MCP layer
+**Discipline:** the library modules (`mechanism/*`, `printability/*`,
+`render/*`) have no CLI or MCP dependencies. `cli.py` imports from them. A future MCP layer
 does the same. Never put logic in the CLI module that a different surface
 would also need.
 
 ## Public API shape
 
-The package has no `__init__.py` (PEP 420 namespace). User modules import
-the public names directly from their submodules — no aliasing, no shim,
-the structure speaks for itself.
+Each package's `__init__.py` is empty and stays empty: it makes the folder
+a regular package (no silent merge with another `cad_khana` on the path, no
+tool that skips it), and it re-exports nothing. User modules import the
+public names directly from their submodules — no aliasing, no shim, the
+structure speaks for itself. An import in `render/__init__.py` would also
+break the `bpy` isolation.
 
 A **declaration module** — what `khana check|export|view|draw` import.
 Its public surface is its parameterized factories; it calls nothing
@@ -596,7 +620,8 @@ library and CLI.
 - **Classes.** `@dataclass(frozen=True)` by default. `@property` for computed
   attributes. `@staticmethod create()` for non-trivial construction.
 - **Imports.** Always at module top. Order: stdlib, third-party, local. No
-  function-level imports except documented lazy-loading (none expected here).
+  function-level imports except documented lazy-loading: `bpy` and
+  `mathutils` inside `render/`, and nothing else.
 - **Idioms.** `isinstance()` for type checks. `enumerate()` and `zip()` for
   iteration. Context managers for resources. `pathlib.Path` over string paths.
 
@@ -623,7 +648,11 @@ uv run basedpyright`. Rules live in `pyproject.toml`; a `noqa` carries
 its reason. Type checking is strict over `src` and `tests`, gated by
 `.basedpyright/baseline.json`: errors recorded there pass, any new one
 fails. Fixing a baselined error shrinks the file — commit it with the
-fix; never regenerate it to absorb new errors.
+fix; never regenerate it to absorb new errors. *One exception, owner,
+2026-10-11:* `render/`'s 456 errors as merged were added in one pass
+(Blender's API is untyped), with every existing entry unchanged. The
+baseline is taken with `bpy` installed, which is why it is in the dev
+group.
 
 ## Key dependencies
 
@@ -638,6 +667,9 @@ fix; never regenerate it to absorb new errors.
   `export.py::export_animated_glb` to inject animation samplers onto
   an existing GLB.
 - `typer` — CLI
+- `bpy` — Blender as a Python module, **optional** (`cad-khana[render]`)
+  and in the dev group. GPL-3.0 and pinned to Python 3.13 by its own
+  metadata; only `render/` uses it.
 
 External CLI tool (not a Python dep — shelled out to from
 `export.py`):
