@@ -228,7 +228,7 @@ from cad_khana.render.render import render
 from cad_khana.render.scene import Scene
 
 scene = Scene.from_assembly(build_mechanism()).with_materials({"lever": "steel"})
-render(scene, out="renders")                    # → renders/render.png
+render(scene, out="renders", world_up=(0, 0, 1))  # → renders/render.png
 ```
 
 `skills/cad-khana/references/examples/pin_hinge/` is a complete worked

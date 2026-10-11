@@ -53,7 +53,7 @@ def _normalize(v: Vec3) -> Vec3:
     return (v[0] / mag, v[1] / mag, v[2] / mag)
 
 
-def _world_direction(canonical: Vec3, world_up: Vec3) -> Vec3:
+def world_direction(canonical: Vec3, world_up: Vec3) -> Vec3:
     """Rotate a canonical-frame direction into world coords.
 
     Y-up world: identity. Z-up world: swap Y and Z. Other ``world_up``
@@ -123,7 +123,7 @@ class AutoFrame:
         world_up: Vec3,
     ) -> list[CameraConfig]:
         target = bbox.center
-        world_dir = _normalize(_world_direction(self.direction, world_up))
+        world_dir = _normalize(world_direction(self.direction, world_up))
         distance = _fit_distance(bbox, self.vertical_fov_deg, aspect, self.padding)
         location = (
             target[0] + world_dir[0] * distance,
@@ -199,7 +199,7 @@ class Orbit:
         world_up: Vec3,
     ) -> list[CameraConfig]:
         target = bbox.center
-        axis_world = _normalize(_world_direction(self.axis, world_up))
+        axis_world = _normalize(world_direction(self.axis, world_up))
         right, front = _perp_basis(axis_world)
         distance = _fit_distance(bbox, self.vertical_fov_deg, aspect, self.padding)
         elev = radians(self.elevation_deg)
@@ -266,7 +266,7 @@ class SixOrtho:
         distance = max(bbox.diagonal, 1.0) * 2.0
         configs: list[CameraConfig] = []
         for canonical_dir in _SIX_VIEWS:
-            world_dir = _normalize(_world_direction(canonical_dir, world_up))
+            world_dir = _normalize(world_direction(canonical_dir, world_up))
             location = (
                 target[0] + world_dir[0] * distance,
                 target[1] + world_dir[1] * distance,

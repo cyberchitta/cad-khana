@@ -50,15 +50,23 @@ class KeyLight:
 
     ``direction`` is a unit-ish vector pointing *toward* the subject —
     the direction the light travels. When ``camera_parented=False``
-    (default), ``direction`` is in world coordinates. When True, it
+    (default), ``direction`` is in the canonical Y-up frame the framing
+    strategies use, and is re-oriented to the scene's ``world_up`` with
+    them, so a key from above stays above in a Z-up scene. When True, it
     is interpreted in the camera's local frame (Blender convention:
     camera looks down its local -Z, +X is right in the image, +Y is
     up); the light is parented to the camera so its direction relative
     to the camera stays fixed through any animation.
+
+    ``strength_w_m2`` is a sun lamp's strength, the irradiance it lays
+    on a surface facing it, and not a lamp's radiant power in watts: a
+    sun has no falloff, so the reading does not depend on the size of
+    the scene. Around 3 exposes a matte face fully; in the hundreds
+    every lit face clips to white.
     """
 
     direction: Vec3
-    energy_w: float
+    strength_w_m2: float
     angle_deg: float = 5.0
     camera_parented: bool = False
 
@@ -110,7 +118,7 @@ DEFAULT = StudioRig(
         # (-Y), slightly toward the back (+Z), and slightly toward
         # the right (+X). Matches the camera's front-right-up framing.
         direction=(0.3, -1.0, 0.4),
-        energy_w=800.0,
+        strength_w_m2=3.0,
         angle_deg=8.0,
     ),
 )

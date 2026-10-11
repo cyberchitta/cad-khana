@@ -15,7 +15,12 @@ from pathlib import Path
 
 from cad_khana._paths import resolve_out
 from cad_khana.render import camera, lighting, materials, tessellation
-from cad_khana.render.framing import HERO_3Q, CameraConfig, FramingStrategy
+from cad_khana.render.framing import (
+    HERO_3Q,
+    CameraConfig,
+    FramingStrategy,
+    world_direction,
+)
 from cad_khana.render.scene import PlacedPart, Scene
 
 DEFAULT_RESOLUTION = (1920, 1080)
@@ -213,7 +218,7 @@ def _add_sun_light(
     """Create one SUN lamp from a ``KeyLight`` spec; parent to ``cam_obj``
     when ``spec.camera_parented`` is True."""
     light_data = bpy.data.lights.new(name=name, type="SUN")
-    light_data.energy = spec.energy_w
+    light_data.energy = spec.strength_w_m2
     light_data.angle = radians(spec.angle_deg)
     light_obj = bpy.data.objects.new(name=name, object_data=light_data)
     bpy.context.collection.objects.link(light_obj)
@@ -235,7 +240,7 @@ def _add_sun_light(
         )
     else:
         light_obj.rotation_euler = _direction_to_euler(
-            spec.direction, world_up=world_up
+            world_direction(spec.direction, world_up), world_up=world_up
         )
 
 
