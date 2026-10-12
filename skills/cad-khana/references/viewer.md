@@ -1,49 +1,17 @@
-# The viewer page, open in Shala
+# The viewer page, open beside the owner
 
 `khana view <target>` writes the assembly as a web page (`cli.md` says
-where). When the owner has that page open in Shala, the app they keep
-beside the editor, you and they can point at the same part. You cannot
-see the page. Everything below is how you ask it, and what it cannot
-tell you.
+where). When the owner has that page open in a host, you and they can
+point at the same part. You cannot see the page. Everything below is
+how you ask it, and what it cannot tell you.
 
-## The owner points at a part: `shala selection`
+**The commands need a host that carries them to the page. Today that
+host is Shala**, the app the owner keeps beside the editor. A page
+opened from a plain file server shows the assembly and takes no
+commands. The last section is everything that is Shala's; the rest
+holds for any host.
 
-A double-click on a part makes it the owner's selection in Shala. When
-they say "this part" or "this view", run `shala selection` (the `shala`
-skill) and do not guess:
-
-```
-cad/m03/assembly.py:41
-label: f2.baskets.basket_315_12
-state: {"part":"f2.baskets.basket_315_12","view":{"camera":{…},"ortho":true,…,"hidden":[]}}
-```
-
-- **`label` is the part**, by the dotted tree path `khana check` names
-  it by. Use it as it is in `--only`, `khana show --grep`, an
-  `assert_*`.
-- **The reference is the target's module, at the line that defines the
-  member the page was written from**: `def build_exhibit(`, or
-  `assembly = …`. It is the same line for every part on the page. It
-  says which assembly the owner is looking at, not where the part is
-  made; find that from the label.
-- **`state.view.camera`** is where the owner was looking from:
-  `position`, `target`, `quaternion`, `zoom`. Use it when they ask for
-  a render or a drawing "from here".
-- If the label ends `(N hidden parts not in state)`, the list of
-  hidden parts was too long to carry. `khana viewer state` has it.
-- Picking the part that is already picked posts nothing new. The
-  selection still reads that part, with the view as it was at the pick.
-
-To bring a selection back later, the part and the view both:
-
-```
-shala reveal --state '<the state JSON>' cad/m03/assembly.py:41
-```
-
-The page answers with what it put back. A part that is no longer on the
-page is refused, and nothing changes.
-
-## You show the owner something: `khana viewer`
+## Ask the page, or change it: `khana viewer`
 
 Run these from inside the project's repository. Each prints `page:`
 and the target the open page was written from, with the time its files
@@ -64,17 +32,23 @@ khana viewer show f2.rail --only f2 --direction front   # any of these together
 khana viewer panes --no-tree --no-info            # the page's own panes and toolbar
 ```
 
+- **A part is named by its dotted tree path**, the name `khana check`
+  reports. Use what the page gives you as it is in `--only`, `khana
+  show --grep`, an `assert_*`.
+- **`picked` in `khana viewer state` is the part the owner last
+  double-clicked**, or the one you last selected. `view.camera` is
+  where the page is looking from (`position`, `target`, `quaternion`,
+  `zoom`): use it when the owner asks for a render or a drawing "from
+  here".
 - **`--only` and `--hide` take part or sub-assembly paths**, as `khana
   view` does, checked against the page's own parts. Together they are
   the whole of what is hidden: a part neither one hides is shown, so a
   second `--hide` does not add to the first.
 - **A command the page cannot do in full changes nothing** and exits 1
   with the reason: an unknown part, a page that is not open. Exit 2 is
-  a usage error, or Shala not running.
-- **A part you select is not the owner's selection.** `shala selection`
-  still reads what the owner last picked themselves.
-- The camera has no option here. A camera comes from a selection and
-  goes back through `shala reveal --state`.
+  a usage error, or a host that is not running.
+- The camera has no option here: `show` turns the view only by a
+  preset direction.
 
 ## What the page cannot know
 
@@ -82,20 +56,57 @@ khana viewer panes --no-tree --no-info            # the page's own panes and too
   page; it does not say the page is on screen.
 - **A pane the owner opened or closed by hand.** `frame` in `khana
   viewer state` is what was last set by a command.
+- **Who picked.** `picked` reads the same after the owner's
+  double-click and after your own `show`.
 - **Anything about the design.** The page shows the assembly as it was
   when `khana view` ran. It holds no claim and runs no check: a part
   that looks right there has not been checked. That is `khana check`.
 - **Another target.** One project has one page open. If the owner
   wants a different assembly, write that one with `khana view` into
-  the folder Shala hosts.
+  the folder the host shows.
 
-"its app is not open in Shala" means what it says: ask the owner to
-open it. The command cannot.
+If `khana viewer` says the page takes another `khana:` number, the
+page was written by another version of `khana`: run `khana view` again.
 
-## Outside Shala
+## In Shala
 
-Any static file server shows the page (`cli.md`), and the owner can
-turn it and read a part's name off the status line. The commands and
-the selection need Shala. If `khana viewer` says the page takes another
-`khana:` number, the page was written by another version of `khana`:
-run `khana view` again.
+Shala is where the page is hosted today, and it adds the owner's
+selection, which says who picked.
+
+**The owner points at a part: `shala selection`.** A double-click on a
+part makes it the owner's selection in Shala; a part you select with
+`khana viewer show` does not. When they say "this part" or "this
+view", run `shala selection` (the `shala` skill) and do not guess:
+
+```
+cad/m03/assembly.py:41
+label: f2.baskets.basket_315_12
+state: {"part":"f2.baskets.basket_315_12","view":{"camera":{…},"ortho":true,…,"hidden":[]}}
+```
+
+- **`label` is the part.**
+- **The reference is the target's module, at the line that defines the
+  member the page was written from**: `def build_exhibit(`, or
+  `assembly = …`. It is the same line for every part on the page. It
+  says which assembly the owner is looking at, not where the part is
+  made; find that from the label.
+- **`state`** is the part and the view as they were at the pick.
+- If the label ends `(N hidden parts not in state)`, the list of
+  hidden parts was too long to carry. `khana viewer state` has it.
+- Picking the part that is already picked posts nothing new. The
+  selection still reads that part, with the view as it was at the pick.
+
+**Bring a selection back**, the part and the view both, camera
+included:
+
+```
+shala reveal --state '<the state JSON>' cad/m03/assembly.py:41
+```
+
+The page answers with what it put back. A part that is no longer on the
+page is refused, and nothing changes.
+
+**"its app is not open in Shala"** means what it says: ask the owner to
+open it. The command cannot. A page written outside a git repository
+has no file to anchor to, so its picks are not selections; `khana
+viewer state` still reads them.

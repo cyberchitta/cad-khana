@@ -6,6 +6,10 @@ it. Shala is the host there is, and its ``shala tell`` carries one JSON
 body to the page and prints the page's answer. Everything here but
 ``ask`` is pure: the bodies, and the reading of what came back.
 
+Only ``ask`` and ``parse`` know the host. Another carrier is another
+pair of them returning the same ``Answer``: the bodies, the page and the
+commands do not change.
+
 The bodies are the page's own (``viewer/src/page.ts``). ``PROTOCOL`` is
 the number both sides carry: a page built for another refuses the body
 and says to write the page again.

@@ -115,8 +115,9 @@ as a `file://` URL the page loads nothing. The page shows the tree by
 sub-assembly, and a double-click on a part puts its dotted tree path,
 the name `khana check` uses, on the status line. `page.json` beside
 `index.html` records the target the page was written from. With the
-page open in Shala, the owner's pick is their selection and `khana
-viewer` asks the page what it shows or changes it: `viewer.md`.
+page open in a host that carries commands to it (Shala today), `khana
+viewer` asks the page what it shows or changes it, and the owner's pick
+can be read back: `viewer.md`.
 
 The first `khana view` on a machine builds the page with `bun`
 (https://bun.sh), fetching its renderer from the npm registry, and

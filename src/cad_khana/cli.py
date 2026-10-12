@@ -534,7 +534,8 @@ DiagArg = Annotated[
 viewer_app = typer.Typer(
     help=(
         "Ask an open viewer page what it shows, or change it. The page is "
-        "the one `khana view` wrote, open in Shala."
+        "the one `khana view` wrote, open in a host that carries these "
+        "commands to it (Shala)."
     ),
     no_args_is_help=True,
 )
