@@ -20,7 +20,8 @@ classifiers = [
 dependencies = [
     "bd-warehouse>=0.2.0",
     "build123d>=0.13",
-    "ocp-tessellate>=3.4",
+    # 3.4.1 and 3.5.0 import OCP names that OCP 8 (build123d 0.13) dropped.
+    "ocp-tessellate>=3.4.2,!=3.5.0",
     "pillow>=10",
     "pygltflib>=1.16",
     "typer>=0.12",
