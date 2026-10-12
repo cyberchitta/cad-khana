@@ -1,0 +1,52 @@
+# What this page accepts from the host that frames it. Written beside the page
+# by `khana view --page`, so it describes the page that was built.
+#
+# One body per message, exactly one of show, set, get. A body the page cannot
+# do in full is refused with a message and changes nothing; so is one that
+# arrives before the assembly has drawn (send it again).
+#
+# Through Shala: `shala tell <project> '<body>'`. It prints `told <project>`,
+# the page's `message:` if it sent one, and for a `get` the answer after
+# `result:`. A refusal exits 1 with the page's message.
+#
+# A host that frames the page itself posts the body to the page's window and
+# hears {khana: 1, done: {ok, message?, result?}}, plus the two under `posts`,
+# which Shala does not pass on.
+#
+# A part is named by its dotted tree path, the name `khana check` reports
+# (`unit.cube`). The examples use `lid` and `unit.cube`; ask this page for its
+# own with the first body below.
+
+accepts:
+  - does: List this assembly's parts. Answers with `result`.
+    example: {khana: 1, get: ["parts"]}
+
+  - does: Ask what the page is showing. Any of parts, picked (the part last selected, or null), view (every key a show takes except direction), frame (the three keys a set takes, as last set - a pane the owner opened or closed by hand is not seen). Answers with `result`.
+    example: {khana: 1, get: ["picked", "view", "frame"]}
+
+  - does: Show or hide the page's own panes and toolbar. Any subset of the three keys; a key left out keeps its state.
+    example: {khana: 1, set: {tree: false, info: false, toolbar: true}}
+
+  - does: Select a part.
+    example: {khana: 1, show: {part: "unit.cube"}}
+
+  - does: Look from a preset direction (iso, front, rear, left, right, top, bottom).
+    example: {khana: 1, show: {view: {direction: "top"}}}
+
+  - does: Hide parts. `hidden` is the whole list - a part not in it is shown.
+    example: {khana: 1, show: {view: {hidden: ["lid", "unit.cube"]}}}
+
+  - does: Set the view toggles. Any subset of ortho, transparent, blackEdges, axes, axes0, grid (grid is [xy, xz, yz]).
+    example: {khana: 1, show: {view: {ortho: false, transparent: true, axes: true, grid: [true, false, false]}}}
+
+  - does: Put a camera back - the `camera` of an earlier pick, any subset of its four keys.
+    example: {khana: 1, show: {view: {camera: {position: [220.3, -220.3, 220.3], quaternion: [0.42, 0.18, 0.34, 0.82], target: [0, 0, 0], zoom: 1}}}}
+
+  - does: Several of the above at once - one part and any view keys.
+    example: {khana: 1, show: {part: "unit.cube", view: {direction: "iso", transparent: true, hidden: ["lid"]}}}
+
+posts:
+  - when: The page has loaded.
+    example: {khana: 1, ready: {parts: ["lid", "unit.cube"]}}
+  - when: The owner double-clicks a part. `view` has every key a `show` takes except `direction`.
+    example: {khana: 1, pick: {part: "unit.cube", view: {camera: {position: [220.3, -220.3, 220.3], quaternion: [0.42, 0.18, 0.34, 0.82], target: [0, 0, 0], zoom: 1}, ortho: true, transparent: false, blackEdges: false, axes: false, axes0: false, grid: [false, false, false], hidden: []}}}

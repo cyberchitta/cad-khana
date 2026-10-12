@@ -2,6 +2,7 @@ import json
 import os
 import py_compile
 from pathlib import Path
+from typing import Any
 
 import pytest
 from ocp_tessellate.convert import to_ocpgroup
@@ -1678,3 +1679,63 @@ def test_run_reads_a_sibling_module_from_source_not_a_stale_pyc(tmp_path: Path):
     )
     result = runner.invoke(app, ["run", str(script)])
     assert result.exit_code == 0, result.output
+
+
+def _shape_ids(node: dict[str, Any]) -> list[str]:
+    return [node["id"], *(i for p in node.get("parts", []) for i in _shape_ids(p))]
+
+
+_NESTED_MODULE = (
+    "from build123d import Box\n"
+    "from cad_khana.mechanism.assembly import Assembly\n"
+    "\n"
+    "inner = Assembly().with_part('cube', Box(10, 10, 10))\n"
+    "assembly = (\n"
+    "    Assembly().with_part('lid', Box(4, 4, 4)).with_subassembly('unit', inner)\n"
+    ")\n"
+)
+
+
+def test_view_page_writes_a_static_viewer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`--page` copies the built page beside its shapes and pushes
+    nothing; a part's id in the shapes is its dotted tree path under the
+    root, also when one sub-assembly is all that is left at the top."""
+    pushed: list[None] = []
+
+    def fake_show(*_objs: object, **_kwargs: object) -> None:
+        pushed.append(None)
+
+    monkeypatch.setattr(viewer, "show", fake_show)
+    built = tmp_path / "built"
+    built.mkdir()
+    _write(built / "index.html", "<!doctype html>")
+    monkeypatch.setattr(viewer, "PAGE", built)
+    module = _write(tmp_path / "assembly.py", _NESTED_MODULE)
+    page = tmp_path / "site"
+    result = runner.invoke(
+        app, ["view", str(module), "--page", str(page), "--hide", "lid"]
+    )
+    assert result.exit_code == 0, result.output
+    assert {"index.html", "shapes.json"} == {p.name for p in page.iterdir()}
+    shapes = json.loads((page / "shapes.json").read_text())
+    root = shapes["id"]
+    assert [i.removeprefix(root) for i in _shape_ids(shapes)] == [
+        "",
+        "/unit",
+        "/unit/cube",
+    ]
+    assert not pushed
+
+
+def test_view_page_unbuilt_is_a_usage_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(viewer, "PAGE", tmp_path / "absent")
+    module = _write(tmp_path / "assembly.py", _NESTED_MODULE)
+    result = runner.invoke(app, ["view", str(module), "--page", str(tmp_path / "s")])
+    assert result.exit_code == 2
+    assert "bun run build" in result.output
+    assert not (tmp_path / "s").exists()
+    assert not (tmp_path / "outputs").exists()

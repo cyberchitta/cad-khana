@@ -52,6 +52,10 @@ outputs/
 *.igs
 diagnostics.json
 
+# The viewer page: built by `bun run build` in viewer/, shipped in the wheel
+node_modules/
+src/cad_khana/_page/
+
 # Editor / IDE
 .vscode/
 !.vscode/settings.json.example

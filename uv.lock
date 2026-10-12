@@ -141,6 +141,7 @@ source = { editable = "." }
 dependencies = [
     { name = "bd-warehouse" },
     { name = "build123d" },
+    { name = "ocp-tessellate" },
     { name = "ocp-vscode" },
     { name = "pillow" },
     { name = "pygltflib" },
@@ -165,6 +166,7 @@ requires-dist = [
     { name = "bd-warehouse", specifier = ">=0.2.0" },
     { name = "bpy", marker = "extra == 'render'", specifier = ">=5.1" },
     { name = "build123d", specifier = ">=0.8" },
+    { name = "ocp-tessellate", specifier = ">=3.4" },
     { name = "ocp-vscode", specifier = ">=2.7" },
     { name = "pillow", specifier = ">=10" },
     { name = "pygltflib", specifier = ">=1.16" },

@@ -20,6 +20,7 @@ classifiers = [
 dependencies = [
     "bd-warehouse>=0.2.0",
     "build123d>=0.8",
+    "ocp-tessellate>=3.4",
     "ocp-vscode>=2.7",
     "pillow>=10",
     "pygltflib>=1.16",
@@ -46,6 +47,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cad_khana"]
+# The viewer page is built from viewer/ and gitignored; a wheel carries it
+# only if `bun run build` ran there first.
+artifacts = ["src/cad_khana/_page/*"]
 
 [dependency-groups]
 dev = [

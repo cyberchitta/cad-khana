@@ -1,0 +1,6 @@
+html, body { margin: 0; height: 100%; overflow: hidden; }
+#status {
+  position: fixed; left: 0; right: 0; bottom: 0; height: 22px; box-sizing: border-box;
+  padding: 3px 8px; font: 12px ui-monospace, monospace; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; user-select: text;
+}

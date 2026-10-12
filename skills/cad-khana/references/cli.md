@@ -176,6 +176,28 @@ usage error (exit 2) naming close matches. The push nests parts by
 sub-assembly, so the viewer's tree has a row for `s1` to toggle. (`draw
 --part` still takes one part name.)
 
+## A static viewer page: `view --page <dir>`
+
+```
+khana view assembly.py --page site              # writes site/index.html and what it loads
+khana view assembly.py --page site --hide frame # the same selection flags apply
+python3 -m http.server -d site 8000             # then open http://localhost:8000
+```
+
+`--page` writes the assembly as a web page into `<dir>` (relative to
+the cwd) instead of pushing it: no viewer has to be running, and any
+static file server, or an app that frames pages, can host the folder.
+It needs a server: opened as a `file://` URL the page loads nothing.
+The page shows the tree by sub-assembly, and a double-click on a part
+puts its dotted tree path, the name `khana check` uses, on the status
+line. `<dir>/accepts.yaml` lists the messages the page takes from a
+host that frames it (select a part, set the view, hide parts, show or
+hide its panes) and what it answers, with an example of each.
+
+The page is built from `viewer/` in the cad-khana checkout
+(`bun install && bun run build`); an install that never ran that has no
+page, and `--page` then exits 2 naming the command.
+
 ## Parametrized families
 
 The CLI addresses **one member per invocation**, and a factory is

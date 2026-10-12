@@ -1,12 +1,21 @@
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
+
 from build123d import Compound, Shape
+from ocp_tessellate.convert import (  # pyright: ignore[reportMissingTypeStubs]
+    export_three_cad_viewer_js,  # pyright: ignore[reportUnknownVariableType]
+)
 from ocp_vscode import show
 
 from cad_khana.mechanism.assembly import Assembly, PlacedPart
 from cad_khana.selection import paths
 
 Entry = tuple[tuple[str, ...], Shape]
+
+PAGE = Path(__file__).parent / "_page"
+ROOT = "assembly"
 
 
 def _leaf(p: PlacedPart) -> Shape:
@@ -53,3 +62,29 @@ def push(
 ) -> None:
     nodes = tree(assembly, only, hide)
     show(*nodes, names=[n.label for n in nodes])
+
+
+def shapes(
+    assembly: Assembly, only: tuple[str, ...] = (), hide: tuple[str, ...] = ()
+) -> str:
+    """The selected parts as three-cad-viewer's ``Shapes`` JSON. A part's
+    ``id`` is the root's ``id``, then its tree path with ``/`` for ``.``:
+    the parts go in under one root of ours, since the tessellator makes a
+    lone top-level sub-assembly the root and its name leaves every path."""
+    root = Compound(children=tree(assembly, only, hide), label=ROOT)
+    return str(export_three_cad_viewer_js(None, root, names=[ROOT]))  # pyright: ignore[reportUnknownArgumentType]
+
+
+def write_page(
+    assembly: Assembly,
+    out: Path,
+    only: tuple[str, ...] = (),
+    hide: tuple[str, ...] = (),
+) -> tuple[Path, ...]:
+    """A static page showing the selected parts: the files of ``PAGE``
+    and a ``shapes.json`` beside them. Any static file server hosts it."""
+    data = shapes(assembly, only, hide)
+    out.mkdir(parents=True, exist_ok=True)
+    copied = tuple(Path(shutil.copy(f, out)) for f in sorted(PAGE.iterdir()))
+    (out / "shapes.json").write_text(data)
+    return (*copied, out / "shapes.json")

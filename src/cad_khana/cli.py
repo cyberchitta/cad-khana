@@ -304,15 +304,43 @@ def view(
             ),
         ),
     ] = None,
+    page: Annotated[
+        Path | None,
+        typer.Option(
+            "--page",
+            help=(
+                "Write a static viewer page into this directory instead of "
+                "pushing to the OCP viewer."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Import a module and push its assembly to the OCP viewer, nested
-    by sub-assembly. An unknown path exits 2."""
+    by sub-assembly, or write it as a static page. An unknown path
+    exits 2."""
+    selection = (tuple(only or ()), tuple(hide or ()))
+    if page is not None and not (viewer.PAGE / "index.html").is_file():
+        typer.echo(
+            "error: the viewer page is not built — run `bun install && "
+            f"bun run build` in {viewer.PAGE.parents[2] / 'viewer'}",
+            err=True,
+        )
+        raise typer.Exit(code=2)
     _run_target(
         target,
         out,
         "view",
-        lambda a, _out: viewer.push(a, tuple(only or ()), tuple(hide or ())),
+        (lambda a, _out: viewer.push(a, *selection))
+        if page is None
+        else (lambda a, _out: _write_page(a, Path.cwd() / page, *selection)),
     )
+
+
+def _write_page(
+    assembly: Assembly, out: Path, only: tuple[str, ...], hide: tuple[str, ...]
+) -> None:
+    for path in viewer.write_page(assembly, out, only, hide):
+        typer.echo(str(path))
 
 
 @app.command()
