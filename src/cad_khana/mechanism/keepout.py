@@ -28,10 +28,10 @@ from __future__ import annotations
 
 from build123d import Compound, Edge, Face, GeomType, Part, Vector, VectorLike, extrude
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Splitter
+from OCP.collections import List_TopoDS_Shape
 from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt
 from OCP.HLRAlgo import HLRAlgo_Projector
 from OCP.HLRBRep import HLRBRep_Algo, HLRBRep_HLRToShape, HLRBRep_TypeOfResultingEdge
-from OCP.TopTools import TopTools_ListOfShape
 
 EXACT_SILHOUETTES = frozenset(
     {GeomType.PLANE, GeomType.CYLINDER, GeomType.CONE, GeomType.SPHERE}
@@ -101,7 +101,7 @@ def _silhouette(face: Face, direction: Vector) -> list[Edge]:
 
 def _split(face: Face, edges: list[Edge]) -> list[Face]:
     splitter = BRepAlgoAPI_Splitter()
-    arguments, tools = TopTools_ListOfShape(), TopTools_ListOfShape()
+    arguments, tools = List_TopoDS_Shape(), List_TopoDS_Shape()
     arguments.Append(face.wrapped)
     for edge in edges:
         tools.Append(edge.wrapped)

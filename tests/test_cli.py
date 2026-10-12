@@ -7,9 +7,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from click.testing import Result
 from ocp_tessellate.convert import to_ocpgroup
-from typer.testing import CliRunner
+from typer.testing import (
+    CliRunner,
+    Result,  # pyright: ignore[reportPrivateImportUsage]  (click's until typer 0.26 vendored it)
+)
 
 from cad_khana import environment, push, viewer
 from cad_khana.cli import app

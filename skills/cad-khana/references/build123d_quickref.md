@@ -21,25 +21,15 @@ build123d accepts shorthand for several common types. Use them.
 Pass `(0, 0, 5)` instead of `Vector(0, 0, 5)`. Pass `(0, 0, 90)`
 instead of `Rotation(0, 0, 90)`.
 
-**Two traps where the conversion is silent or late.** Both cost a
-sorted-studs part a red and a crash in one sitting.
-
-1. **A sector's default alignment moves its apex off the axis.**
-   `Cylinder(r, h, arc_size=90)` keeps `align=CENTER`, which centres
-   the *bounding box* of the wedge — not the axis it was cut from. On
-   0.12.0 a Ø20 90° sector lands with its bbox at (−5,−5)..(5,5), so
-   the apex sits at (−5, −5) instead of the origin, and a later
-   boolean against something on the axis comes back wrong — in
-   sorted-studs', **silently empty**. `align=None` puts the apex at the origin. Place the
-   primitives, then do the boolean — and check the intermediate is
-   non-empty before cutting with it.
-2. **`Location * Compound` can return a plain `list`** on build123d
-   **0.11.1** — the assembly then rejects it late, at `with_part`,
-   far from the line that built it. Fixed upstream: on **0.12.0** the
-   same expression returns a `Part`/`Compound` (verified). Our floor
-   is `build123d>=0.8`, so this is live for consumers below 0.12 —
-   if you are pinned there, wrap the result or move the `Location`
-   onto the operand that survives it.
+**A sector's default alignment moves its apex off the axis.**
+`Cylinder(r, h, arc_size=90)` keeps `align=CENTER`, which centres
+the *bounding box* of the wedge — not the axis it was cut from. On
+0.13.0 a Ø20 90° sector lands with its bbox at (−5,−5)..(5,5), so
+the apex sits at (−5, −5) instead of the origin, and a later
+boolean against something on the axis comes back wrong — in
+sorted-studs', **silently empty**. `align=None` puts the apex at the origin. Place the
+primitives, then do the boolean — and check the intermediate is
+non-empty before cutting with it.
 
 ## Selector operators
 
@@ -65,7 +55,7 @@ For more control, the methods behind these operators —
 and `SortBy` enum values.
 
 **`.center()` on a cylindrical face is a point on the surface, not
-on the axis.** On 0.12.0 the side face of `Cylinder(5, 10)` reports
+on the axis.** On 0.13.0 the side face of `Cylinder(5, 10)` reports
 `center()` at (−5, 0, 0), and a `Hole`'s bore likewise sits a radius
 off the hole's axis. Anything placed from it is off by a radius with
 nothing overlapping. Use `face.axis_of_rotation` for the axis, and
@@ -94,7 +84,7 @@ is rotation-only. They compose: `Pos(0,0,5) * Rot(0,90,0) * Box(...)`.
 
 **`Rot(rx, ry, rz)` applies its three angles as `Rx·Ry·Rz`** — X
 outermost, not the `Rz·Ry·Rx` that "roll, pitch, yaw" reading order
-suggests. Verified on 0.12.0: `Rot(90, 90, 0)` equals
+suggests. Verified on 0.13.0: `Rot(90, 90, 0)` equals
 `Rot(90,0,0) * Rot(0,90,0)`, and the opposite order sends +X to −Z
 instead of +Y. Two angles in one `Rot` therefore land a part in a frame
 that is easy to mis-predict and that no assertion catches on its own —
@@ -103,7 +93,7 @@ result matters, and assert the facing (see SKILL.md, **What a green
 check does not mean**).
 
 **Algebraic `extrude` grows along the face normal, and a clockwise
-outline's normal points down.** On 0.12.0, `extrude(Polygon(*pts,
+outline's normal points down.** On 0.13.0, `extrude(Polygon(*pts,
 align=None), 5)` with `pts` wound clockwise spans z −5..0 — below the
 sketch. Builder mode (`BuildSketch` + `extrude(amount=)`) and
 `make_face(Polyline(...))` reorient to the plane and grow +Z. Nothing
@@ -111,7 +101,7 @@ overlaps, so no claim fails; a consumer found it only through an
 overhang failure. Pass `dir=`, or check the bbox.
 
 **`Plane.XZ`'s normal is −Y.** Its local x/y are global X/Z, so on
-0.12.0 a sketch on `Plane.XZ` extrudes toward −Y and
+0.13.0 a sketch on `Plane.XZ` extrudes toward −Y and
 `Plane.XZ * Pos(1, 2, 3)` lands at (1, −3, 2). (`Plane.YZ`'s normal
 is +X.) Read `plane.z_dir` before extruding off a named plane.
 
@@ -133,7 +123,7 @@ pattern (`GridLocations`, `PolarLocations`, `HexLocations`).
 
 ## Inputs built instead of refused
 
-None of these raises on 0.12.0:
+None of these raises on 0.13.0:
 
 - `offset(solid, amount=-t, openings=...)` with `t` past half the
   thinnest section returns the solid **unchanged** — full volume,

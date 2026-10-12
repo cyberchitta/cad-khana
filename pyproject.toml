@@ -19,7 +19,7 @@ classifiers = [
 ]
 dependencies = [
     "bd-warehouse>=0.2.0",
-    "build123d>=0.8",
+    "build123d>=0.13",
     "ocp-tessellate>=3.4",
     "pillow>=10",
     "pygltflib>=1.16",

@@ -9,11 +9,13 @@ from pathlib import Path
 
 from build123d import Location, Rot, export_step, export_stl
 from OCP.BRepMesh import BRepMesh_IncrementalMesh
+from OCP.collections import (  # pyright: ignore[reportMissingTypeStubs]
+    IndexedDataMap_TCollection_AsciiString_TCollection_AsciiString,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
+)
 from OCP.Message import Message_ProgressRange
 from OCP.Quantity import Quantity_Color, Quantity_ColorRGBA, Quantity_TypeOfColor
 from OCP.RWGltf import RWGltf_CafWriter
 from OCP.TCollection import TCollection_AsciiString, TCollection_ExtendedString
-from OCP.TColStd import TColStd_IndexedDataMapOfStringString
 from OCP.TDataStd import TDataStd_Name
 from OCP.TDocStd import TDocStd_Document
 from OCP.XCAFApp import XCAFApp_Application
@@ -202,7 +204,9 @@ def export_glb(
 
     writer = RWGltf_CafWriter(TCollection_AsciiString(str(glb_path)), True)
     ok = writer.Perform(
-        doc, TColStd_IndexedDataMapOfStringString(), Message_ProgressRange()
+        doc,
+        IndexedDataMap_TCollection_AsciiString_TCollection_AsciiString(),
+        Message_ProgressRange(),
     )
     if not ok:
         raise RuntimeError(f"RWGltf_CafWriter failed writing {glb_path}")

@@ -18,7 +18,6 @@ from build123d import (
     Box,
     BuildPart,
     BuildSketch,
-    Compound,
     Cylinder,
     Face,
     GeomType,
@@ -64,13 +63,6 @@ def test_sector_apex_leaves_axis() -> None:
     # build123d's annotation omits None, which the entry's fix passes
     apexed = Cylinder(10, 5, arc_size=90, align=None)  # pyright: ignore[reportArgumentType]
     assert _near(apexed.bounding_box().min, (0, 0, 0))
-
-
-def test_location_times_compound_is_a_compound() -> None:
-    """The entry names 0.11.1 as returning a ``list``; on the locked version
-    it is fixed, so this pins the fix — a regression goes red too."""
-    pair = Compound([Box(1, 1, 1), Pos(3, 0, 0) * Box(1, 1, 1)])
-    assert isinstance(Pos(1, 0, 0) * pair, Compound)
 
 
 def test_rot_composes_x_outermost() -> None:
@@ -155,9 +147,6 @@ def test_degenerate_inputs_build_invalid_shapes() -> None:
 ENTRIES: dict[str, tuple[Callable[[], None], ...]] = {
     "A sector's default alignment moves its apex off the axis": (
         test_sector_apex_leaves_axis,
-    ),
-    "`Location * Compound` can return a plain `list`": (
-        test_location_times_compound_is_a_compound,
     ),
     "`Rot(rx, ry, rz)` applies its three angles as `Rx·Ry·Rz`": (
         test_rot_composes_x_outermost,
