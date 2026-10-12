@@ -1,14 +1,17 @@
 import json
 import os
 import py_compile
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
+from click.testing import Result
 from ocp_tessellate.convert import to_ocpgroup
 from typer.testing import CliRunner
 
-from cad_khana import environment, viewer
+from cad_khana import environment, push, viewer
 from cad_khana.cli import app
 from cad_khana.mechanism.diagnostics import SCHEMA_VERSION
 
@@ -35,16 +38,16 @@ def test_run_runs_successful_script(tmp_path: Path):
 def test_view_pushes_named_parts_to_viewer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    calls: list[dict] = []
+    calls: list[dict[str, object]] = []
 
-    def fake_show(*cad_objs, **kwargs):
+    def fake_show(*cad_objs: object, **kwargs: object) -> None:
         calls.append({"count": len(cad_objs), "names": kwargs.get("names")})
 
-    monkeypatch.setattr(viewer, "show", fake_show)
+    monkeypatch.setattr(push, "show", fake_show)
 
     module = tmp_path / "asm.py"
     module.write_text(_two_part_module())
-    result = runner.invoke(app, ["view", str(module)])
+    result = runner.invoke(app, ["view", str(module), "--push"])
     assert result.exit_code == 0, result.output
     assert calls == [{"count": 2, "names": ["big", "small"]}]
 
@@ -52,7 +55,11 @@ def test_view_pushes_named_parts_to_viewer(
 def test_check_does_not_push_to_viewer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Each verb performs its own effect: pushing is `khana view`."""
     calls: list[None] = []
-    monkeypatch.setattr(viewer, "show", lambda *a, **kw: calls.append(None))
+
+    def fake_show(*_objs: object, **_kwargs: object) -> None:
+        calls.append(None)
+
+    monkeypatch.setattr(push, "show", fake_show)
 
     module = tmp_path / "asm.py"
     module.write_text(_cube_module())
@@ -528,7 +535,9 @@ def test_draw_part_scopes_to_named_part(tmp_path: Path):
     assert svg_all != svg_part
 
 
-def _fake_report(viewer_reachable: bool) -> environment.EnvironmentReport:
+def _fake_report(
+    bun: str | None, viewer_reachable: bool = False
+) -> environment.EnvironmentReport:
     return environment.EnvironmentReport(
         cad_khana="0.0.0",
         python="3.13.0",
@@ -539,16 +548,18 @@ def _fake_report(viewer_reachable: bool) -> environment.EnvironmentReport:
             reachable=viewer_reachable,
             error=None if viewer_reachable else "no listener on port 3939",
         ),
+        bun=bun,
         schema_version=SCHEMA_VERSION,
-        status="ok" if viewer_reachable else "degraded",
+        status="ok" if bun else "degraded",
     )
 
 
 def test_status_emits_required_keys(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(environment, "probe", lambda: _fake_report(False))
+    monkeypatch.setattr(environment, "probe", lambda: _fake_report(None))
     result = runner.invoke(app, ["status"])
     data = json.loads(result.stdout)
     assert {
+        "bun",
         "cad_khana",
         "python",
         "build123d",
@@ -561,22 +572,38 @@ def test_status_emits_required_keys(monkeypatch: pytest.MonkeyPatch):
     assert {"importable", "reachable", "error"} == data["ocp_vscode"].keys()
 
 
-def test_status_exits_zero_when_viewer_reachable(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(environment, "probe", lambda: _fake_report(True))
+def test_status_is_ok_with_bun_and_no_ocp_listener(monkeypatch: pytest.MonkeyPatch):
+    """`khana view` writes a page, which needs bun; the OCP listener is
+    what `--push` alone needs, so its absence degrades nothing."""
+    monkeypatch.setattr(environment, "probe", lambda: _fake_report("1.3.14"))
     result = runner.invoke(app, ["status"])
     assert result.exit_code == 0
-    assert json.loads(result.stdout)["status"] == "ok"
+    data = json.loads(result.stdout)
+    assert data["status"] == "ok"
+    assert data["ocp_vscode"]["reachable"] is False
 
 
-def test_status_exits_nonzero_when_viewer_unreachable(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    monkeypatch.setattr(environment, "probe", lambda: _fake_report(False))
+def test_status_exits_nonzero_without_bun(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        environment, "probe", lambda: _fake_report(None, viewer_reachable=True)
+    )
     result = runner.invoke(app, ["status"])
     assert result.exit_code == 1
     data = json.loads(result.stdout)
     assert data["status"] == "degraded"
-    assert data["ocp_vscode"]["reachable"] is False
+    assert data["bun"] is None
+
+
+def test_probe_reads_buns_version_and_survives_its_absence(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def missing(*_args: object, **_kwargs: object) -> None:
+        raise FileNotFoundError("bun")
+
+    monkeypatch.setattr(environment.subprocess, "run", missing)
+    report = environment.probe()
+    assert report.bun is None
+    assert report.status == "degraded"
 
 
 def test_status_real_probe_runs_and_returns_json():
@@ -588,6 +615,7 @@ def test_status_real_probe_runs_and_returns_json():
     data = json.loads(result.stdout)
     assert data["schema_version"] == SCHEMA_VERSION
     assert isinstance(data["ocp_vscode"]["reachable"], bool)
+    assert data["status"] == ("ok" if data["bun"] else "degraded")
 
 
 def test_status_stdout_is_json_when_port_discovery_prints(
@@ -1416,14 +1444,16 @@ def _leaves(nodes) -> list[str]:
 
 def _captured_view(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *flags: str
-) -> tuple[object, list[dict]]:
-    calls: list[dict] = []
-    monkeypatch.setattr(
-        viewer, "show", lambda *objs, **kw: calls.append({"objs": objs, **kw})
-    )
+) -> tuple[Result, list[dict[str, Any]]]:
+    calls: list[dict[str, Any]] = []
+
+    def fake_show(*objs: object, **kw: object) -> None:
+        calls.append({"objs": objs, **kw})
+
+    monkeypatch.setattr(push, "show", fake_show)
     module = tmp_path / "tree.py"
     module.write_text(_tree_module())
-    return runner.invoke(app, ["view", str(module), *flags]), calls
+    return runner.invoke(app, ["view", str(module), "--push", *flags]), calls
 
 
 def test_view_nests_sub_assemblies_by_dotted_path(
@@ -1602,9 +1632,9 @@ def test_view_and_export_see_no_region(tmp_path: Path, monkeypatch: pytest.Monke
     def fake_show(*cad_objs: object, **kwargs: object) -> None:
         names.append(kwargs.get("names"))
 
-    monkeypatch.setattr(viewer, "show", fake_show)
+    monkeypatch.setattr(push, "show", fake_show)
     module = _write(tmp_path / "assembly.py", _regions_module(0.0))
-    assert runner.invoke(app, ["view", str(module)]).exit_code == 0
+    assert runner.invoke(app, ["view", str(module), "--push"]).exit_code == 0
     assert names == [["body", "plate"]]
     result = runner.invoke(app, ["export", str(module)])
     assert result.exit_code == 0, result.output
@@ -1707,11 +1737,11 @@ def test_view_page_writes_a_static_viewer(
     def fake_show(*_objs: object, **_kwargs: object) -> None:
         pushed.append(None)
 
-    monkeypatch.setattr(viewer, "show", fake_show)
+    monkeypatch.setattr(push, "show", fake_show)
     built = tmp_path / "built"
     built.mkdir()
     _write(built / "index.html", "<!doctype html>")
-    monkeypatch.setattr(viewer, "PAGE", built)
+    monkeypatch.setattr(viewer, "built_page", lambda: built)
     module = _write(tmp_path / "assembly.py", _NESTED_MODULE)
     page = tmp_path / "site"
     result = runner.invoke(
@@ -1729,13 +1759,81 @@ def test_view_page_writes_a_static_viewer(
     assert not pushed
 
 
-def test_view_page_unbuilt_is_a_usage_error(
+def test_view_writes_the_page_under_out_by_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    monkeypatch.setattr(viewer, "PAGE", tmp_path / "absent")
+    """Bare `khana view` writes the page, beside the target's other
+    outputs, and pushes nothing."""
+    pushed: list[None] = []
+
+    def fake_show(*_objs: object, **_kwargs: object) -> None:
+        pushed.append(None)
+
+    monkeypatch.setattr(push, "show", fake_show)
+    built = tmp_path / "built"
+    built.mkdir()
+    _write(built / "index.html", "<!doctype html>")
+    monkeypatch.setattr(viewer, "built_page", lambda: built)
+    module = _write(tmp_path / "assembly.py", _NESTED_MODULE)
+    result = runner.invoke(app, ["view", str(module)])
+    assert result.exit_code == 0, result.output
+    page = tmp_path / "outputs" / "page"
+    assert {"index.html", "shapes.json"} == {p.name for p in page.iterdir()}
+    assert not pushed
+
+
+def test_view_push_without_the_client_is_a_usage_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`ocp_vscode` is the `ocp` extra: without it `--push` says so and
+    nothing runs."""
+    monkeypatch.setitem(sys.modules, "cad_khana.push", None)
+    module = _write(tmp_path / "assembly.py", _NESTED_MODULE)
+    result = runner.invoke(app, ["view", str(module), "--push"])
+    assert result.exit_code == 2
+    assert "cad-khana[ocp]" in result.output
+    assert not (tmp_path / "outputs").exists()
+
+
+def test_view_push_and_page_together_is_a_usage_error(tmp_path: Path):
+    module = _write(tmp_path / "assembly.py", _NESTED_MODULE)
+    result = runner.invoke(
+        app, ["view", str(module), "--push", "--page", str(tmp_path / "s")]
+    )
+    assert result.exit_code == 2
+    assert not (tmp_path / "s").exists()
+    assert not (tmp_path / "outputs").exists()
+
+
+def test_view_page_without_bun_is_a_usage_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The page is built before the target is imported, so a machine
+    without bun is told so and nothing runs."""
+
+    def no_bun() -> Path:
+        raise FileNotFoundError(2, "No such file or directory", "bun")
+
+    monkeypatch.setattr(viewer, "built_page", no_bun)
     module = _write(tmp_path / "assembly.py", _NESTED_MODULE)
     result = runner.invoke(app, ["view", str(module), "--page", str(tmp_path / "s")])
     assert result.exit_code == 2
-    assert "bun run build" in result.output
+    assert "bun" in result.output
     assert not (tmp_path / "s").exists()
+    assert not (tmp_path / "outputs").exists()
+
+
+def test_view_page_failed_build_is_a_usage_error_with_buns_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    def failing() -> Path:
+        raise subprocess.CalledProcessError(
+            1, ["bun", "run", "build.ts"], stderr="error: lockfile had changes"
+        )
+
+    monkeypatch.setattr(viewer, "built_page", failing)
+    module = _write(tmp_path / "assembly.py", _NESTED_MODULE)
+    result = runner.invoke(app, ["view", str(module), "--page", str(tmp_path / "s")])
+    assert result.exit_code == 2
+    assert "lockfile had changes" in result.output
     assert not (tmp_path / "outputs").exists()

@@ -70,8 +70,8 @@ cheap, but discovering a missing one downstream is expensive.
    `khana draw path/to/assembly.py` and read the views under
    `outputs/views/` — load `references/drawings.md` first.
 6. When diagnostics are clean, ask the human to view it via
-   `khana view path/to/assembly.py` (which pushes to the OCP VS Code
-   viewer).
+   `khana view path/to/assembly.py` (which writes a viewer page under
+   `outputs/page/`; `references/cli.md` says how to serve it).
 
 ## When to stop iterating
 

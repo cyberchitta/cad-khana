@@ -52,9 +52,8 @@ outputs/
 *.igs
 diagnostics.json
 
-# The viewer page: built by `bun run build` in viewer/, shipped in the wheel
+# The viewer page's packages; the page itself is built into the user's cache
 node_modules/
-src/cad_khana/_page/
 
 # Editor / IDE
 .vscode/

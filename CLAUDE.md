@@ -28,7 +28,7 @@ what is true of the geometry. It does that through two channels:
 Assertions make geometric constraints first-class: a failed assertion is
 a build failure, not a silent geometry bug.
 
-Humans view live geometry via the OCP CAD Viewer VS Code extension. The
+Humans view live geometry in the viewer page `khana view` writes. The
 line-art PNGs are primarily for the agent; the viewer is primarily for
 humans.
 
@@ -55,11 +55,9 @@ every `bpy` import is function-local (`tests/render/test_isolation.py`).
   it's possible without rewrites.
 - Not a general renderer. `render/` covers an `Assembly` and what showing
   one needs: camera, light, material, motion. Anything else is Blender's.
-- Not a GUI. The VS Code extension is a human convenience, documented in
-  `references/cli.md`. The tool doesn't manage or depend on it at runtime beyond the
-  `ocp_vscode` Python client library. **The one exception is the viewer
-  page** (`viewer/`, owner, 2026-10-12): a static page `khana view --page`
-  writes, showing an `Assembly` in three-cad-viewer and telling a host
+- Not a GUI. **The one exception is the viewer page** (`viewer/`, owner,
+  2026-10-12): a static page `khana view` writes, showing an `Assembly`
+  in three-cad-viewer and telling a host
   that frames it which part and view the human is pointing at. It is a
   viewer and a pointer, never an editor: nothing in it changes a design
   or runs a check.
@@ -104,7 +102,7 @@ cad-khana/
   viewer/                     # the viewer page, TypeScript, built with bun
     src/page.ts               # three-cad-viewer + the host messages (show, set, get)
     src/accepts.yaml          # those messages, with examples — ships beside the page
-    build.ts                  # bundles into src/cad_khana/_page/ (gitignored)
+    build.ts                  # bundles into the directory it is given
   skills/
     cad-khana/
       SKILL.md                # the index: file kinds, what a green does not
@@ -156,8 +154,10 @@ cad-khana/
         tessellation.py       # render-mesh tolerances
       export.py               # STL, STEP (used by `khana export`)
       draw.py                 # HLR engineering drawings (PNG + SVG)
-      viewer.py               # ocp_vscode push, and the static page (`khana view`)
-      _page/                  # the built viewer page — generated, gitignored, in the wheel
+      viewer.py               # the static page `khana view` writes, and its shapes
+                              # the page is built on first use into the user's cache;
+                              # a wheel carries viewer/'s sources as cad_khana/_viewer/
+      push.py                 # `view --push`: the one importer of ocp_vscode (the `ocp` extra)
       diff.py                 # dispatches on file kind (mechanism/printability)
       selection.py            # subset of one run: claim globs, tree paths
       show.py                 # reads one diagnostics JSON: summary, filters, groups
@@ -249,8 +249,9 @@ effect.
 ```
 khana check  <target> [--only <glob>]...   # diagnostics + assertions, write mechanism.json
 khana export <target>           # STL + STEP
-khana view   <target> [--only|--hide <path>]...   # push to OCP viewer, nested by sub-assembly
-khana view   <target> --page <dir>      # write a static viewer page instead of pushing
+khana view   <target> [--only|--hide <path>]...   # write a static viewer page, nested by sub-assembly
+khana view   <target> --page <dir>      # into <dir> instead of <out>/page
+khana view   <target> --push            # push to a listening OCP viewer instead (the `ocp` extra)
 khana draw   <target> --format png|svg|both   # orthographic/iso HLR line-art
 khana run    <script>           # execute an orchestration script
 khana diff <old> <new>          # diff two diagnostics JSON files
@@ -276,7 +277,7 @@ even on failure, so the agent can always read structured error info.
 are equivalent, 1 when differences are found, 2 on error.
 
 `check --only` and `view --only/--hide` select a subset for one run
-(`selection.py`; `hold` and `viewer.push` take the tuples, the CLI only
+(`selection.py`; `hold` and `viewer.tree` take the tuples, the CLI only
 parses). A selection matching nothing is a usage error like an
 unresolvable target — exit 2, no JSON — because a typo'd glob that held
 zero claims and exited 0 is the vacuous green.
@@ -632,7 +633,9 @@ library and CLI.
   attributes. `@staticmethod create()` for non-trivial construction.
 - **Imports.** Always at module top. Order: stdlib, third-party, local. No
   function-level imports except documented lazy-loading: `bpy` and
-  `mathutils` inside `render/`, and nothing else.
+  `mathutils` inside `render/`; and `ocp_vscode`, the optional `ocp`
+  extra, reached only through `cli._pusher` importing `push.py` and
+  `environment._probe_viewer`. Nothing else.
 - **Idioms.** `isinstance()` for type checks. `enumerate()` and `zip()` for
   iteration. Context managers for resources. `pathlib.Path` over string paths.
 
@@ -672,11 +675,13 @@ group.
   bearings, threads, gears, V-slot extrusions, etc.). Bundled by default
   so user scripts can import standard hardware without setup. The library
   itself does not import it; user scripts do.
-- `ocp_vscode` — viewer client (Python side only; VS Code extension is a
-  human prerequisite, documented separately)
-- `ocp_tessellate` — the tessellator behind `ocp_vscode`, imported
-  directly by `viewer.shapes()` for the page's `shapes.json`. It was
-  already installed through `ocp_vscode`; declared because we call it.
+- `ocp_tessellate` — the tessellator, imported by `viewer.shapes()` for
+  the page's `shapes.json`.
+- `ocp_vscode` — the client that pushes to a listening OCP viewer,
+  **optional** (`cad-khana[ocp]`) and in the dev group. Only `push.py`
+  imports it, for `khana view --push` (owner, 2026-10-12: the page is
+  the default viewer and the push is what is left for those who run an
+  OCP viewer).
 - `pygltflib` — JSON-level glTF read/write. Used by
   `export.py::export_animated_glb` to inject animation samplers onto
   an existing GLB.
@@ -685,10 +690,17 @@ group.
   and in the dev group. GPL-3.0 and pinned to Python 3.13 by its own
   metadata; only `render/` uses it.
 
-External CLI tool (not a Python dep — shelled out to from
-`export.py`):
+External CLI tools (not Python deps — shelled out to):
 
-- `gltf-transform` (`bun install -g @gltf-transform/cli`) — used for
+- `bun` — `viewer.built_page` runs it to build the viewer page the first
+  time `khana view` is asked for one, and keeps the result under
+  the user's cache by a hash of `viewer/`'s sources, so a changed source
+  rebuilds by itself. Needed by `view` alone (owner, 2026-10-12: built
+  on demand, not shipped built, and no bun version is enforced until one
+  bites). The page's own packages are pinned by `viewer/bun.lock`.
+
+- `gltf-transform` (`bun install -g @gltf-transform/cli`) — used by
+  `export.py` for
   `join` (mandatory primitive-merging post-pass) and `draco`
   (optional mesh compression). The join pass collapses the
   per-face-style primitive explosion OCP's `RWGltf_CafWriter` writes
@@ -712,7 +724,7 @@ for end-user install, `uvx khana ...` for ephemeral use.
   are pure —
   take data, return data. File I/O lives in `export.py`, `draw.py`,
   `mechanism.check`, `printability.inspect`, and the CLI. Each verb
-  performs its own effect at the boundary — `view` pushes, `draw`
+  performs its own effect at the boundary — `view` writes its page, `draw`
   draws, `export` exports — so a declaration module is identical under
   all of them. `check()` writes `mechanism.json` and nothing else: no
   export, no viewer push, no draw, and no toggle to re-couple them.

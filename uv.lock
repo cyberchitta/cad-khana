@@ -142,13 +142,15 @@ dependencies = [
     { name = "bd-warehouse" },
     { name = "build123d" },
     { name = "ocp-tessellate" },
-    { name = "ocp-vscode" },
     { name = "pillow" },
     { name = "pygltflib" },
     { name = "typer" },
 ]
 
 [package.optional-dependencies]
+ocp = [
+    { name = "ocp-vscode" },
+]
 render = [
     { name = "bpy" },
 ]
@@ -157,6 +159,7 @@ render = [
 dev = [
     { name = "basedpyright" },
     { name = "bpy" },
+    { name = "ocp-vscode" },
     { name = "pytest" },
     { name = "ruff" },
 ]
@@ -167,17 +170,18 @@ requires-dist = [
     { name = "bpy", marker = "extra == 'render'", specifier = ">=5.1" },
     { name = "build123d", specifier = ">=0.8" },
     { name = "ocp-tessellate", specifier = ">=3.4" },
-    { name = "ocp-vscode", specifier = ">=2.7" },
+    { name = "ocp-vscode", marker = "extra == 'ocp'", specifier = ">=2.7" },
     { name = "pillow", specifier = ">=10" },
     { name = "pygltflib", specifier = ">=1.16" },
     { name = "typer", specifier = ">=0.12" },
 ]
-provides-extras = ["render"]
+provides-extras = ["ocp", "render"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "basedpyright", specifier = ">=1.40.1" },
     { name = "bpy", specifier = ">=5.1" },
+    { name = "ocp-vscode", specifier = ">=2.7" },
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.16.10" },
 ]

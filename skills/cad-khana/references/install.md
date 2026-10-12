@@ -17,6 +17,9 @@ khana --version
 
 Report success and continue with whatever the user originally asked for.
 
+`khana view` alone needs one more tool, `bun` (https://bun.sh), to build
+its viewer page the first time; every other verb runs without it.
+
 ## Updating later
 
 To upgrade the CLI to the latest commit on `main`:

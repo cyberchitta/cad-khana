@@ -58,12 +58,12 @@ runs a script for effect.
 ```
 khana check  <target>          # diagnostics + assertions → mechanism.json
 khana export <target>          # STL + STEP
-khana view   <target>          # push assembly to the OCP viewer (socket)
+khana view   <target>          # write the assembly as a viewer page (outputs/page/)
 khana draw   <target> [--view <names>] [--part <name>] [--format png|svg|both] [--themeable]
 khana run    <script>          # execute an orchestration script
 khana diff   <before> <after>  # diff two JSON files; exit 0 identical, 1 differences, 2 error
 khana show   <json> [--grep <re>] [--failed] [--skipped] [--sort value] [--group <re>] [--json]  # read one JSON; see references/cli.md
-khana status                   # JSON probe of versions + viewer reachability; exit nonzero if degraded
+khana status                   # JSON probe of versions and bun; exit nonzero if degraded
 khana --version
 ```
 
@@ -78,7 +78,7 @@ target, unknown `--view`), **1** for a failed run.
 
 A target is `<module-path>[:<factory>]`; with no `:factory` the verb
 uses the module's `assembly` member. How members resolve, where output
-lands, how imports resolve and how to run the viewer without VS Code:
+lands, how imports resolve and how to serve the viewer page:
 `references/cli.md`.
 
 ## The three file kinds

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import platform
 import socket
+import subprocess
 import sys
 from contextlib import redirect_stdout
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ class EnvironmentReport:
     build123d: str
     bd_warehouse: str | None
     ocp_vscode: ViewerStatus
+    bun: str | None
     schema_version: str
     status: str
 
@@ -70,14 +72,29 @@ def _probe_viewer() -> ViewerStatus:
     return ViewerStatus(importable=True, reachable=True, error=None)
 
 
+def _bun() -> str | None:
+    """bun's version, or ``None`` where there is none to run."""
+    try:
+        found = subprocess.run(
+            ["bun", "--version"], capture_output=True, text=True, check=True
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return found.stdout.strip()
+
+
 def probe() -> EnvironmentReport:
-    viewer = _probe_viewer()
+    """``degraded`` is a machine where bare ``khana view`` cannot build
+    its page. The OCP listener is reported and decides nothing: only
+    ``view --push`` needs it."""
+    viewer, bun = _probe_viewer(), _bun()
     return EnvironmentReport(
         cad_khana=_pkg("cad-khana", "unknown") or "unknown",
         python=platform.python_version(),
         build123d=_pkg("build123d", "unknown") or "unknown",
         bd_warehouse=_pkg("bd-warehouse", None),
         ocp_vscode=viewer,
+        bun=bun,
         schema_version=SCHEMA_VERSION,
-        status="ok" if viewer.reachable else "degraded",
+        status="ok" if bun else "degraded",
     )

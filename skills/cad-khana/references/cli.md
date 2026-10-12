@@ -98,43 +98,41 @@ process resolve to whichever loaded first. Inside a package tree this
 cannot happen — another reason to use packages for anything with more
 than one unit.
 
-## Viewer: no editor required
-
-`khana view` calls `ocp_vscode.show(...)`, which pushes geometry over
-a local socket (default port 3939). The listener can be either the
-**OCP CAD Viewer** VS Code extension *or* the **standalone viewer
-server**, the separate `ocp-viewer` package:
+## Viewer: `khana view` writes a page
 
 ```
-uv run --with ocp-viewer python -m ocp_viewer   # listens on 3939; open http://localhost:3939/viewer
-uv run khana view assembly.py                   # pushes geometry to whichever listener is up
+khana view assembly.py                    # writes outputs/page/index.html and what it loads
+khana view assembly.py --hide frame       # the selection flags below apply
+khana view assembly.py --page site        # into ./site instead (relative to the cwd)
+python3 -m http.server -d outputs/page 8000   # then open http://localhost:8000
 ```
 
-(`ocp-vscode` 4.1 moved the standalone viewer out into `ocp-viewer`;
-on 4.1+, `python -m ocp_vscode` only prints a "moved" notice. In an
-environment locked to `ocp-vscode` < 4.1, `uv run python -m
-ocp_vscode` is still the command.)
+`khana view` writes the assembly as a web page: into `page/` under the
+target's output directory (the `--out` rule above), or into `--page
+<dir>`. No viewer has to be running, and any static file server, or an
+app that frames pages, can host the folder. It needs a server: opened
+as a `file://` URL the page loads nothing. The page shows the tree by
+sub-assembly, and a double-click on a part puts its dotted tree path,
+the name `khana check` uses, on the status line. `accepts.yaml` beside
+`index.html` lists the messages the page takes from a host that frames
+it (select a part, set the view, hide parts, show or hide its panes)
+and what it answers, with an example of each.
 
-So you can drive the full `view` loop from any editor (or none at
-all). For **Zed**, the pattern that matches the VS Code UX is a pair
-of workspace tasks in `.zed/tasks.json` — one to start the viewer
-server, one to push the current file to it:
+The first `khana view` on a machine builds the page with `bun`
+(https://bun.sh), fetching its renderer from the npm registry, and
+keeps it under `~/.cache/cad-khana/page/` (`$XDG_CACHE_HOME` if set);
+later runs copy it from there. Without `bun` on the PATH, or if the
+build fails, `view` exits 2 before the target is imported. `khana
+status` reports `bun` and reads `degraded` without it.
 
-```json
-[
-  {
-    "label": "OCP viewer: start",
-    "command": "uv",
-    "args": ["run", "--with", "ocp-viewer", "python", "-m", "ocp_viewer"],
-    "cwd": "$ZED_WORKTREE_ROOT",
-    "allow_concurrent_runs": false
-  },
-  {
-    "label": "khana view (current file)",
-    "command": "cd \"$ZED_DIRNAME\" && uv run khana view \"$ZED_FILE\""
-  }
-]
-```
+**`view --push`** sends the assembly to a listening OCP viewer over a
+local socket (default port 3939) instead of writing a page. It needs
+the `ocp` extra (`cad-khana[ocp]`, the `ocp_vscode` client) and exits 2
+without it. The listener is the OCP CAD Viewer editor extension or the
+standalone server, `uv run --with ocp-viewer python -m ocp_viewer`
+(then open http://localhost:3939/viewer). With no listener up the push
+prints an error and still exits 0, so check `khana status`'s
+`ocp_vscode.reachable` first.
 
 ## One run over a subset: `check --only`, `view --only` / `--hide`
 
@@ -168,35 +166,13 @@ refuses a partial file against a full one, or against another
 selection — the claims one side left out would read as removed — and
 compares two runs of the same `--only`.
 
-**`view --only` / `--hide <path>`** filter what is pushed by dotted tree
+**`view --only` / `--hide <path>`** filter what is shown by dotted tree
 path (`s1`, `s1.arm`, `frame`): a path names a part or a whole
 sub-assembly (every part under it; `s1` never matches `s10`), both are
 repeatable, and `--hide` applies after `--only`. An unknown path is a
-usage error (exit 2) naming close matches. The push nests parts by
+usage error (exit 2) naming close matches. Parts are nested by
 sub-assembly, so the viewer's tree has a row for `s1` to toggle. (`draw
 --part` still takes one part name.)
-
-## A static viewer page: `view --page <dir>`
-
-```
-khana view assembly.py --page site              # writes site/index.html and what it loads
-khana view assembly.py --page site --hide frame # the same selection flags apply
-python3 -m http.server -d site 8000             # then open http://localhost:8000
-```
-
-`--page` writes the assembly as a web page into `<dir>` (relative to
-the cwd) instead of pushing it: no viewer has to be running, and any
-static file server, or an app that frames pages, can host the folder.
-It needs a server: opened as a `file://` URL the page loads nothing.
-The page shows the tree by sub-assembly, and a double-click on a part
-puts its dotted tree path, the name `khana check` uses, on the status
-line. `<dir>/accepts.yaml` lists the messages the page takes from a
-host that frames it (select a part, set the view, hide parts, show or
-hide its panes) and what it answers, with an example of each.
-
-The page is built from `viewer/` in the cad-khana checkout
-(`bun install && bun run build`); an install that never ran that has no
-page, and `--page` then exits 2 naming the command.
 
 ## Parametrized families
 

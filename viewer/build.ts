@@ -1,8 +1,11 @@
 // Builds the page `khana view --page` copies out: ours and the renderer in
 // one script, the two stylesheets, and the renderer's licence beside them.
+// `bun run build.ts <dir>`; cad_khana.viewer runs it the first time a page
+// is asked for and keeps the result.
 import { cp, mkdir, rm } from "node:fs/promises";
+import { resolve } from "node:path";
 
-const out = new URL("../src/cad_khana/_page/", import.meta.url).pathname;
+const out = `${resolve(Bun.argv[2])}/`;
 const renderer = new URL("./node_modules/three-cad-viewer/", import.meta.url).pathname;
 
 await rm(out, { recursive: true, force: true });

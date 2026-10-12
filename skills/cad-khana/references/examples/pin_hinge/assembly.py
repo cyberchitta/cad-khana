@@ -19,7 +19,7 @@ import it and each does its own one thing::
     khana check  .../pin_hinge/assembly.py       # outputs/mechanism.json
     khana export .../pin_hinge/assembly.py       # outputs/assembly.{stl,step}
     khana draw   .../pin_hinge/assembly.py       # outputs/views/*.png
-    khana view   .../pin_hinge/assembly.py       # push to the OCP viewer
+    khana view   .../pin_hinge/assembly.py       # outputs/page/index.html
 
 Per-part printability lives in the sibling command script:
 ``khana run .../pin_hinge/printability.py``.

@@ -3,8 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "tsc --noEmit",
-    "build": "bun run build.ts"
+    "check": "tsc --noEmit"
   },
   "dependencies": {
     "three-cad-viewer": "5.1.3"

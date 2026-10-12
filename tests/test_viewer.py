@@ -1,0 +1,74 @@
+from pathlib import Path
+
+import pytest
+
+from cad_khana import viewer
+
+
+def _source(root: Path, script: str = "export {};") -> Path:
+    (root / "src").mkdir(parents=True)
+    (root / "node_modules" / "dep").mkdir(parents=True)
+    (root / "build.ts").write_text("// build")
+    (root / "src" / "page.ts").write_text(script)
+    (root / "node_modules" / "dep" / "index.js").write_text("// fetched")
+    return root
+
+
+def _fake_bun(calls: list[tuple[list[str], Path]]) -> viewer.Run:
+    """Stands in for `bun`: records each call, and writes a page where
+    the build is told to."""
+
+    def run(args: list[str], *, cwd: Path, **_kwargs: object) -> None:
+        calls.append((args, cwd))
+        if args[1] == "run":
+            out = Path(args[-1])
+            out.mkdir()
+            (out / "index.html").write_text((cwd / "src" / "page.ts").read_text())
+
+    return run
+
+
+def test_page_key_follows_the_sources_and_not_what_bun_fetched(tmp_path: Path):
+    source = _source(tmp_path / "viewer")
+    key = viewer.page_key(source)
+    (source / "node_modules" / "dep" / "index.js").write_text("// fetched again")
+    assert viewer.page_key(source) == key
+    (source / "src" / "page.ts").write_text("export const changed = 1;")
+    assert viewer.page_key(source) != key
+
+
+def test_built_page_builds_once_per_source_state(tmp_path: Path):
+    """The first call installs and builds in a copy of the sources; a
+    second is answered from the cache; changed sources build again,
+    beside the page they replaced."""
+    source = _source(tmp_path / "viewer", "first")
+    cache = tmp_path / "cache"
+    calls: list[tuple[list[str], Path]] = []
+    bun = _fake_bun(calls)
+
+    first = viewer.built_page(source, cache, bun)
+    assert (first / "index.html").read_text() == "first"
+    assert [args[:2] for args, _ in calls] == [["bun", "install"], ["bun", "run"]]
+    assert all(source not in cwd.parents and cwd != source for _, cwd in calls)
+
+    assert viewer.built_page(source, cache, bun) == first
+    assert len(calls) == 2
+
+    (source / "src" / "page.ts").write_text("second")
+    second = viewer.built_page(source, cache, bun)
+    assert second != first
+    assert (second / "index.html").read_text() == "second"
+    assert (first / "index.html").read_text() == "first"
+    assert {p.name for p in cache.iterdir()} == {first.name, second.name}
+
+
+def test_built_page_failed_build_leaves_no_page(tmp_path: Path):
+    source = _source(tmp_path / "viewer")
+    cache = tmp_path / "cache"
+
+    def no_bun(_args: list[str], **_kwargs: object) -> None:
+        raise FileNotFoundError("bun")
+
+    with pytest.raises(FileNotFoundError):
+        viewer.built_page(source, cache, no_bun)
+    assert not any(cache.iterdir())

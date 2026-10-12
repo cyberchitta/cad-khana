@@ -1,6 +1,7 @@
 import json
 import re
 import runpy
+import subprocess
 import traceback
 from collections.abc import Callable
 from dataclasses import asdict
@@ -200,11 +201,14 @@ def _run_script(
         raise typer.Exit(code=1)
 
 
+Verb = Callable[[Assembly, Path], object]
+
+
 def _run_target(
     spec: str,
     out: Path | None,
     command: str,
-    verb: Callable[[Assembly, Path], object],
+    verb: Verb,
 ) -> None:
     """Import a target's module, resolve one member, run one verb.
 
@@ -289,7 +293,7 @@ def view(
         typer.Option(
             "--only",
             help=(
-                "Push only this dotted part or sub-assembly path and "
+                "Show only this dotted part or sub-assembly path and "
                 "everything under it (repeatable)."
             ),
         ),
@@ -309,37 +313,88 @@ def view(
         typer.Option(
             "--page",
             help=(
-                "Write a static viewer page into this directory instead of "
-                "pushing to the OCP viewer."
+                "Write the viewer page into this directory instead of "
+                "`page/` under --out."
             ),
         ),
     ] = None,
+    push: Annotated[
+        bool,
+        typer.Option(
+            "--push",
+            help=(
+                "Push to a listening OCP viewer instead of writing a page "
+                "(needs the `ocp` extra)."
+            ),
+        ),
+    ] = False,
 ) -> None:
-    """Import a module and push its assembly to the OCP viewer, nested
-    by sub-assembly, or write it as a static page. An unknown path
-    exits 2."""
+    """Import a module and write its assembly as a static viewer page,
+    nested by sub-assembly, or push it to an OCP viewer. An unknown
+    path exits 2, and so does a page that cannot be built."""
     selection = (tuple(only or ()), tuple(hide or ()))
-    if page is not None and not (viewer.PAGE / "index.html").is_file():
-        typer.echo(
-            "error: the viewer page is not built — run `bun install && "
-            f"bun run build` in {viewer.PAGE.parents[2] / 'viewer'}",
-            err=True,
-        )
+    if push and page is not None:
+        typer.echo("error: --push writes no page; give it or --page", err=True)
         raise typer.Exit(code=2)
     _run_target(
         target,
         out,
         "view",
-        (lambda a, _out: viewer.push(a, *selection))
-        if page is None
-        else (lambda a, _out: _write_page(a, Path.cwd() / page, *selection)),
+        _pusher(*selection) if push else _pager(page, *selection),
     )
 
 
+def _pusher(only: tuple[str, ...], hide: tuple[str, ...]) -> Verb:
+    """The push, or exit 2 where ``ocp_vscode`` is not installed: it is
+    the `ocp` extra, so the module that needs it is imported here."""
+    try:
+        import cad_khana.push as ocp
+    except ImportError as exc:
+        typer.echo(
+            f"error: --push needs the OCP viewer client ({exc}); "
+            "install `cad-khana[ocp]`",
+            err=True,
+        )
+        raise typer.Exit(code=2) from None
+    return lambda a, _out: ocp.push(a, only, hide)
+
+
+def _pager(page: Path | None, only: tuple[str, ...], hide: tuple[str, ...]) -> Verb:
+    built = _built_page()
+    return lambda a, out: _write_page(
+        a, built, out / "page" if page is None else Path.cwd() / page, only, hide
+    )
+
+
+def _built_page() -> Path:
+    """The viewer page, built here if these sources never were, before
+    the target is imported: a machine that cannot build it has run
+    nothing."""
+    try:
+        return viewer.built_page()
+    except FileNotFoundError as exc:
+        typer.echo(
+            f"error: the viewer page could not be built ({exc}). `--page` "
+            "builds it with bun the first time: https://bun.sh",
+            err=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        typer.echo(
+            f"error: building the viewer page failed: {' '.join(exc.cmd)}\n"
+            f"{exc.stderr}",
+            err=True,
+        )
+    raise typer.Exit(code=2)
+
+
 def _write_page(
-    assembly: Assembly, out: Path, only: tuple[str, ...], hide: tuple[str, ...]
+    assembly: Assembly,
+    built: Path,
+    out: Path,
+    only: tuple[str, ...],
+    hide: tuple[str, ...],
 ) -> None:
-    for path in viewer.write_page(assembly, out, only, hide):
+    for path in viewer.write_page(assembly, built, out, only, hide):
         typer.echo(str(path))
 
 
@@ -468,7 +523,8 @@ DiagArg = Annotated[
 
 @app.command()
 def status() -> None:
-    """Print environment + viewer reachability as JSON; exit nonzero if degraded."""
+    """Print the environment as JSON; exit nonzero if degraded (no bun,
+    so `khana view` cannot build its page)."""
     report = environment.probe()
     typer.echo(json.dumps(asdict(report), indent=2))
     if report.status != "ok":
