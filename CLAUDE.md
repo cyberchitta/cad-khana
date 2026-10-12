@@ -57,7 +57,12 @@ every `bpy` import is function-local (`tests/render/test_isolation.py`).
   one needs: camera, light, material, motion. Anything else is Blender's.
 - Not a GUI. The VS Code extension is a human convenience, documented in
   `references/cli.md`. The tool doesn't manage or depend on it at runtime beyond the
-  `ocp_vscode` Python client library.
+  `ocp_vscode` Python client library. **The one exception is the viewer
+  page** (`viewer/`, owner, 2026-10-12): a static page `khana view --page`
+  writes, showing an `Assembly` in three-cad-viewer and telling a host
+  that frames it which part and view the human is pointing at. It is a
+  viewer and a pointer, never an editor: nothing in it changes a design
+  or runs a check.
 - Not a style enforcer for user scripts. The library accepts any Build123d
   `Part`. Recommended style for user-authored scripts (functional patterns,
   pure part functions, declarative assemblies) is a SKILL.md concern, not a
@@ -96,6 +101,10 @@ cad-khana/
   CLAUDE.md                   # this file
   _notes/                     # working notes, gitignored — see below
   pyproject.toml              # uv-managed, entry point: khana = cad_khana.cli:main
+  viewer/                     # the viewer page, TypeScript, built with bun
+    src/page.ts               # three-cad-viewer + the host messages (show, set, get)
+    src/accepts.yaml          # those messages, with examples — ships beside the page
+    build.ts                  # bundles into src/cad_khana/_page/ (gitignored)
   skills/
     cad-khana/
       SKILL.md                # the index: file kinds, what a green does not
@@ -147,7 +156,8 @@ cad-khana/
         tessellation.py       # render-mesh tolerances
       export.py               # STL, STEP (used by `khana export`)
       draw.py                 # HLR engineering drawings (PNG + SVG)
-      viewer.py               # ocp_vscode push (used by `khana view`)
+      viewer.py               # ocp_vscode push, and the static page (`khana view`)
+      _page/                  # the built viewer page — generated, gitignored, in the wheel
       diff.py                 # dispatches on file kind (mechanism/printability)
       selection.py            # subset of one run: claim globs, tree paths
       show.py                 # reads one diagnostics JSON: summary, filters, groups
@@ -240,6 +250,7 @@ effect.
 khana check  <target> [--only <glob>]...   # diagnostics + assertions, write mechanism.json
 khana export <target>           # STL + STEP
 khana view   <target> [--only|--hide <path>]...   # push to OCP viewer, nested by sub-assembly
+khana view   <target> --page <dir>      # write a static viewer page instead of pushing
 khana draw   <target> --format png|svg|both   # orthographic/iso HLR line-art
 khana run    <script>           # execute an orchestration script
 khana diff <old> <new>          # diff two diagnostics JSON files
@@ -663,6 +674,9 @@ group.
   itself does not import it; user scripts do.
 - `ocp_vscode` — viewer client (Python side only; VS Code extension is a
   human prerequisite, documented separately)
+- `ocp_tessellate` — the tessellator behind `ocp_vscode`, imported
+  directly by `viewer.shapes()` for the page's `shapes.json`. It was
+  already installed through `ocp_vscode`; declared because we call it.
 - `pygltflib` — JSON-level glTF read/write. Used by
   `export.py::export_animated_glb` to inject animation samplers onto
   an existing GLB.
@@ -736,7 +750,9 @@ for end-user install, `uvx khana ...` for ephemeral use.
   real usage surfaces the patterns. Build123d primitives + named assembly
   parts are enough to start.
 - Don't build a constraint solver.
-- Don't add a web UI or a chat interface.
+- Don't add a web UI or a chat interface. The viewer page (see Non-goals)
+  is the one page there is; it shows and points, and grows no controls
+  that edit.
 - Don't make `core/` depend on `typer` or any CLI framework.
 - Don't enforce user-script style in the library API. Functional patterns
   for user scripts are a SKILL.md recommendation, not a runtime constraint.
