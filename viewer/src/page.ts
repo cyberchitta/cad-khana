@@ -96,10 +96,12 @@ const shala = (message: object): void => host?.postMessage({ shala: 1, ...messag
 const narrow = (): boolean => window.innerWidth < NARROW;
 // The panes dock beside the view only when both show and there is room.
 const floating = (frame: Frame): boolean => narrow() || !(frame.tree && frame.info);
-const size = (frame: Frame) => ({
+// `bar` is the height the toolbar itself gives up when hidden: less than
+// TOOLBAR, whose margins stay, and the status line sits below them.
+const size = (frame: Frame, bar = TOOLBAR) => ({
   cadWidth: Math.max(window.innerWidth - (floating(frame) ? 0 : TREE + 14), 240),
   treeWidth: TREE,
-  height: Math.max(window.innerHeight - STATUS - (frame.toolbar ? TOOLBAR : 0), 160),
+  height: Math.max(window.innerHeight - STATUS - TOOLBAR + (frame.toolbar ? 0 : bar), 160),
   glass: floating(frame),
 });
 const leaves = (node: Shapes): string[] => (node.parts ? node.parts.flatMap(leaves) : [node.id]);
@@ -165,8 +167,9 @@ async function main(): Promise<void> {
   viewer.render(shapes, {}, { up: "Z" });
 
   const toolbar = document.querySelector(".tcv_cad_toolbar") as HTMLElement;
+  const bar = toolbar.getBoundingClientRect().height;
   const layout = (): void => {
-    const { cadWidth, treeWidth, height, glass } = size(frame);
+    const { cadWidth, treeWidth, height, glass } = size(frame, bar);
     // The renderer's own `tools` switch takes the panes with the toolbar.
     toolbar.style.display = frame.toolbar ? "" : "none";
     viewer.resizeCadView(cadWidth, treeWidth, height, glass);
