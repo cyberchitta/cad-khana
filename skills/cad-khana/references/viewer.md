@@ -47,8 +47,24 @@ khana viewer panes --no-tree --no-info            # the page's own panes and too
 - **A command the page cannot do in full changes nothing** and exits 1
   with the reason: an unknown part, a page that is not open. Exit 2 is
   a usage error, or a host that is not running.
-- The camera has no option here: `show` turns the view only by a
-  preset direction.
+- **A direction frames what is shown, roughly.** It turns the view,
+  aims at the parts that are not hidden and zooms to them, so isolate
+  first and turn in the same command (`--only … --direction front`).
+  The framing is a starting point: the owner orbits and zooms by hand
+  from there. Nothing else moves the camera. Hiding, selecting and the
+  toggles leave a view the owner set by hand where it is, so do not
+  add a direction to a command unless turning the view is the point.
+- **The owner zooms with the mouse wheel or trackpad and orbits by
+  dragging**; the page has no zoom button. Its status line shows the
+  picked part and the zoom (`f2.ramp · zoom 2.43`), the same number as
+  `view.camera.zoom`, so the owner can read you a zoom they like.
+- The camera has no option of its own here: an exact camera comes
+  from the owner's pick and goes back through the host (below).
+- **The toolbar is hidden unless asked for** (`khana viewer panes
+  --toolbar`). Its buttons are the view toggles and preset directions
+  these commands set, with the renderer's reset and fit. The owner
+  does not use it: when they want the view changed, change it for them
+  with a command, and do not send them to a button.
 
 ## What the page cannot know
 

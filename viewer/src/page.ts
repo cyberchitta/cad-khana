@@ -23,7 +23,8 @@
 // `part` is the dotted tree path `khana check` names the part by. A `view`
 // is what decides the picture: the camera, the toolbar's toggles, and which
 // parts are hidden. A `show` may give any subset of it, and `direction` in
-// place of a camera.
+// place of a camera: a direction also aims at and zooms to the parts shown.
+// The toolbar starts hidden.
 //
 // A host other than Shala that frames the page posts the same bodies bare,
 // hears {khana, done: {ok, message?, result?}}, {khana, ready: {parts}} once
@@ -66,6 +67,18 @@ interface Done {
   result?: object;
 }
 type Handle = (body: unknown) => Done;
+// The renderer's bounding box, as far as this page uses it: its three.js
+// methods are not in the types it ships.
+interface Box {
+  clone(): Box;
+  makeEmpty(): Box;
+  isEmpty(): boolean;
+  expandByObject(group: object): Box;
+  max_dist_from_center(): number;
+}
+interface Group {
+  getVisibility?: () => boolean;
+}
 interface Origin {
   target: string;
   path: string | null;
@@ -74,7 +87,7 @@ interface Origin {
 interface Reveal {
   state: Show | null;
 }
-type Change = { lastPick?: { new: PickInfo | null } };
+type Change = { lastPick?: { new: PickInfo | null }; zoom?: { new: number } };
 
 const PROTOCOL = 2; // cad_khana/drive.py carries the same number
 const STATE_LIMIT = 32000; // Shala takes a selection's state up to 32 KB
@@ -85,9 +98,16 @@ const NARROW = 700; // below this the tree and info panes float over the view, c
 const SHOWN: VisibilityState = [1, 1];
 const HIDDEN: VisibilityState = [0, 0];
 
+// The status line: what the page last had to say, then the zoom, which the
+// renderer shows nowhere.
 const status = document.getElementById("status") as HTMLElement;
+const line = { text: "", zoom: null as number | null };
+const write = (): void => {
+  status.textContent = line.zoom === null ? line.text : `${line.text} · zoom ${line.zoom.toFixed(2)}`;
+};
 const say = (text: string): void => {
-  status.textContent = text;
+  line.text = text;
+  write();
 };
 const host = window.parent === window ? null : window.parent;
 const tell = (message: object): void => host?.postMessage({ khana: PROTOCOL, ...message }, "*");
@@ -133,6 +153,10 @@ async function main(): Promise<void> {
   let picked: string | null = null;
   let forHost = false; // a part being selected for a host, not by the owner
   const onChange = (change: Change): void => {
+    if (change.zoom) {
+      line.zoom = change.zoom.new;
+      write();
+    }
     const pick = change.lastPick?.new;
     if (!pick) return;
     picked = dotted(`${pick.path}/${pick.name}`);
@@ -158,7 +182,7 @@ async function main(): Promise<void> {
     });
   };
 
-  let frame: Frame = { tree: !narrow(), info: !narrow(), toolbar: true };
+  let frame: Frame = { tree: !narrow(), info: !narrow(), toolbar: false };
   const options = { ...size(frame), theme: "browser", pinning: false, up: "Z" };
   type DisplayOptions = ConstructorParameters<typeof Display>[1];
   type ViewerOptions = ConstructorParameters<typeof Viewer>[1];
@@ -204,6 +228,24 @@ async function main(): Promise<void> {
     };
   };
 
+  // A turned view is aimed at the parts that are shown and zoomed to them,
+  // roughly: the renderer centres on what is visible and leaves the zoom, so
+  // the zoom is the whole assembly's extent over the shown parts'. Only a
+  // direction does this, so a view the owner set by hand is never moved by a
+  // command that did not ask to turn it.
+  const frameShown = (): void => {
+    const whole = viewer.bbox as unknown as Box | null;
+    if (whole === null) return;
+    const shown = whole.clone().makeEmpty();
+    for (const group of Object.values(viewer.rendered.nestedGroup.groups) as Group[]) {
+      if (group.getVisibility?.()) shown.expandByObject(group);
+    }
+    const extent = shown.isEmpty() ? 0 : shown.max_dist_from_center();
+    if (extent === 0) return;
+    viewer.centerVisibleObjects();
+    viewer.setCameraZoom(whole.max_dist_from_center() / extent);
+  };
+
   // What a `show` asks for that this page cannot give, or null.
   const refusal = ({ part, view: to }: Show): string | null => {
     const unknown = [...(part === undefined ? [] : [part]), ...(to?.hidden ?? [])].filter((p) => !parts.includes(p));
@@ -223,7 +265,10 @@ async function main(): Promise<void> {
       const hidden = new Set(to.hidden);
       for (const part of parts) viewer.setState(slashed(part), hidden.has(part) ? HIDDEN : SHOWN);
     }
-    if (to.direction !== undefined) viewer.presetCamera(to.direction);
+    if (to.direction !== undefined) {
+      viewer.presetCamera(to.direction);
+      frameShown();
+    }
     const c = to.camera;
     if (c) viewer.setCameraLocationSettings(c.position, c.quaternion, c.target, c.zoom);
   };
