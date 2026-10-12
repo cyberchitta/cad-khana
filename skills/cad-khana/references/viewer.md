@@ -71,8 +71,8 @@ khana viewer panes --no-tree --no-info            # the page's own panes and too
 - **A command the page cannot do in full changes nothing** and exits 1
   with the reason: an unknown part, a page that is not open. Exit 2 is
   a usage error, or Shala not running.
-- **A part you select becomes the owner's selection**, as if they had
-  picked it.
+- **A part you select is not the owner's selection.** `shala selection`
+  still reads what the owner last picked themselves.
 - The camera has no option here. A camera comes from a selection and
   goes back through `shala reveal --state`.
 

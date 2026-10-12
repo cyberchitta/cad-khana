@@ -6,6 +6,8 @@
 //   with the part and the view as `state`, and the page declares the origin's
 //   file in `shows`. So a pick is the owner's selection, and a
 //   {shala: 1, reveal} carrying that state puts the part and the view back.
+//   Only the owner's own pick is posted: a part a command or a reveal
+//   selects is not what the owner selected.
 // - The `khana viewer` commands (cad_khana/drive.py), whose bodies arrive
 //   wrapped as {shala: 1, tell: {id, body}} and are answered with
 //   {shala: 1, told: {id, ok, message?, result?}}.
@@ -75,7 +77,7 @@ interface Reveal {
 type Change = { lastPick?: { new: PickInfo | null } };
 
 const PROTOCOL = 2; // cad_khana/drive.py carries the same number
-const STATE_LIMIT = 4000; // Shala takes a selection's state under 4 KB
+const STATE_LIMIT = 32000; // Shala takes a selection's state up to 32 KB
 const TREE = 260;
 const TOOLBAR = 54;
 const STATUS = 22;
@@ -127,13 +129,14 @@ async function main(): Promise<void> {
   const parts = leaves(shapes).map(dotted);
 
   let picked: string | null = null;
+  let forHost = false; // a part being selected for a host, not by the owner
   const onChange = (change: Change): void => {
     const pick = change.lastPick?.new;
     if (!pick) return;
     picked = dotted(`${pick.path}/${pick.name}`);
     say(picked);
     tell({ pick: { part: picked, view: view() } });
-    point(picked);
+    if (!forHost) point(picked);
   };
 
   // A pick as the owner's selection in Shala. A hidden list too long for
@@ -229,7 +232,12 @@ async function main(): Promise<void> {
     if (asked.part !== undefined) {
       const id = slashed(asked.part);
       const cut = id.lastIndexOf("/");
-      viewer.handlePick(id.slice(0, cut), id.slice(cut + 1), false, false, false, null);
+      forHost = true;
+      try {
+        viewer.handlePick(id.slice(0, cut), id.slice(cut + 1), false, false, false, null);
+      } finally {
+        forHost = false;
+      }
     }
     return { ok: true };
   };
