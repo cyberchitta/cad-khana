@@ -1,8 +1,11 @@
+import json
 from pathlib import Path
 
 import pytest
+from build123d import Box
 
 from cad_khana import viewer
+from cad_khana.mechanism.assembly import Assembly
 
 
 def _source(root: Path, script: str = "export {};") -> Path:
@@ -72,3 +75,53 @@ def test_built_page_failed_build_leaves_no_page(tmp_path: Path):
     with pytest.raises(FileNotFoundError):
         viewer.built_page(source, cache, no_bun)
     assert not any(cache.iterdir())
+
+
+def test_defining_line_prefers_the_definition_to_a_mention():
+    source = (
+        "# assembly is built below\n"
+        "from parts import build_lid\n"
+        "def build_unit(\n    lift: float = 1.0,\n) -> Assembly:\n    return build_lid()\n"
+        "assembly: Assembly = build_unit()\n"
+    )
+    assert viewer.defining_line(source, "build_unit") == "def build_unit("
+    assert (
+        viewer.defining_line(source, "assembly") == "assembly: Assembly = build_unit()"
+    )
+    assert viewer.defining_line(source, "build_lid") == "from parts import build_lid"
+    assert viewer.defining_line(source, "build") is None
+
+
+def test_origin_is_relative_to_the_repository(tmp_path: Path):
+    """The target reads as `khana view` would be given it from the
+    repository root; outside one there is nothing to point at."""
+    (tmp_path / "repo" / ".git").mkdir(parents=True)
+    module = tmp_path / "repo" / "cad" / "unit.py"
+    module.parent.mkdir()
+    module.write_text("def build_unit() -> Assembly:\n    ...\n")
+    assert viewer.origin(module, "build_unit", "build_unit") == viewer.Origin(
+        "cad/unit.py:build_unit", "cad/unit.py", "def build_unit() -> Assembly:"
+    )
+    assert viewer.origin(module, "assembly") == viewer.Origin(
+        "cad/unit.py", "cad/unit.py", None
+    )
+    loose = tmp_path / "loose.py"
+    loose.write_text("assembly = 1\n")
+    assert viewer.origin(loose, "assembly") == viewer.Origin(str(loose))
+
+
+def test_write_page_says_where_the_assembly_was_declared(tmp_path: Path):
+    built = tmp_path / "built"
+    built.mkdir()
+    (built / "index.html").write_text("<!doctype html>")
+    origin = viewer.Origin("cad/unit.py:build_unit", "cad/unit.py", "def build_unit(")
+    out = tmp_path / "page"
+    written = viewer.write_page(
+        Assembly().with_part("lid", Box(1, 1, 1)), built, out, origin=origin
+    )
+    assert {p.name for p in written} == {"index.html", "shapes.json", "page.json"}
+    assert json.loads((out / "page.json").read_text()) == {
+        "target": "cad/unit.py:build_unit",
+        "path": "cad/unit.py",
+        "anchor": "def build_unit(",
+    }

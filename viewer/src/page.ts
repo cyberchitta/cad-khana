@@ -1,21 +1,31 @@
 // The khana viewer page: three-cad-viewer over the shapes.json beside it.
+// page.json beside it says where the assembly was declared (its `origin`).
 //
-// A host that frames this page hears {khana: 1, ready: {parts}} once, then
-// {khana: 1, pick: {part, view}} for each part picked. It may post
-// {khana: 1, show: {part?, view?}} to put a pick or a view back, or
-// {khana: 1, set: {tree?, info?, toolbar?}} to show or hide the page's own
-// panes and toolbar, or {khana: 1, get: [...]} to ask what the page holds.
-// Each is answered with {khana: 1, done: {ok, message?, result?}}, and one
-// the page cannot do in full changes nothing. accepts.yaml beside this page
-// lists the bodies with examples.
+// In Shala the page is driven two ways, and neither by hand:
+// - Pointing. A pick posts {shala: 1, select} anchored at the origin's line,
+//   with the part and the view as `state`, and the page declares the origin's
+//   file in `shows`. So a pick is the owner's selection, and a
+//   {shala: 1, reveal} carrying that state puts the part and the view back.
+// - The `khana viewer` commands (cad_khana/drive.py), whose bodies arrive
+//   wrapped as {shala: 1, tell: {id, body}} and are answered with
+//   {shala: 1, told: {id, ok, message?, result?}}.
+//
+// A body is {khana: PROTOCOL} and exactly one of
+//   show: {part?, view?}            select a part, set any of the view
+//   set:  {tree?, info?, toolbar?}  show or hide the page's own panes
+//   get:  [parts|picked|view|frame] ask what the page holds
+// One the page cannot do in full changes nothing. Every answer's `result`
+// names the origin's target. A body with another protocol number is refused:
+// the command and the page were built apart.
 //
 // `part` is the dotted tree path `khana check` names the part by. A `view`
 // is what decides the picture: the camera, the toolbar's toggles, and which
 // parts are hidden. A `show` may give any subset of it, and `direction` in
 // place of a camera.
 //
-// Shala carries the same bodies wrapped: {shala: 1, tell: {id, body}} in,
-// {shala: 1, told: {id, ok, message?, result?}} out.
+// A host other than Shala that frames the page posts the same bodies bare,
+// hears {khana, done: {ok, message?, result?}}, {khana, ready: {parts}} once
+// and {khana, pick: {part, view}} for each pick.
 import { Display, Viewer, version } from "three-cad-viewer";
 import type { PickInfo, Shapes, VisibilityState } from "three-cad-viewer";
 
@@ -54,8 +64,18 @@ interface Done {
   result?: object;
 }
 type Handle = (body: unknown) => Done;
+interface Origin {
+  target: string;
+  path: string | null;
+  anchor: string | null;
+}
+interface Reveal {
+  state: Show | null;
+}
 type Change = { lastPick?: { new: PickInfo | null } };
 
+const PROTOCOL = 2; // cad_khana/drive.py carries the same number
+const STATE_LIMIT = 4000; // Shala takes a selection's state under 4 KB
 const TREE = 260;
 const TOOLBAR = 54;
 const STATUS = 22;
@@ -68,7 +88,8 @@ const say = (text: string): void => {
   status.textContent = text;
 };
 const host = window.parent === window ? null : window.parent;
-const tell = (message: object): void => host?.postMessage({ khana: 1, ...message }, "*");
+const tell = (message: object): void => host?.postMessage({ khana: PROTOCOL, ...message }, "*");
+const shala = (message: object): void => host?.postMessage({ shala: 1, ...message }, "*");
 
 const narrow = (): boolean => window.innerWidth < NARROW;
 // The panes dock beside the view only when both show and there is room.
@@ -82,16 +103,23 @@ const size = (frame: Frame) => ({
 const leaves = (node: Shapes): string[] => (node.parts ? node.parts.flatMap(leaves) : [node.id]);
 
 // A message that comes before the assembly has drawn is answered, not dropped.
-let handle: Handle = () => ({ ok: false, message: "the assembly has not drawn yet; send it again" });
+const early = (): Done => ({ ok: false, message: "the assembly has not drawn yet; send it again" });
+let handle: Handle = early;
+let reveal: (asked: Reveal) => Done = early;
 window.addEventListener("message", (event: MessageEvent) => {
   if (event.source !== host) return;
-  const told = event.data?.shala === 1 ? event.data.tell : undefined;
-  if (told) return host?.postMessage({ shala: 1, told: { id: told.id, ...handle(told.body) } }, "*");
-  if (event.data?.khana === 1) tell({ done: handle(event.data) });
+  const sent: { tell?: { id: unknown; body: unknown }; reveal?: Reveal } = event.data?.shala === 1 ? event.data : {};
+  if (sent.tell) return shala({ told: { id: sent.tell.id, ...handle(sent.tell.body) } });
+  if (sent.reveal) return shala({ revealed: reveal(sent.reveal) });
+  if (typeof event.data?.khana === "number") tell({ done: handle(event.data) });
 });
+
+const bytes = (value: unknown): number => new TextEncoder().encode(JSON.stringify(value)).length;
+const unknownOrigin: Origin = { target: "", path: null, anchor: null };
 
 async function main(): Promise<void> {
   const shapes = (await (await fetch("./shapes.json")).json()) as Shapes;
+  const origin = (await fetch("./page.json").then((found) => (found.ok ? found.json() : unknownOrigin), () => unknownOrigin)) as Origin;
   const root = shapes.id;
   // "/assembly/unit/cube" <-> "unit.cube"
   const dotted = (id: string): string => id.slice(root.length + 1).replaceAll("/", ".");
@@ -105,6 +133,24 @@ async function main(): Promise<void> {
     picked = dotted(`${pick.path}/${pick.name}`);
     say(picked);
     tell({ pick: { part: picked, view: view() } });
+    point(picked);
+  };
+
+  // A pick as the owner's selection in Shala. A hidden list too long for
+  // the state is left out of it, and the label says so.
+  const point = (part: string): void => {
+    if (origin.path === null || origin.anchor === null) return;
+    const whole = { part, view: view() };
+    const { hidden, ...rest } = whole.view;
+    const fits = bytes(whole) < STATE_LIMIT;
+    shala({
+      select: {
+        path: origin.path,
+        anchor: origin.anchor,
+        label: fits ? part : `${part} (${hidden?.length} hidden parts not in state)`,
+        state: fits ? whole : { part, view: rest },
+      },
+    });
   };
 
   let frame: Frame = { tree: !narrow(), info: !narrow(), toolbar: true };
@@ -205,9 +251,7 @@ async function main(): Promise<void> {
     return { ok: true, result: Object.fromEntries((asked as (typeof GETS)[number][]).map((key) => [key, all[key]])) };
   };
 
-  handle = (body) => {
-    const asked = body as { khana?: number; show?: Show; set?: Partial<Frame>; get?: unknown } | null;
-    if (asked?.khana !== 1) return { ok: false, message: "not a khana message: no khana: 1" };
+  const does = (asked: { show?: Show; set?: Partial<Frame>; get?: unknown }): Done => {
     const verbs = Object.keys(asked).filter((key) => key !== "khana");
     const [verb] = verbs;
     if (verbs.length !== 1) return { ok: false, message: `one of show, set, get; got ${verbs.join(", ") || "none"}` };
@@ -217,8 +261,26 @@ async function main(): Promise<void> {
     return { ok: false, message: `one of show, set, get; got ${verb}` };
   };
 
+  handle = (body) => {
+    const asked = body as { khana?: unknown; show?: Show; set?: Partial<Frame>; get?: unknown } | null;
+    if (asked?.khana !== PROTOCOL)
+      return { ok: false, message: `this page takes khana: ${PROTOCOL} and was sent ${JSON.stringify(asked?.khana)}; the page and the khana command were built apart, so run \`khana view\` again to rewrite the page` };
+    const done = does(asked);
+    return done.ok ? { ...done, result: { target: origin.target, ...done.result } } : done;
+  };
+
+  // A selection's state put back: the part and whatever of the view it carried.
+  reveal = ({ state }) => {
+    if (state === null) return { ok: true, message: `${origin.target}: ${parts.length} parts; no state to put back` };
+    const done = show(state);
+    if (!done.ok) return done;
+    const put = [...(state.part === undefined ? [] : [`part ${state.part}`]), ...Object.keys(state.view ?? {})];
+    return { ok: true, message: `${origin.target}: put back ${put.join(", ") || "nothing"}` };
+  };
+
   say(`${parts.length} parts · three-cad-viewer ${version} · double-click a part to name it`);
   tell({ ready: { parts } });
+  if (origin.path !== null) shala({ shows: [origin.path] });
   Object.assign(window, { khana: { viewer, parts, view, handle } });
 }
 

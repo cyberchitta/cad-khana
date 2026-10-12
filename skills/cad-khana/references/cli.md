@@ -113,10 +113,10 @@ target's output directory (the `--out` rule above), or into `--page
 app that frames pages, can host the folder. It needs a server: opened
 as a `file://` URL the page loads nothing. The page shows the tree by
 sub-assembly, and a double-click on a part puts its dotted tree path,
-the name `khana check` uses, on the status line. `accepts.yaml` beside
-`index.html` lists the messages the page takes from a host that frames
-it (select a part, set the view, hide parts, show or hide its panes)
-and what it answers, with an example of each.
+the name `khana check` uses, on the status line. `page.json` beside
+`index.html` records the target the page was written from. With the
+page open in Shala, the owner's pick is their selection and `khana
+viewer` asks the page what it shows or changes it: `viewer.md`.
 
 The first `khana view` on a machine builds the page with `bun`
 (https://bun.sh), fetching its renderer from the npm registry, and

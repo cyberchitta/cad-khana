@@ -335,6 +335,7 @@ load that file before proposing a feature.
 | `references/render.md` | a photo-real render, a PBR GLB or an mp4 of an assembly, or editing a script that imports `cad_khana.render` — needs the optional `render` extra (Blender) | `Scene`, `render`, `render_animation`, `render_animation_from_glb`, `FixedPose`, the PBR `export_glb` |
 | `references/diagnostics.md` | reading any JSON field beyond `status`, `passed`, `skipped_counts` and `warnings` |  |
 | `references/drawings.md` | `khana draw` — which view answers which question |  |
+| `references/viewer.md` | the owner pointing at a part or a view in the viewer page ("this part", "from here"), or showing them one — `shala selection`, `khana viewer` |  |
 | `references/build123d_quickref.md` | selector operators, algebraic vs Builder mode, type-conversion shortcuts |  |
 | `references/standard_parts.md` | any standard hardware (bd_warehouse) |  |
 | `references/examples/pin_hinge/` | a worked three-part mechanism with assertions and `inspect()` calls |  |

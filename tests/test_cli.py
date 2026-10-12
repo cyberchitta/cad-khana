@@ -13,7 +13,7 @@ from typer.testing import (
     Result,  # pyright: ignore[reportPrivateImportUsage]  (click's until typer 0.26 vendored it)
 )
 
-from cad_khana import environment, push, viewer
+from cad_khana import drive, environment, push, viewer
 from cad_khana.cli import app
 from cad_khana.mechanism.diagnostics import SCHEMA_VERSION
 
@@ -1750,7 +1750,12 @@ def test_view_page_writes_a_static_viewer(
         app, ["view", str(module), "--page", str(page), "--hide", "lid"]
     )
     assert result.exit_code == 0, result.output
-    assert {"index.html", "shapes.json"} == {p.name for p in page.iterdir()}
+    assert {"index.html", "shapes.json", "page.json"} == {
+        p.name for p in page.iterdir()
+    }
+    assert json.loads((page / "page.json").read_text())["target"].endswith(
+        "assembly.py"
+    )
     shapes = json.loads((page / "shapes.json").read_text())
     root = shapes["id"]
     assert [i.removeprefix(root) for i in _shape_ids(shapes)] == [
@@ -1780,7 +1785,9 @@ def test_view_writes_the_page_under_out_by_default(
     result = runner.invoke(app, ["view", str(module)])
     assert result.exit_code == 0, result.output
     page = tmp_path / "outputs" / "page"
-    assert {"index.html", "shapes.json"} == {p.name for p in page.iterdir()}
+    assert {"index.html", "shapes.json", "page.json"} == {
+        p.name for p in page.iterdir()
+    }
     assert not pushed
 
 
@@ -1839,3 +1846,133 @@ def test_view_page_failed_build_is_a_usage_error_with_buns_output(
     assert result.exit_code == 2
     assert "lockfile had changes" in result.output
     assert not (tmp_path / "outputs").exists()
+
+
+def _page(
+    monkeypatch: pytest.MonkeyPatch, answers: dict[str, drive.Answer | Exception]
+) -> list[tuple[str, drive.Body]]:
+    """Stands in for the carrier: answers each body by its verb."""
+    asked: list[tuple[str, drive.Body]] = []
+
+    def ask(project: str, body: drive.Body) -> drive.Answer:
+        asked.append((project, body))
+        answer = answers[next(k for k in body if k != "khana")]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(drive, "ask", ask)
+    return asked
+
+
+_PARTS = drive.Answer(
+    {"target": "cad/a.py:build", "parts": ["lid", "unit.cube", "unit.rod"]},
+    build="2026-10-12 19:02",
+)
+_DONE = drive.Answer({"target": "cad/a.py:build"})
+
+
+def test_viewer_parts_names_the_page_then_lists_its_parts(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    asked = _page(monkeypatch, {"get": _PARTS})
+    result = runner.invoke(app, ["viewer", "parts", "--project", "studs"])
+    assert result.exit_code == 0, result.output
+    assert result.output.splitlines() == [
+        "page: cad/a.py:build (build of 2026-10-12 19:02)",
+        "lid",
+        "unit.cube",
+        "unit.rod",
+    ]
+    assert asked == [("studs", drive.get("parts"))]
+
+
+def test_viewer_state_prints_what_the_page_shows(monkeypatch: pytest.MonkeyPatch):
+    shown = {"picked": "lid", "view": {"ortho": True}, "frame": {"tree": False}}
+    _page(monkeypatch, {"get": drive.Answer({"target": "cad/a.py", **shown})})
+    result = runner.invoke(app, ["viewer", "state", "--project", "studs"])
+    assert result.exit_code == 0, result.output
+    head, _, body = result.output.partition("\n")
+    assert head == "page: cad/a.py"
+    assert json.loads(body) == shown
+
+
+def test_viewer_show_resolves_hide_against_the_pages_own_parts(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    asked = _page(monkeypatch, {"get": _PARTS, "show": _DONE})
+    result = runner.invoke(
+        app,
+        ["viewer", "show", "lid", "--hide", "unit", "--direction", "top"]
+        + ["--transparent", "--project", "studs"],
+    )
+    assert result.exit_code == 0, result.output
+    assert asked[-1][1]["show"] == {
+        "part": "lid",
+        "view": {
+            "direction": "top",
+            "hidden": ["unit.cube", "unit.rod"],
+            "transparent": True,
+        },
+    }
+    assert "hidden: 2 parts" in result.output
+
+
+def test_viewer_show_all_hides_nothing_and_asks_once(monkeypatch: pytest.MonkeyPatch):
+    asked = _page(monkeypatch, {"show": _DONE})
+    result = runner.invoke(app, ["viewer", "show", "--all", "--project", "studs"])
+    assert result.exit_code == 0, result.output
+    assert [body["show"] for _, body in asked] == [{"view": {"hidden": []}}]
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["show"],
+        ["show", "--direction", "north"],
+        ["show", "--all", "--hide", "lid"],
+        ["show", "--hide", "lidd"],
+        ["panes"],
+    ],
+)
+def test_viewer_usage_errors_send_nothing_that_changes_the_page(
+    monkeypatch: pytest.MonkeyPatch, args: list[str]
+):
+    asked = _page(monkeypatch, {"get": _PARTS, "show": _DONE, "set": _DONE})
+    result = runner.invoke(app, ["viewer", *args, "--project", "studs"])
+    assert result.exit_code == 2, result.output
+    assert all("get" in body for _, body in asked)
+
+
+def test_viewer_panes_sets_only_the_panes_named(monkeypatch: pytest.MonkeyPatch):
+    asked = _page(monkeypatch, {"set": _DONE})
+    result = runner.invoke(
+        app, ["viewer", "panes", "--no-tree", "--toolbar", "--project", "studs"]
+    )
+    assert result.exit_code == 0, result.output
+    assert asked[0][1]["set"] == {"tree": False, "toolbar": True}
+
+
+def test_viewer_passes_a_refusal_on_and_exits_1(monkeypatch: pytest.MonkeyPatch):
+    _page(monkeypatch, {"show": drive.Refused("shala: no part lidd")})
+    result = runner.invoke(app, ["viewer", "show", "lidd", "--project", "studs"])
+    assert result.exit_code == 1
+    assert "no part lidd" in result.output
+
+
+def test_viewer_with_no_host_is_exit_2(monkeypatch: pytest.MonkeyPatch):
+    _page(monkeypatch, {"get": drive.Unreachable("shala: Shala is not running")})
+    result = runner.invoke(app, ["viewer", "parts", "--project", "studs"])
+    assert result.exit_code == 2
+    assert "not running" in result.output
+
+
+def test_viewer_outside_a_repository_asks_for_the_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    asked = _page(monkeypatch, {"get": _PARTS})
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["viewer", "parts"])
+    assert result.exit_code == 2
+    assert "--project" in result.output
+    assert not asked

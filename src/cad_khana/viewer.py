@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 from collections.abc import Callable
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from build123d import Compound, Shape
@@ -82,6 +85,45 @@ def shapes(
     return str(export_three_cad_viewer_js(None, root, names=[ROOT]))  # pyright: ignore[reportUnknownArgumentType]
 
 
+@dataclass(frozen=True)
+class Origin:
+    """Where a page's assembly was declared: the target as `khana view`
+    would be given it from the repository root, and the file and line a
+    host can point at for it. Outside a repository there is no root to
+    be relative to, so no ``path``; ``anchor`` is that line's own text,
+    which survives edits where a line number does not."""
+
+    target: str
+    path: str | None = None
+    anchor: str | None = None
+
+
+def defining_line(source: str, member: str) -> str | None:
+    """The line that defines ``member`` in ``source``, stripped: its
+    ``def`` or its assignment, else the first line that names it (an
+    import), else nothing."""
+    name = re.escape(member)
+    lines = tuple(line.strip() for line in source.splitlines())
+    defined = re.compile(rf"(async\s+)?def\s+{name}\s*\(|{name}\s*[:=]")
+    named = re.compile(rf"(?!#).*\b{name}\b")
+    return next(
+        (line for found in (defined, named) for line in lines if found.match(line)),
+        None,
+    )
+
+
+def origin(module: Path, member: str, factory: str | None = None) -> Origin:
+    """The origin of ``member`` of ``module``, addressed as ``factory``
+    when the target named one."""
+    file = module.resolve()
+    root = next((p for p in file.parents if (p / ".git").exists()), None)
+    suffix = "" if factory is None else f":{factory}"
+    if root is None:
+        return Origin(f"{module}{suffix}")
+    path = file.relative_to(root).as_posix()
+    return Origin(f"{path}{suffix}", path, defining_line(file.read_text(), member))
+
+
 def page_key(source: Path) -> str:
     """Names one state of the page's sources: every file but the
     packages bun fetched, by path and content."""
@@ -129,12 +171,18 @@ def write_page(
     out: Path,
     only: tuple[str, ...] = (),
     hide: tuple[str, ...] = (),
+    origin: Origin | None = None,
 ) -> tuple[Path, ...]:
     """A static page showing the selected parts: the files of the built
-    ``page`` and a ``shapes.json`` beside them. Any static file server
-    hosts it."""
+    ``page``, a ``shapes.json`` beside them, and a ``page.json`` saying
+    where the assembly was declared. Any static file server hosts it."""
     data = shapes(assembly, only, hide)
     out.mkdir(parents=True, exist_ok=True)
     copied = tuple(Path(shutil.copy(f, out)) for f in sorted(page.iterdir()))
-    (out / "shapes.json").write_text(data)
-    return (*copied, out / "shapes.json")
+    written = {
+        "shapes.json": data,
+        "page.json": json.dumps(asdict(origin or Origin(""))) + "\n",
+    }
+    for name, text in written.items():
+        (out / name).write_text(text)
+    return (*copied, *(out / name for name in written))

@@ -11,7 +11,7 @@ from typing import Annotated
 
 import typer
 
-from cad_khana import _failures, _paths, environment, viewer
+from cad_khana import _failures, _paths, drive, environment, viewer
 from cad_khana import draw as _draw
 from cad_khana.diff import NO_CHANGES
 from cad_khana.diff import diff as compute_diff
@@ -22,6 +22,7 @@ from cad_khana.mechanism.diagnostics import Diagnostics
 from cad_khana.selection import SelectionError
 from cad_khana.show import report, report_json, require_diagnostics
 from cad_khana.target import (
+    DEFAULT_MEMBER,
     Target,
     TargetError,
     ensure_importable,
@@ -340,7 +341,7 @@ def view(
         target,
         out,
         "view",
-        _pusher(*selection) if push else _pager(page, *selection),
+        _pusher(*selection) if push else _pager(target, page, *selection),
     )
 
 
@@ -359,10 +360,18 @@ def _pusher(only: tuple[str, ...], hide: tuple[str, ...]) -> Verb:
     return lambda a, _out: ocp.push(a, only, hide)
 
 
-def _pager(page: Path | None, only: tuple[str, ...], hide: tuple[str, ...]) -> Verb:
+def _pager(
+    spec: str, page: Path | None, only: tuple[str, ...], hide: tuple[str, ...]
+) -> Verb:
     built = _built_page()
+    target = Target.parse(spec)
     return lambda a, out: _write_page(
-        a, built, out / "page" if page is None else Path.cwd() / page, only, hide
+        a,
+        built,
+        out / "page" if page is None else Path.cwd() / page,
+        only,
+        hide,
+        viewer.origin(target.path, target.factory or DEFAULT_MEMBER, target.factory),
     )
 
 
@@ -393,8 +402,9 @@ def _write_page(
     out: Path,
     only: tuple[str, ...],
     hide: tuple[str, ...],
+    origin: viewer.Origin,
 ) -> None:
-    for path in viewer.write_page(assembly, built, out, only, hide):
+    for path in viewer.write_page(assembly, built, out, only, hide, origin):
         typer.echo(str(path))
 
 
@@ -519,6 +529,188 @@ DiagArg = Annotated[
         help="Path to a mechanism.json or *-printability.json file.",
     ),
 ]
+
+
+viewer_app = typer.Typer(
+    help=(
+        "Ask an open viewer page what it shows, or change it. The page is "
+        "the one `khana view` wrote, open in Shala."
+    ),
+    no_args_is_help=True,
+)
+app.add_typer(viewer_app, name="viewer")
+
+ProjectOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--project",
+        help=(
+            "The project whose page to reach, as the host names it. "
+            "Defaults to the folder name of the repository the cwd is in."
+        ),
+    ),
+]
+
+
+def _ask(project: str | None, body: drive.Body) -> drive.Answer:
+    """One body to the page and its answer; exit 1 when the page or
+    its host refused, 2 when neither could be reached."""
+    name = project or drive.project(Path.cwd())
+    if name is None:
+        typer.echo(
+            "error: not in a repository; name the project with --project", err=True
+        )
+        raise typer.Exit(code=2)
+    try:
+        return drive.ask(name, body)
+    except drive.Refused as exc:
+        typer.echo(f"refused: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    except drive.Unreachable as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2) from None
+
+
+def _say(answer: drive.Answer, *lines: str) -> None:
+    typer.echo(f"page: {answer.page}")
+    for line in (*lines, *((answer.message,) if answer.message else ())):
+        typer.echo(line)
+
+
+def _page_parts(answer: drive.Answer) -> tuple[str, ...]:
+    return tuple(str(p) for p in answer.result["parts"])  # pyright: ignore[reportGeneralTypeIssues,reportUnknownVariableType,reportUnknownArgumentType]
+
+
+@viewer_app.command("parts")
+def viewer_parts(project: ProjectOpt = None) -> None:
+    """List the open page's parts by dotted tree path."""
+    answer = _ask(project, drive.get("parts"))
+    _say(answer, *_page_parts(answer))
+
+
+@viewer_app.command("state")
+def viewer_state(project: ProjectOpt = None) -> None:
+    """Print what the open page is showing, as JSON: the part last
+    picked, the view (camera, toggles, hidden parts) and its panes."""
+    answer = _ask(project, drive.get("picked", "view", "frame"))
+    shown = {k: v for k, v in answer.result.items() if k != "target"}
+    _say(answer, json.dumps(shown, indent=2))
+
+
+@viewer_app.command("show")
+def viewer_show(
+    part: Annotated[
+        str | None,
+        typer.Argument(help="Select this part (its dotted tree path)."),
+    ] = None,
+    direction: Annotated[
+        str | None,
+        typer.Option(
+            "--direction", help=f"Look from one of {', '.join(drive.DIRECTIONS)}."
+        ),
+    ] = None,
+    only: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--only",
+            help=(
+                "Show only this part or sub-assembly path and everything "
+                "under it, hiding the rest (repeatable)."
+            ),
+        ),
+    ] = None,
+    hide: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--hide",
+            help=(
+                "Hide this part or sub-assembly path and everything under "
+                "it (repeatable; applied after --only). Whatever these two "
+                "do not hide is shown."
+            ),
+        ),
+    ] = None,
+    everything: Annotated[
+        bool, typer.Option("--all", help="Show every part, hiding none.")
+    ] = False,
+    ortho: Annotated[
+        bool | None, typer.Option("--ortho/--perspective", help="Projection.")
+    ] = None,
+    transparent: Annotated[
+        bool | None, typer.Option("--transparent/--opaque", help="Part faces.")
+    ] = None,
+    black_edges: Annotated[
+        bool | None,
+        typer.Option("--black-edges/--no-black-edges", help="Edge colour."),
+    ] = None,
+    axes: Annotated[
+        bool | None, typer.Option("--axes/--no-axes", help="The axes triad.")
+    ] = None,
+    project: ProjectOpt = None,
+) -> None:
+    """Select a part on the open page, turn the view, hide parts, or
+    set its toggles. The page does all of it or none: an unknown part
+    or path changes nothing and exits nonzero."""
+    selection = (tuple(only or ()), tuple(hide or ()))
+    if everything and any(selection):
+        typer.echo("error: --all hides nothing; give it or --only/--hide", err=True)
+        raise typer.Exit(code=2)
+    if direction is not None and direction not in drive.DIRECTIONS:
+        typer.echo(
+            f"error: no direction {direction!r}; one of {', '.join(drive.DIRECTIONS)}",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    try:
+        hidden = (
+            drive.hidden(_page_parts(_ask(project, drive.get("parts"))), *selection)
+            if any(selection)
+            else []
+            if everything
+            else None
+        )
+    except SelectionError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2) from None
+    body = drive.show(
+        part,
+        direction=direction,
+        hidden=hidden,
+        ortho=ortho,
+        transparent=transparent,
+        blackEdges=black_edges,
+        axes=axes,
+    )
+    if not body["show"]:
+        typer.echo("error: nothing to show; name a part or give an option", err=True)
+        raise typer.Exit(code=2)
+    answer = _ask(project, body)
+    _say(
+        answer,
+        *(() if hidden is None else (f"hidden: {len(hidden)} parts",)),
+    )
+
+
+@viewer_app.command("panes")
+def viewer_panes(
+    tree: Annotated[
+        bool | None, typer.Option("--tree/--no-tree", help="The part tree.")
+    ] = None,
+    info: Annotated[
+        bool | None, typer.Option("--info/--no-info", help="The info pane.")
+    ] = None,
+    toolbar: Annotated[
+        bool | None, typer.Option("--toolbar/--no-toolbar", help="The toolbar.")
+    ] = None,
+    project: ProjectOpt = None,
+) -> None:
+    """Show or hide the open page's own panes and toolbar. One not
+    named keeps its state."""
+    body = drive.panes(tree, info, toolbar)
+    if not body["set"]:
+        typer.echo("error: name a pane: --tree, --info or --toolbar", err=True)
+        raise typer.Exit(code=2)
+    _say(_ask(project, body))
 
 
 @app.command()

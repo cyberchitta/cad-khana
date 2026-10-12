@@ -100,8 +100,8 @@ cad-khana/
   _notes/                     # working notes, gitignored — see below
   pyproject.toml              # uv-managed, entry point: khana = cad_khana.cli:main
   viewer/                     # the viewer page, TypeScript, built with bun
-    src/page.ts               # three-cad-viewer + the host messages (show, set, get)
-    src/accepts.yaml          # those messages, with examples — ships beside the page
+    src/page.ts               # three-cad-viewer, the pick as Shala's selection, and the
+                              # bodies `khana viewer` sends (show, set, get)
     build.ts                  # bundles into the directory it is given
   skills/
     cad-khana/
@@ -117,6 +117,7 @@ cad-khana/
         printability.md       # inspect() usage + how wall/overhang are measured
         diagnostics.md        # field meanings for both JSON files
         drawings.md           # which view answers which question
+        viewer.md             # the page open in Shala: the owner's pick, `khana viewer`
         render.md             # photo-real stills, PBR GLB, mp4 — the `render` extra
         build123d_quickref.md # selectors, algebraic vs Builder
         install.md            # one-shot install steps, linked from SKILL.md
@@ -158,6 +159,7 @@ cad-khana/
                               # the page is built on first use into the user's cache;
                               # a wheel carries viewer/'s sources as cad_khana/_viewer/
       push.py                 # `view --push`: the one importer of ocp_vscode (the `ocp` extra)
+      drive.py                # `khana viewer`: bodies for an open page, carried by `shala tell`
       diff.py                 # dispatches on file kind (mechanism/printability)
       selection.py            # subset of one run: claim globs, tree paths
       show.py                 # reads one diagnostics JSON: summary, filters, groups
@@ -252,6 +254,7 @@ khana export <target>           # STL + STEP
 khana view   <target> [--only|--hide <path>]...   # write a static viewer page, nested by sub-assembly
 khana view   <target> --page <dir>      # into <dir> instead of <out>/page
 khana view   <target> --push            # push to a listening OCP viewer instead (the `ocp` extra)
+khana viewer parts|state|show|panes     # ask the page open in Shala what it shows, or change it
 khana draw   <target> --format png|svg|both   # orthographic/iso HLR line-art
 khana run    <script>           # execute an orchestration script
 khana diff <old> <new>          # diff two diagnostics JSON files
@@ -283,6 +286,18 @@ unresolvable target — exit 2, no JSON — because a typo'd glob that held
 zero claims and exited 0 is the vacuous green.
 `show` is a reader, not a verdict: exit 0 whatever the file says, 2
 when it is not a diagnostics file.
+
+`khana viewer` takes no target: it reaches the page the owner has open
+(`drive.py`, the skill's `viewer.md`). An agent drives the page through
+these commands and the skill's text, never by a message written by hand
+(owner, 2026-10-12). `shala tell` is the carrier `drive.ask` shells out
+to; the page refuses a body whose `khana:` number is not its own
+(`drive.PROTOCOL`, held equal to `page.ts`'s by `tests/test_drive.py`),
+and every answer names the target the page was written from. A pick is
+not a command: the page posts it as Shala's selection, anchored at the
+line that defines the target's member (`viewer.origin`, written beside
+the page as `page.json`). Exit 1 when the page or its host refused, 2
+when neither could be reached.
 
 Declarations are imported by verbs; effects live at the CLI boundary.
 A module the import-model verbs consume never calls `check()`,
@@ -691,6 +706,9 @@ group.
   metadata; only `render/` uses it.
 
 External CLI tools (not Python deps — shelled out to):
+
+- `shala` — the owner's workspace app's CLI. `drive.ask` runs `shala tell`
+  to reach a viewer page open there. Needed by `khana viewer` alone.
 
 - `bun` — `viewer.built_page` runs it to build the viewer page the first
   time `khana view` is asked for one, and keeps the result under

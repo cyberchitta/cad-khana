@@ -23,6 +23,5 @@ if (!built.success) {
 }
 await cp("src/index.html", `${out}index.html`);
 await cp("src/page.css", `${out}page.css`);
-await cp("src/accepts.yaml", `${out}accepts.yaml`);
 await cp(`${renderer}dist/three-cad-viewer.css`, `${out}three-cad-viewer.css`);
 await cp(`${renderer}LICENSE`, `${out}three-cad-viewer.LICENSE`);
