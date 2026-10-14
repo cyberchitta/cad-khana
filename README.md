@@ -1,22 +1,22 @@
-# cad-khana
+# CAD Khana
 
 An agent-first assembly and test layer for
 [build123d](https://build123d.readthedocs.io/): a CLI tool and agent
 skill for designing 3D-printable mechanisms.
 
-An LLM agent, using cad-khana as a skill, writes parts in plain
+An LLM agent, using CAD Khana as a skill, writes parts in plain
 build123d, composes them into assemblies with joints and motion, and
 states claims about them: no interference, a minimum distance, a
-printable wall. cad-khana checks the claims on every run, reports
+printable wall. CAD Khana checks the claims on every run, reports
 structured diagnostics the agent iterates on, and writes what the
 person on the other end needs: printable files, drawings and renders.
 
 No person looks at the model while the agent iterates. The diagnostics
-are one way the agent knows whether a design is right, so cad-khana
+are one way the agent knows whether a design is right, so CAD Khana
 reports what was checked as well as what was found.
 
 *khana* (ख़ाना) is a Hindustani suffix meaning "house" or "workshop"
-— as in *kar-khana* (factory) or *dawa-khana* (pharmacy). cad-khana
+— as in *kar-khana* (factory) or *dawa-khana* (pharmacy). CAD Khana
 is a place for CAD.
 
 **Status:** early. API may still churn.
@@ -24,7 +24,7 @@ is a place for CAD.
 ## Read more
 
 - [A LEGO Sorter Designed by Claude](https://sorted-studs.cyberchitta.cc/)
-  — the machine cad-khana was built to design, every part drawn by an
+  — the machine CAD Khana was built to design, every part drawn by an
   LLM. The article shows what the tool produces: interactive GLB
   models, engineering drawings and renders.
 - [Tools for Vibe Cading](https://www.cyberchitta.cc/articles/cad-llm-tools.html)
@@ -71,7 +71,7 @@ is about 700 MB, so it is an extra and nothing else needs it:
 uv tool install "cad-khana[render] @ git+https://github.com/cyberchitta/cad-khana"
 ```
 
-`bpy` is licensed GPL-3.0. cad-khana is Apache-2.0 and does not include
+`bpy` is licensed GPL-3.0. CAD Khana is Apache-2.0 and does not include
 it; installing the extra fetches it from PyPI.
 
 ## License
