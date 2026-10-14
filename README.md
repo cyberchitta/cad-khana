@@ -31,6 +31,10 @@ is a place for CAD.
   — a survey of open source tools that connect LLMs to CAD, split by
   who closes the feedback loop: the agent, on structured diagnostics,
   or a person, on renders.
+- [CAD Khana: The Assembly That Tests Itself](https://www.cyberchitta.cc/articles/cad-khana.html)
+  — four defects in the sorter that its part files could not show,
+  and how CAD Khana grew to check claims through a motion and against
+  keep-outs.
 - `skills/cad-khana/SKILL.md` — how the tool works. It is written for
   the agent and is the real documentation; it names the reference file
   to load for each task. `skills/cad-khana/references/examples/pin_hinge/`
