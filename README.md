@@ -9,7 +9,8 @@ build123d, composes them into assemblies with joints and motion, and
 states claims about them: no interference, a minimum distance, a
 printable wall. CAD Khana checks the claims on every run, reports
 structured diagnostics the agent iterates on, and writes what the
-person on the other end needs: printable files, drawings and renders.
+person on the other end needs: printable files, drawings, renders,
+and a viewer page to explore the assembly in.
 
 No person looks at the model while the agent iterates. The diagnostics
 are one way the agent knows whether a design is right, so CAD Khana
@@ -65,6 +66,10 @@ uv tool install git+https://github.com/cyberchitta/cad-khana
 ```
 
 Python 3.13 is required. From a local checkout, `uv sync`.
+
+`khana view` builds its viewer page with [bun](https://bun.sh), once
+for each version of the page, so it needs `bun` on the PATH. No other
+verb does.
 
 ### Rendering (optional)
 

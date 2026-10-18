@@ -18,7 +18,8 @@ khana --version
 Report success and continue with whatever the user originally asked for.
 
 `khana view` alone needs one more tool, `bun` (https://bun.sh), to build
-its viewer page the first time; every other verb runs without it.
+its viewer page, once for each version of the page; every other verb
+runs without it.
 
 ## Updating later
 

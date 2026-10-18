@@ -120,8 +120,9 @@ can be read back: `viewer.md`.
 
 The first `khana view` on a machine builds the page with `bun`
 (https://bun.sh), fetching its renderer from the npm registry, and
-keeps it under `~/.cache/cad-khana/page/` (`$XDG_CACHE_HOME` if set);
-later runs copy it from there. Without `bun` on the PATH, or if the
+keeps it under `~/.cache/cad-khana/page/` (`$XDG_CACHE_HOME` if set),
+keyed by a hash of the page's sources; later runs copy it from there
+until those sources change, which builds it again. Without `bun` on the PATH, or if the
 build fails, `view` exits 2 before the target is imported. `khana
 status` reports `bun` and reads `degraded` without it.
 
