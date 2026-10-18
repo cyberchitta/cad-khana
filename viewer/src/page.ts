@@ -30,6 +30,9 @@
 // the browser's storage, one entry per target, and put back on load. Of a
 // view kept before a rebuild, what still fits is put back and a part that is
 // gone is dropped, unlike a `show`. Storage the browser refuses keeps nothing.
+// Shala's WebKit keeps a frame's storage only while Shala runs, so the entry
+// also goes to Shala as {shala: 1, keep}, and a load that finds no entry
+// asks for it back with {shala: 1, recall}, waiting a moment for the answer.
 //
 // A host other than Shala that frames the page posts the same bodies bare,
 // hears {khana, done: {ok, message?, result?}}, {khana, ready: {parts}} once
@@ -112,6 +115,8 @@ const NARROW = 700; // below this the tree and info panes float over the view, c
 const SHOWN: VisibilityState = [1, 1];
 const HIDDEN: VisibilityState = [0, 0];
 const SETTLE = 400; // ms a camera stays still before its view is kept
+const KEEP_LIMIT = 64000; // Shala holds a kept value up to 64 KB
+const RECALL_WAIT = 300; // ms a load with nothing stored waits for Shala's copy
 
 // The status line: what the page last had to say, then the zoom, which the
 // renderer shows nowhere.
@@ -151,9 +156,20 @@ const starting = ({ camera, hidden: _hidden, direction: _direction, ...toggles }
 const early = (): Done => ({ ok: false, message: "the assembly has not drawn yet; send it again" });
 let handle: Handle = early;
 let reveal: (asked: Reveal) => Done = early;
+// What Shala kept for this project, asked for at once so the answer can
+// arrive while the page loads; it is waited for only when the browser's
+// storage has nothing, and only so long, since outside Shala nothing answers.
+let recalled: (value: unknown) => void = () => {};
+const recall = new Promise<unknown>((resolve) => {
+  recalled = resolve;
+  shala({ recall: true });
+});
+const recallSoon = (): Promise<unknown> =>
+  host ? Promise.race([recall, new Promise((resolve) => setTimeout(() => resolve(null), RECALL_WAIT))]) : Promise.resolve(null);
 window.addEventListener("message", (event: MessageEvent) => {
   if (event.source !== host) return;
-  const sent: { tell?: { id: unknown; body: unknown }; reveal?: Reveal } = event.data?.shala === 1 ? event.data : {};
+  const sent: { tell?: { id: unknown; body: unknown }; reveal?: Reveal; recalled?: unknown } = event.data?.shala === 1 ? event.data : {};
+  if ("recalled" in sent) return recalled(sent.recalled);
   if (sent.tell) return shala({ told: { id: sent.tell.id, ...handle(sent.tell.body) } });
   if (sent.reveal) return shala({ revealed: reveal(sent.reveal) });
   if (typeof event.data?.khana === "number") tell({ done: handle(event.data) });
@@ -202,15 +218,20 @@ const fittedView = (raw: Record<string, unknown>, parts: string[]): View => ({
 });
 const fittedFrame = (raw: Record<string, unknown>, frame: Frame): Frame =>
   Object.fromEntries(FRAME.map((key) => [key, isBool(raw[key]) ? raw[key] : frame[key]])) as Frame;
-const kept = (text: string | null, parts: string[], frame: Frame): Kept | null => {
-  if (text === null) return null;
+const parsed = (text: string | null): unknown => {
   try {
-    const raw = record(JSON.parse(text));
-    return { view: fittedView(record(raw.view), parts), frame: fittedFrame(record(raw.frame), frame) };
+    return text === null ? null : JSON.parse(text);
   } catch {
     return null;
   }
 };
+const kept = (value: unknown, parts: string[], frame: Frame): Kept | null => {
+  if (value === null || typeof value !== "object") return null;
+  const raw = record(value);
+  return { view: fittedView(record(raw.view), parts), frame: fittedFrame(record(raw.frame), frame) };
+};
+// Shala holds one value per project, so it names the target it was kept for.
+const keptFor = (value: unknown, target: string): unknown => (record(value).target === target ? value : null);
 
 async function main(): Promise<void> {
   const shapes = (await (await fetch("./shapes.json")).json()) as Shapes;
@@ -225,13 +246,24 @@ async function main(): Promise<void> {
   let forHost = false; // a part being selected for a host, not by the owner
   const key = `khana-view:${origin.target}`;
   let settling: ReturnType<typeof setTimeout> | undefined;
+  // Whether anything changed since load: a page that missed Shala's copy
+  // must not keep its default over it as it closes.
+  let changed = false;
   const keep = (): void => {
     clearTimeout(settling);
-    stored.write(key, JSON.stringify({ view: view(), frame: shownFrame() }));
+    const entry = { view: view(), frame: shownFrame() };
+    stored.write(key, JSON.stringify(entry));
+    const whole = { target: origin.target, ...entry };
+    const { hidden: _hidden, ...rest } = entry.view;
+    shala({ keep: bytes(whole) < KEEP_LIMIT ? whole : { ...whole, view: rest } });
   };
   const keepSoon = (): void => {
+    changed = true;
     clearTimeout(settling);
     settling = setTimeout(keep, SETTLE);
+  };
+  const keepIfChanged = (): void => {
+    if (changed) keep();
   };
   const onChange = (change: Change): void => {
     keepSoon();
@@ -266,7 +298,8 @@ async function main(): Promise<void> {
 
   // At phone width the panes start collapsed whatever was kept.
   const initial: Frame = { tree: !narrow(), info: !narrow(), toolbar: false };
-  const before = kept(stored.read(key), parts, initial);
+  const local = parsed(stored.read(key));
+  const before = kept(local ?? keptFor(await recallSoon(), origin.target), parts, initial);
   let frame: Frame = before ? { ...before.frame, tree: before.frame.tree && !narrow(), info: before.frame.info && !narrow() } : initial;
   const options = { ...size(frame), theme: "browser", pinning: false, up: "Z" };
   type DisplayOptions = ConstructorParameters<typeof Display>[1];
@@ -289,6 +322,9 @@ async function main(): Promise<void> {
     }
   };
   layout();
+  // The first draw's own notices are not the owner's: nothing to keep yet.
+  clearTimeout(settling);
+  changed = false;
   let wasNarrow = narrow();
   window.addEventListener("resize", () => {
     // Crossing into phone width collapses the panes; the owner reopens them.
@@ -304,8 +340,8 @@ async function main(): Promise<void> {
   // Nor do the toolbar's toggles, so any click is kept, and so is the
   // page as it is when the host takes it away.
   document.addEventListener("click", keepSoon, true);
-  window.addEventListener("pagehide", keep);
-  document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && keep());
+  window.addEventListener("pagehide", keepIfChanged);
+  document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && keepIfChanged());
 
   const view = (): View => {
     const states = viewer.getStates();
