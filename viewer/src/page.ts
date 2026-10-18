@@ -26,6 +26,11 @@
 // place of a camera: a direction also aims at and zooms to the parts shown.
 // The toolbar starts hidden.
 //
+// The page comes back as it was left: the view and the panes are kept in
+// the browser's storage, one entry per target, and put back on load. Of a
+// view kept before a rebuild, what still fits is put back and a part that is
+// gone is dropped, unlike a `show`. Storage the browser refuses keeps nothing.
+//
 // A host other than Shala that frames the page posts the same bodies bare,
 // hears {khana, done: {ok, message?, result?}}, {khana, ready: {parts}} once
 // and {khana, pick: {part, view}} for each pick.
@@ -88,6 +93,15 @@ interface Reveal {
   state: Show | null;
 }
 type Change = { lastPick?: { new: PickInfo | null }; zoom?: { new: number } };
+interface Kept {
+  view: View;
+  frame: Frame;
+}
+// Whether each pane is open, as the renderer's own toggles left it.
+interface Panes {
+  tools_shown: boolean;
+  info_shown: boolean;
+}
 
 const PROTOCOL = 2; // cad_khana/drive.py carries the same number
 const STATE_LIMIT = 32000; // Shala takes a selection's state up to 32 KB
@@ -97,6 +111,7 @@ const STATUS = 22;
 const NARROW = 700; // below this the tree and info panes float over the view, collapsed
 const SHOWN: VisibilityState = [1, 1];
 const HIDDEN: VisibilityState = [0, 0];
+const SETTLE = 400; // ms a camera stays still before its view is kept
 
 // The status line: what the page last had to say, then the zoom, which the
 // renderer shows nowhere.
@@ -141,6 +156,56 @@ window.addEventListener("message", (event: MessageEvent) => {
 const bytes = (value: unknown): number => new TextEncoder().encode(JSON.stringify(value)).length;
 const unknownOrigin: Origin = { target: "", path: null, anchor: null };
 
+// The browser's storage, which a private window or a strict host may refuse.
+const stored = {
+  read: (key: string): string | null => {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  write: (key: string, value: string): void => {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // nothing is kept, and the page opens as it would have anyway
+    }
+  },
+};
+
+// What of a kept entry still fits the page: written by another build of
+// it, or by hand, so every field is checked and anything else dropped.
+const isBool = (value: unknown): value is boolean => typeof value === "boolean";
+const isNumbers = (value: unknown, length: number): boolean =>
+  Array.isArray(value) && value.length === length && value.every((n) => typeof n === "number" && Number.isFinite(n));
+const record = (value: unknown): Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+const fittedCamera = (raw: Record<string, unknown>): Camera => ({
+  ...(isNumbers(raw.position, 3) ? { position: raw.position as Vec3 } : {}),
+  ...(isNumbers(raw.quaternion, 4) ? { quaternion: raw.quaternion as Quat } : {}),
+  ...(isNumbers(raw.target, 3) ? { target: raw.target as Vec3 } : {}),
+  ...(typeof raw.zoom === "number" && raw.zoom > 0 ? { zoom: raw.zoom } : {}),
+});
+const TOGGLES = ["ortho", "transparent", "blackEdges", "axes", "axes0"] as const;
+const fittedView = (raw: Record<string, unknown>, parts: string[]): View => ({
+  ...(raw.camera === undefined ? {} : { camera: fittedCamera(record(raw.camera)) }),
+  ...Object.fromEntries(TOGGLES.filter((key) => isBool(raw[key])).map((key) => [key, raw[key]])),
+  ...(Array.isArray(raw.grid) && raw.grid.length === 3 && raw.grid.every(isBool) ? { grid: raw.grid as Grids } : {}),
+  ...(Array.isArray(raw.hidden) ? { hidden: raw.hidden.filter((part): part is string => parts.includes(part)) } : {}),
+});
+const fittedFrame = (raw: Record<string, unknown>, frame: Frame): Frame =>
+  Object.fromEntries(FRAME.map((key) => [key, isBool(raw[key]) ? raw[key] : frame[key]])) as Frame;
+const kept = (text: string | null, parts: string[], frame: Frame): Kept | null => {
+  if (text === null) return null;
+  try {
+    const raw = record(JSON.parse(text));
+    return { view: fittedView(record(raw.view), parts), frame: fittedFrame(record(raw.frame), frame) };
+  } catch {
+    return null;
+  }
+};
+
 async function main(): Promise<void> {
   const shapes = (await (await fetch("./shapes.json")).json()) as Shapes;
   const origin = (await fetch("./page.json").then((found) => (found.ok ? found.json() : unknownOrigin), () => unknownOrigin)) as Origin;
@@ -152,7 +217,18 @@ async function main(): Promise<void> {
 
   let picked: string | null = null;
   let forHost = false; // a part being selected for a host, not by the owner
+  const key = `khana-view:${origin.target}`;
+  let settling: ReturnType<typeof setTimeout> | undefined;
+  const keep = (): void => {
+    clearTimeout(settling);
+    stored.write(key, JSON.stringify({ view: view(), frame: shownFrame() }));
+  };
+  const keepSoon = (): void => {
+    clearTimeout(settling);
+    settling = setTimeout(keep, SETTLE);
+  };
   const onChange = (change: Change): void => {
+    keepSoon();
     if (change.zoom) {
       line.zoom = change.zoom.new;
       write();
@@ -182,7 +258,10 @@ async function main(): Promise<void> {
     });
   };
 
-  let frame: Frame = { tree: !narrow(), info: !narrow(), toolbar: false };
+  // At phone width the panes start collapsed whatever was kept.
+  const initial: Frame = { tree: !narrow(), info: !narrow(), toolbar: false };
+  const before = kept(stored.read(key), parts, initial);
+  let frame: Frame = before ? { ...before.frame, tree: before.frame.tree && !narrow(), info: before.frame.info && !narrow() } : initial;
   const options = { ...size(frame), theme: "browser", pinning: false, up: "Z" };
   type DisplayOptions = ConstructorParameters<typeof Display>[1];
   type ViewerOptions = ConstructorParameters<typeof Viewer>[1];
@@ -210,6 +289,16 @@ async function main(): Promise<void> {
     wasNarrow = narrow();
     layout();
   });
+
+  // A floating pane is opened and closed by the renderer's own toggle,
+  // which tells the page nothing; a docked one is as `frame` says.
+  const panes = display as unknown as Panes;
+  const shownFrame = (): Frame => (floating(frame) ? { ...frame, tree: panes.tools_shown, info: panes.info_shown } : frame);
+  // Nor do the toolbar's toggles, so any click is kept, and so is the
+  // page as it is when the host takes it away.
+  document.addEventListener("click", keepSoon, true);
+  window.addEventListener("pagehide", keep);
+  document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && keep());
 
   const view = (): View => {
     const states = viewer.getStates();
@@ -294,8 +383,9 @@ async function main(): Promise<void> {
     const known: readonly string[] = FRAME;
     const bad = Object.entries(asked).filter(([key, value]) => !known.includes(key) || typeof value !== "boolean");
     if (bad.length) return { ok: false, message: `set takes booleans for ${FRAME.join(", ")}; not ${bad.map(([key]) => key).join(", ")}` };
-    frame = { ...frame, ...asked };
+    frame = { ...shownFrame(), ...asked };
     layout();
+    keepSoon();
     return { ok: true };
   };
 
@@ -303,7 +393,7 @@ async function main(): Promise<void> {
     const known: readonly unknown[] = GETS;
     const bad = Array.isArray(asked) ? asked.filter((key) => !known.includes(key)) : null;
     if (bad === null || bad.length) return { ok: false, message: `get takes a list from ${GETS.join(", ")}; not ${JSON.stringify(bad ?? asked)}` };
-    const all = { parts, picked, view: view(), frame };
+    const all = { parts, picked, view: view(), frame: shownFrame() };
     return { ok: true, result: Object.fromEntries((asked as (typeof GETS)[number][]).map((key) => [key, all[key]])) };
   };
 
@@ -334,7 +424,8 @@ async function main(): Promise<void> {
     return { ok: true, message: `${origin.target}: put back ${put.join(", ") || "nothing"}` };
   };
 
-  say(`${parts.length} parts · three-cad-viewer ${version} · double-click a part to name it`);
+  if (before) apply(before.view);
+  say(`${parts.length} parts · three-cad-viewer ${version} · ${before ? "the view as it was left" : "double-click a part to name it"}`);
   tell({ ready: { parts } });
   if (origin.path !== null) shala({ shows: [origin.path] });
   Object.assign(window, { khana: { viewer, parts, view, handle } });

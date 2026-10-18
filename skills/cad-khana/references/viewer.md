@@ -59,6 +59,12 @@ khana viewer panes --no-tree --no-info            # the page's own panes and too
   dragging**; the page has no zoom button. Its status line shows the
   picked part and the zoom (`f2.ramp · zoom 2.43`), the same number as
   `view.camera.zoom`, so the owner can read you a zoom they like.
+- **The page comes back as it was left.** A reload, or the host
+  opening it again, puts back the camera, the toggles, the hidden parts
+  and the panes, as the owner or a command last set them; `frame` in
+  `khana viewer state` reads the panes as they are. After `khana view`
+  rewrote the page, a hidden part that is gone is dropped and the rest
+  put back, so the owner's reload keeps their view.
 - The camera has no option of its own here: an exact camera comes
   from the owner's pick and goes back through the host (below).
 - **The toolbar is hidden unless asked for** (`khana viewer panes
@@ -71,8 +77,6 @@ khana viewer panes --no-tree --no-info            # the page's own panes and too
 
 - **Whether the owner is looking.** A command that exits 0 changed the
   page; it does not say the page is on screen.
-- **A pane the owner opened or closed by hand.** `frame` in `khana
-  viewer state` is what was last set by a command.
 - **Who picked.** `picked` reads the same after the owner's
   double-click and after your own `show`.
 - **Anything about the design.** The page shows the assembly as it was
