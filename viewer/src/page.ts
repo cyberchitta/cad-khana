@@ -140,6 +140,12 @@ const size = (frame: Frame, bar = TOOLBAR) => ({
   glass: floating(frame),
 });
 const leaves = (node: Shapes): string[] => (node.parts ? node.parts.flatMap(leaves) : [node.id]);
+// A kept view given to the renderer before it first draws, so the page
+// does not draw the default and then turn: the hidden leaves in the
+// shapes, the camera and toggles as the renderer's own options.
+const hiding = (node: Shapes, hidden: Set<string>): Shapes =>
+  node.parts ? { ...node, parts: node.parts.map((child) => hiding(child, hidden)) } : hidden.has(node.id) ? { ...node, state: HIDDEN } : node;
+const starting = ({ camera, hidden: _hidden, direction: _direction, ...toggles }: View): object => ({ ...camera, ...toggles });
 
 // A message that comes before the assembly has drawn is answered, not dropped.
 const early = (): Done => ({ ok: false, message: "the assembly has not drawn yet; send it again" });
@@ -267,7 +273,8 @@ async function main(): Promise<void> {
   type ViewerOptions = ConstructorParameters<typeof Viewer>[1];
   const display = new Display(document.getElementById("cad_view") as HTMLElement, options as unknown as DisplayOptions);
   const viewer = new Viewer(display, options as unknown as ViewerOptions, onChange as never);
-  viewer.render(shapes, {}, { up: "Z" });
+  const drawn = before ? hiding(shapes, new Set((before.view.hidden ?? []).map(slashed))) : shapes;
+  viewer.render(drawn, {}, { up: "Z", ...(before ? starting(before.view) : {}) } as Parameters<typeof viewer.render>[2]);
 
   const toolbar = document.querySelector(".tcv_cad_toolbar") as HTMLElement;
   const bar = toolbar.getBoundingClientRect().height;
@@ -424,7 +431,6 @@ async function main(): Promise<void> {
     return { ok: true, message: `${origin.target}: put back ${put.join(", ") || "nothing"}` };
   };
 
-  if (before) apply(before.view);
   say(`${parts.length} parts · three-cad-viewer ${version} · ${before ? "the view as it was left" : "double-click a part to name it"}`);
   tell({ ready: { parts } });
   if (origin.path !== null) shala({ shows: [origin.path] });
