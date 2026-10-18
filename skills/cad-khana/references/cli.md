@@ -102,7 +102,6 @@ than one unit.
 
 ```
 khana view assembly.py                    # writes outputs/page/index.html and what it loads
-khana view assembly.py --hide frame       # the selection flags below apply
 khana view assembly.py --page site        # into ./site instead (relative to the cwd)
 python3 -m http.server -d outputs/page 8000   # then open http://localhost:8000
 ```
@@ -135,13 +134,11 @@ standalone server, `uv run --with ocp-viewer python -m ocp_viewer`
 prints an error and still exits 0, so check `khana status`'s
 `ocp_vscode.reachable` first.
 
-## One run over a subset: `check --only`, `view --only` / `--hide`
+## One run over a subset: `check --only`
 
 ```
 khana check assembly.py --only 'clear_of:*'                 # hold only these claims
 khana check assembly.py --only 'clear_of:*' --only 'gap_*'  # repeatable: any glob
-khana view assembly.py --only s1                            # s1 and everything under it
-khana view assembly.py --hide s1.arm --hide frame           # everything but these
 ```
 
 **`check --only <glob>`** holds only the assertions whose name matches
@@ -167,13 +164,9 @@ refuses a partial file against a full one, or against another
 selection — the claims one side left out would read as removed — and
 compares two runs of the same `--only`.
 
-**`view --only` / `--hide <path>`** filter what is shown by dotted tree
-path (`s1`, `s1.arm`, `frame`): a path names a part or a whole
-sub-assembly (every part under it; `s1` never matches `s10`), both are
-repeatable, and `--hide` applies after `--only`. An unknown path is a
-usage error (exit 2) naming close matches. Parts are nested by
-sub-assembly, so the viewer's tree has a row for `s1` to toggle. (`draw
---part` still takes one part name.)
+The page always holds every part, nested by sub-assembly, so its tree
+has a row for `s1` to toggle. To hide parts on a page the owner has
+open, use `khana viewer show --only` / `--hide` (`viewer.md`).
 
 ## Parametrized families
 

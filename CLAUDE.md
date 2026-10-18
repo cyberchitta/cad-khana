@@ -251,7 +251,7 @@ effect.
 ```
 khana check  <target> [--only <glob>]...   # diagnostics + assertions, write mechanism.json
 khana export <target>           # STL + STEP
-khana view   <target> [--only|--hide <path>]...   # write a static viewer page, nested by sub-assembly
+khana view   <target>           # write a static viewer page, nested by sub-assembly
 khana view   <target> --page <dir>      # into <dir> instead of <out>/page
 khana view   <target> --push            # push to a listening OCP viewer instead (the `ocp` extra)
 khana viewer parts|state|show|panes     # ask the page open in Shala what it shows, or change it
@@ -279,8 +279,8 @@ even on failure, so the agent can always read structured error info.
 `diff` follows the `diff`/`git diff` contract: exit 0 when the files
 are equivalent, 1 when differences are found, 2 on error.
 
-`check --only` and `view --only/--hide` select a subset for one run
-(`selection.py`; `hold` and `viewer.tree` take the tuples, the CLI only
+`check --only` and `viewer show --only/--hide` select a subset
+(`selection.py`; `hold` and `drive.hidden` take the tuples, the CLI only
 parses). A selection matching nothing is a usage error like an
 unresolvable target — exit 2, no JSON — because a typo'd glob that held
 zero claims and exited 0 is the vacuous green.

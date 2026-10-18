@@ -40,8 +40,9 @@ khana viewer panes --no-tree --no-info            # the page's own panes and too
   where the page is looking from (`position`, `target`, `quaternion`,
   `zoom`): use it when the owner asks for a render or a drawing "from
   here".
-- **`--only` and `--hide` take part or sub-assembly paths**, as `khana
-  view` does, checked against the page's own parts. Together they are
+- **`--only` and `--hide` take part or sub-assembly paths**: a path
+  names a part or every part under a sub-assembly (`s1` never matches
+  `s10`), checked against the page's own parts. Together they are
   the whole of what is hidden: a part neither one hides is shown, so a
   second `--hide` does not add to the first.
 - **A command the page cannot do in full changes nothing** and exits 1

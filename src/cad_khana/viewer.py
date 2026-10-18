@@ -17,7 +17,6 @@ from ocp_tessellate.convert import (  # pyright: ignore[reportMissingTypeStubs]
 )
 
 from cad_khana.mechanism.assembly import Assembly, PlacedPart
-from cad_khana.selection import paths
 
 Entry = tuple[tuple[str, ...], Shape]
 
@@ -63,25 +62,19 @@ def nest(entries: tuple[Entry, ...]) -> tuple[Shape, ...]:
     )
 
 
-def tree(
-    assembly: Assembly, only: tuple[str, ...] = (), hide: tuple[str, ...] = ()
-) -> tuple[Shape, ...]:
-    """The selected parts, placed, nested by dotted tree path."""
-    placed = assembly.placed_parts
-    kept = frozenset(paths(tuple(p.name for p in placed), only, hide))
+def tree(assembly: Assembly) -> tuple[Shape, ...]:
+    """The parts, placed, nested by dotted tree path."""
     return nest(
-        tuple((tuple(p.name.split(".")), _leaf(p)) for p in placed if p.name in kept)
+        tuple((tuple(p.name.split(".")), _leaf(p)) for p in assembly.placed_parts)
     )
 
 
-def shapes(
-    assembly: Assembly, only: tuple[str, ...] = (), hide: tuple[str, ...] = ()
-) -> str:
-    """The selected parts as three-cad-viewer's ``Shapes`` JSON. A part's
+def shapes(assembly: Assembly) -> str:
+    """The parts as three-cad-viewer's ``Shapes`` JSON. A part's
     ``id`` is the root's ``id``, then its tree path with ``/`` for ``.``:
     the parts go in under one root of ours, since the tessellator makes a
     lone top-level sub-assembly the root and its name leaves every path."""
-    root = Compound(children=tree(assembly, only, hide), label=ROOT)
+    root = Compound(children=tree(assembly), label=ROOT)
     return str(export_three_cad_viewer_js(None, root, names=[ROOT]))  # pyright: ignore[reportUnknownArgumentType]
 
 
@@ -169,14 +162,12 @@ def write_page(
     assembly: Assembly,
     page: Path,
     out: Path,
-    only: tuple[str, ...] = (),
-    hide: tuple[str, ...] = (),
     origin: Origin | None = None,
 ) -> tuple[Path, ...]:
-    """A static page showing the selected parts: the files of the built
+    """A static page showing the parts: the files of the built
     ``page``, a ``shapes.json`` beside them, and a ``page.json`` saying
     where the assembly was declared. Any static file server hosts it."""
-    data = shapes(assembly, only, hide)
+    data = shapes(assembly)
     out.mkdir(parents=True, exist_ok=True)
     copied = tuple(Path(shutil.copy(f, out)) for f in sorted(page.iterdir()))
     written = {

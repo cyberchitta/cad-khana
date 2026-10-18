@@ -289,26 +289,6 @@ def _write_exports(assembly: Assembly, out: Path) -> None:
 def view(
     target: TargetArg,
     out: TargetOutOpt = None,
-    only: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--only",
-            help=(
-                "Show only this dotted part or sub-assembly path and "
-                "everything under it (repeatable)."
-            ),
-        ),
-    ] = None,
-    hide: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--hide",
-            help=(
-                "Leave out this dotted part or sub-assembly path and "
-                "everything under it (repeatable; applied after --only)."
-            ),
-        ),
-    ] = None,
     page: Annotated[
         Path | None,
         typer.Option(
@@ -331,9 +311,8 @@ def view(
     ] = False,
 ) -> None:
     """Import a module and write its assembly as a static viewer page,
-    nested by sub-assembly, or push it to an OCP viewer. An unknown
-    path exits 2, and so does a page that cannot be built."""
-    selection = (tuple(only or ()), tuple(hide or ()))
+    nested by sub-assembly, or push it to an OCP viewer. A page that
+    cannot be built exits 2."""
     if push and page is not None:
         typer.echo("error: --push writes no page; give it or --page", err=True)
         raise typer.Exit(code=2)
@@ -341,11 +320,11 @@ def view(
         target,
         out,
         "view",
-        _pusher(*selection) if push else _pager(target, page, *selection),
+        _pusher() if push else _pager(target, page),
     )
 
 
-def _pusher(only: tuple[str, ...], hide: tuple[str, ...]) -> Verb:
+def _pusher() -> Verb:
     """The push, or exit 2 where ``ocp_vscode`` is not installed: it is
     the `ocp` extra, so the module that needs it is imported here."""
     try:
@@ -357,20 +336,16 @@ def _pusher(only: tuple[str, ...], hide: tuple[str, ...]) -> Verb:
             err=True,
         )
         raise typer.Exit(code=2) from None
-    return lambda a, _out: ocp.push(a, only, hide)
+    return lambda a, _out: ocp.push(a)
 
 
-def _pager(
-    spec: str, page: Path | None, only: tuple[str, ...], hide: tuple[str, ...]
-) -> Verb:
+def _pager(spec: str, page: Path | None) -> Verb:
     built = _built_page()
     target = Target.parse(spec)
     return lambda a, out: _write_page(
         a,
         built,
         out / "page" if page is None else Path.cwd() / page,
-        only,
-        hide,
         viewer.origin(target.path, target.factory or DEFAULT_MEMBER, target.factory),
     )
 
@@ -400,11 +375,9 @@ def _write_page(
     assembly: Assembly,
     built: Path,
     out: Path,
-    only: tuple[str, ...],
-    hide: tuple[str, ...],
     origin: viewer.Origin,
 ) -> None:
-    for path in viewer.write_page(assembly, built, out, only, hide, origin):
+    for path in viewer.write_page(assembly, built, out, origin):
         typer.echo(str(path))
 
 

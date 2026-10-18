@@ -1,7 +1,7 @@
 """Select a subset of one run: claims by name glob, parts by tree path.
 
 Pure. ``khana check --only`` narrows the claims ``hold`` evaluates;
-``khana view --only/--hide`` narrows the parts ``viewer.push`` sends.
+``khana viewer show --only/--hide`` picks the parts the open page hides.
 A selection that names nothing is an error, not an empty run: a typo'd
 glob that evaluated zero claims and exited 0 would be the vacuous green
 this tool exists to prevent.

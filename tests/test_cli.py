@@ -1497,29 +1497,6 @@ def test_view_keeps_part_colors_through_nesting(
     assert root.color is not None and tuple(root.color)[:3] == (1.0, 0.0, 0.0)
 
 
-def test_view_only_pushes_a_subtree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    result, (call,) = _captured_view(tmp_path, monkeypatch, "--only", "s1.arm")
-    assert result.exit_code == 0, result.output
-    assert _leaves(call["objs"]) == ["s1.arm.tip", "s1.arm.root"]
-
-
-def test_view_hide_drops_a_subtree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    result, (call,) = _captured_view(
-        tmp_path, monkeypatch, "--hide", "s1.arm", "--hide", "frame"
-    )
-    assert result.exit_code == 0, result.output
-    assert _leaves(call["objs"]) == ["s1.hub"]
-
-
-def test_view_unknown_path_is_a_usage_error_with_close_matches(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    result, calls = _captured_view(tmp_path, monkeypatch, "--hide", "s1.amr")
-    assert result.exit_code == 2, result.output
-    assert "s1.arm" in result.output
-    assert calls == []
-
-
 def test_diff_refuses_a_partial_run_against_a_full_one(tmp_path: Path):
     module = tmp_path / "asm.py"
     module.write_text(_claims_module())
@@ -1728,12 +1705,21 @@ _NESTED_MODULE = (
 )
 
 
+_LONE_UNIT_MODULE = (
+    "from build123d import Box\n"
+    "from cad_khana.mechanism.assembly import Assembly\n"
+    "\n"
+    "inner = Assembly().with_part('cube', Box(10, 10, 10))\n"
+    "assembly = Assembly().with_subassembly('unit', inner)\n"
+)
+
+
 def test_view_page_writes_a_static_viewer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """`--page` copies the built page beside its shapes and pushes
     nothing; a part's id in the shapes is its dotted tree path under the
-    root, also when one sub-assembly is all that is left at the top."""
+    root, also when one sub-assembly is all there is at the top."""
     pushed: list[None] = []
 
     def fake_show(*_objs: object, **_kwargs: object) -> None:
@@ -1744,11 +1730,9 @@ def test_view_page_writes_a_static_viewer(
     built.mkdir()
     _write(built / "index.html", "<!doctype html>")
     monkeypatch.setattr(viewer, "built_page", lambda: built)
-    module = _write(tmp_path / "assembly.py", _NESTED_MODULE)
+    module = _write(tmp_path / "assembly.py", _LONE_UNIT_MODULE)
     page = tmp_path / "site"
-    result = runner.invoke(
-        app, ["view", str(module), "--page", str(page), "--hide", "lid"]
-    )
+    result = runner.invoke(app, ["view", str(module), "--page", str(page)])
     assert result.exit_code == 0, result.output
     assert {"index.html", "shapes.json", "page.json"} == {
         p.name for p in page.iterdir()

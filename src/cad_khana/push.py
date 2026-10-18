@@ -10,10 +10,8 @@ from cad_khana.viewer import (
 )
 
 
-def push(
-    assembly: Assembly, only: tuple[str, ...] = (), hide: tuple[str, ...] = ()
-) -> None:
-    """Sends the selected parts to a listening OCP viewer. The one
+def push(assembly: Assembly) -> None:
+    """Sends the parts to a listening OCP viewer. The one
     module that needs ``ocp_vscode``, which is the ``ocp`` extra."""
-    nodes = tree(assembly, only, hide)  # pyright: ignore[reportUnknownVariableType]
+    nodes = tree(assembly)  # pyright: ignore[reportUnknownVariableType]
     show(*nodes, names=[str(n.label) for n in nodes])  # pyright: ignore[reportUnknownVariableType]
