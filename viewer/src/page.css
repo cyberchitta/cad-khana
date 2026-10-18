@@ -1,4 +1,8 @@
 html, body { margin: 0; height: 100%; overflow: hidden; }
+/* The scheme the renderer's "browser" theme follows, and its background in
+   each, so a page loading in a dark host is not white until it draws. */
+html { color-scheme: light dark; background: #fff; }
+@media (prefers-color-scheme: dark) { html { background: #444; } }
 #status {
   position: fixed; left: 0; right: 0; bottom: 0; height: 22px; box-sizing: border-box;
   padding: 3px 8px; font: 12px ui-monospace, monospace; white-space: nowrap;
