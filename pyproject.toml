@@ -65,6 +65,7 @@ packages = ["src/cad_khana"]
 dev = [
     "basedpyright>=1.40.1",
     "bpy>=5.1",
+    "cadquery-ocp-stubs>=8.0,<8.1",
     "ocp-vscode>=2.7",
     "pytest>=8",
     "ruff>=0.16.10",

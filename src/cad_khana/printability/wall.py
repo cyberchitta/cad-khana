@@ -8,7 +8,7 @@ from math import acos, ceil, cos, sin
 from build123d import Axis, GeomType, Part, Vector
 
 # OCP ships no type stubs.
-from OCP.BRepAdaptor import (  # pyright: ignore[reportMissingTypeStubs]
+from OCP.BRepAdaptor import (
     BRepAdaptor_Surface,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
 )
 

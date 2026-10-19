@@ -701,6 +701,10 @@ group.
   imports it, for `khana view --push` (owner, 2026-10-12: the page is
   the default viewer and the push is what is left for those who run an
   OCP viewer).
+- `cadquery-ocp-stubs` — OCP's types, dev group only (owner,
+  2026-10-19). Generated per OCP release, so its range must follow the
+  OCP that build123d pins (`>=8.0,<8.1` today); a mismatched pair
+  type-checks against the wrong API.
 - `pygltflib` — JSON-level glTF read/write. Used by
   `export.py::export_animated_glb` to inject animation samplers onto
   an existing GLB.

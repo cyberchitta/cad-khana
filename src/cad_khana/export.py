@@ -9,7 +9,7 @@ from pathlib import Path
 
 from build123d import Location, Rot, export_step, export_stl
 from OCP.BRepMesh import BRepMesh_IncrementalMesh
-from OCP.collections import (  # pyright: ignore[reportMissingTypeStubs]
+from OCP.collections import (
     IndexedDataMap_TCollection_AsciiString_TCollection_AsciiString,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
 )
 from OCP.Message import Message_ProgressRange

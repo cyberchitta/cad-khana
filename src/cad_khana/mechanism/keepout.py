@@ -1,5 +1,3 @@
-# OCP ships no type stubs, so these rules would flag every call into it.
-# pyright: reportMissingTypeStubs=false, reportAttributeAccessIssue=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false
 """Keep-out constructions — solids a claim needs that Build123d lacks.
 
 This is the one place cad-khana builds geometry rather than measuring
@@ -26,12 +24,23 @@ operation, a section along a path.
 
 from __future__ import annotations
 
-from build123d import Compound, Edge, Face, GeomType, Part, Vector, VectorLike, extrude
+from build123d import (
+    Compound,
+    Edge,
+    Face,
+    GeomType,
+    Part,
+    Shape,  # pyright: ignore[reportPrivateImportUsage] — build123d exports it but its __init__ does not re-export it for the checker
+    Vector,
+    VectorLike,
+    extrude,
+)
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Splitter
 from OCP.collections import List_TopoDS_Shape
 from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt
 from OCP.HLRAlgo import HLRAlgo_Projector
 from OCP.HLRBRep import HLRBRep_Algo, HLRBRep_HLRToShape, HLRBRep_TypeOfResultingEdge
+from OCP.TopoDS import TopoDS
 
 EXACT_SILHOUETTES = frozenset(
     {GeomType.PLANE, GeomType.CYLINDER, GeomType.CONE, GeomType.SPHERE}
@@ -60,7 +69,7 @@ def swept(body: Part, by: VectorLike) -> Part:
         for piece in _split_at_silhouette(face, direction)
         if _facing(piece, direction) > FACING_EPSILON
     ]
-    return Part([body.fuse(*prisms).clean()])
+    return Part([body.fuse(*prisms).clean()])  # pyright: ignore[reportUnknownMemberType] — build123d's Shape type variable has no default
 
 
 def inexact_faces(body: Part) -> tuple[str, ...]:
@@ -96,7 +105,12 @@ def _silhouette(face: Face, direction: Vector) -> list[Edge]:
         )
         for visible in (True, False)
     )
-    return [edge for c in outlines if not c.IsNull() for edge in Compound(c).edges()]
+    return [
+        edge
+        for c in outlines
+        if not c.IsNull()
+        for edge in Compound(TopoDS.Compound(c)).edges()
+    ]
 
 
 def _split(face: Face, edges: list[Edge]) -> list[Face]:
@@ -108,7 +122,7 @@ def _split(face: Face, edges: list[Edge]) -> list[Face]:
     splitter.SetArguments(arguments)
     splitter.SetTools(tools)
     splitter.Build()
-    return Compound(splitter.Shape()).faces()
+    return Shape.cast(splitter.Shape()).faces()  # pyright: ignore[reportUnknownMemberType] — build123d's Shape type variable has no default; a split that divides nothing returns the face itself
 
 
 def _facing(face: Face, direction: Vector) -> float:

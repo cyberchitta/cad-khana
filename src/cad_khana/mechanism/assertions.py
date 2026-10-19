@@ -7,13 +7,13 @@ from typing import TYPE_CHECKING
 from build123d import Compound, Keep, Location, Part, Plane, Shape, Solid, Vector
 
 # OCP ships no type stubs.
-from OCP.BRepClass3d import (  # pyright: ignore[reportMissingTypeStubs]
+from OCP.BRepClass3d import (
     BRepClass3d_SolidClassifier,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
 )
-from OCP.gp import (  # pyright: ignore[reportMissingTypeStubs]
+from OCP.gp import (
     gp_Pnt,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
 )
-from OCP.TopAbs import (  # pyright: ignore[reportMissingTypeStubs]
+from OCP.TopAbs import (
     TopAbs_State,  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
 )
 
