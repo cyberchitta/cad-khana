@@ -809,9 +809,6 @@ Read directly when relevant:
 
 Speculative unless stated otherwise. Do not implement from these without asking.
 
-**Asks:** on. Questions for the owner live in `_notes/asks/`, one file each,
-per sakshi's `schemas/ask.md`; reports cite them by ID (opted in 2026-10-18).
-
 ## Field-notes promotion policy
 
 `_notes/field-notes.md` (gitignored) collects real-use friction
