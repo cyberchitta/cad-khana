@@ -23,6 +23,7 @@ from cad_khana.mechanism.diagnostics import (
     AssertionResult,
     Point,
     Witness,
+    bbox_gap,
     box_holds,
     has_surface,
     intersection_volume,
@@ -563,6 +564,33 @@ def _reading(part: str, shape: Shape, keepout: Shape, seat: Plane | None) -> _Re
     )
 
 
+def _deciding_readings(
+    parts: dict[str, Part],
+    names: tuple[str, ...],
+    keepout: Shape,  # pyright: ignore[reportUnknownParameterType, reportMissingTypeArgument] — build123d's Shape is generic and untyped
+    seat: Plane | None,
+    min_mm: float,
+) -> tuple[_Reading, ...]:
+    """The readings that can decide a keep-out claim, in the order of
+    ``names``. Parts are read nearest box first. Once a part's box is
+    farther from the keep-out's than both ``min_mm`` and the nearest
+    distance read so far, that part and every one after it can neither
+    fail nor be the nearest, so none of them is read: the box gap is a
+    lower bound on the distance, and on the distance past a seat, which
+    is measured from less of the part. Nothing is skipped before some
+    part has a distance, since the claim's value would be lost."""
+    box = part_bbox(keepout)  # pyright: ignore[reportArgumentType] — any Shape has a box
+    gaps = {n: bbox_gap(part_bbox(parts[n]), box) for n in names}
+    read: list[_Reading] = []
+    for n in sorted(names, key=gaps.__getitem__):
+        known = (r.distance for r in read if r.distance is not None)
+        if gaps[n] > max(min_mm, min(known, default=float("inf"))):
+            break
+        read.append(_reading(n, parts[n], keepout, seat))
+    by_part = {r.part: r for r in read}
+    return tuple(by_part[n] for n in names if n in by_part)
+
+
 @dataclass(frozen=True)
 class KeepOut:
     """The parts ``parts`` stay out of ``keepout`` — a solid that is not
@@ -637,8 +665,13 @@ class KeepOut:
             return AssertionResult(
                 self.name, False, undefined, measured=len(self.parts)
             )
-        readings = tuple(
-            _reading(n, parts[n], self.keepout, self.seat) for n in self.parts
+        selected = self.parts
+        readings = _deciding_readings(
+            parts,
+            selected,
+            self.keepout,  # pyright: ignore[reportUnknownMemberType, reportArgumentType] — bound() made a named keep-out its solid
+            self.seat,
+            self.min_mm,
         )
         read = tuple(r for r in readings if r.distance is not None)
         nearest = min(read, key=lambda r: r.distance, default=None)
@@ -648,18 +681,18 @@ class KeepOut:
             if (f := r.failure(self.keepout, self.min_mm))
         )
         detail = (
-            f"{len(failures)} of {len(readings)} parts: " + "; ".join(failures)
+            f"{len(failures)} of {len(selected)} parts: " + "; ".join(failures)
             if failures
-            else f"none of the {len(readings)} selected parts has material past the seat"
+            else f"none of the {len(selected)} selected parts has material past the seat"
             if nearest is None
-            else f"nearest of {len(readings)}: {nearest.part} at {nearest.distance:.4f}mm"
+            else f"nearest of {len(selected)}: {nearest.part} at {nearest.distance:.4f}mm"
         )
         return AssertionResult(
             self.name,
             not failures,
             detail,
             value=None if nearest is None else nearest.distance,
-            measured=len(readings),
+            measured=len(selected),
         )
 
     def slack(self, value: float) -> float:

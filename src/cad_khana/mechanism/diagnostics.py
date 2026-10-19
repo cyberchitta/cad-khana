@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from itertools import combinations
+from math import hypot
 from typing import TYPE_CHECKING
 
 from build123d import Face, Part, Solid
@@ -358,6 +359,21 @@ def bboxes_apart(a: BBox, b: BBox) -> bool:
         a_max + BBOX_GAP_MARGIN_MM < b_min or b_max + BBOX_GAP_MARGIN_MM < a_min
         for a_min, a_max, b_min, b_max in zip(a.min, a.max, b.min, b.max, strict=True)
     )
+
+
+def bbox_gap(a: BBox, b: BBox) -> float:
+    """How far apart the boxes are, less ``BBOX_GAP_MARGIN_MM`` for the
+    kernel's box slop: a lower bound on the distance between any shapes
+    inside them, 0 for boxes that touch or overlap."""
+    gap = hypot(
+        *(
+            max(0.0, b_min - a_max, a_min - b_max)
+            for a_min, a_max, b_min, b_max in zip(
+                a.min, a.max, b.min, b.max, strict=True
+            )
+        )
+    )
+    return max(0.0, gap - BBOX_GAP_MARGIN_MM)
 
 
 def box_holds(box: BBox, point: Point) -> bool:

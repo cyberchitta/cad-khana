@@ -22,6 +22,7 @@ from build123d import (
     Wire,
 )
 
+from cad_khana.mechanism import assertions
 from cad_khana.mechanism.assembly import Assembly, RevoluteJoint
 from cad_khana.mechanism.assertions import JointWindow, evaluate
 
@@ -1477,6 +1478,65 @@ def test_a_failing_keepout_claim_lists_every_failing_part_and_only_those():
     )
     assert skirt.startswith("rig.skirt distance 23.0000mm below min 25.0mm at (")
     assert "rig.bowl" not in result.detail
+
+
+def _read_parts(a: Assembly, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    read: list[str] = []
+    real = assertions._reading  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType, reportUnknownMemberType] — the one per-part reading; its keepout is typed Shape[Unknown]
+
+    def spy(part: str, shape: Part, keepout: Part, seat: Plane | None):
+        read.append(part)
+        return real(part, shape, keepout, seat)
+
+    monkeypatch.setattr(assertions, "_reading", spy)
+    evaluate(a)
+    return read
+
+
+def test_a_part_whose_box_is_past_the_nearest_reading_is_not_measured(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    # The bowl's box is 33 mm off, past the skirt's 23 mm: it can be neither
+    # the nearest nor a failure.
+    a = _rig().assert_clear_of("rig", _corridor(2), name="d", excluding=["rig.sector"])  # pyright: ignore[reportUnknownMemberType] — keepout is typed Shape[Unknown]
+    assert _read_parts(a, monkeypatch) == ["rig.skirt"]
+
+
+def test_a_part_whose_box_is_inside_the_margin_is_measured(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    # The sector overlaps, so the nearest reading is 0; the skirt's 23 mm box
+    # is still read because min_mm = 25 is above it.
+    a = _rig().assert_clear_of("rig", _corridor(2), name="d", min_mm=25.0)  # pyright: ignore[reportUnknownMemberType] — keepout is typed Shape[Unknown]
+    assert _read_parts(a, monkeypatch) == ["rig.sector", "rig.skirt"]
+
+
+def test_no_part_is_skipped_before_a_distance_is_known():
+    # The clamp's block sits wholly on the seat side, so it has no reading;
+    # the post 21 mm off must still be read to give the claim its value.
+    a = (
+        _clamp(None)
+        .with_part("post", Box(10, 10, 10), location=Location((0, 30, 12)))
+        .assert_clear_of(["clamp", "post"], BOLT_CORRIDOR, name="m4", seat=Plane.XY)  # pyright: ignore[reportUnknownMemberType] — keepout is typed Shape[Unknown]
+    )
+    (result,) = evaluate(a)
+    assert result.detail == "nearest of 2: post at 21.0000mm"
+
+
+def test_a_tie_for_nearest_names_the_part_declared_first():
+    # Both are 23 mm off, but the turned cube's box is nearer (18 mm), so it
+    # is read first: the claim still names the part declared first.
+    d = 2 + 28 / math.sqrt(2)
+    a = (
+        Assembly()
+        .with_part("zed", Box(10, 10, 10), location=Location((30, 0, 0)))
+        .with_part(
+            "abe", Rot(0, 0, 45) * Box(10, 10, 10), location=Location((-d, -d, 0))
+        )
+        .assert_clear_of(["zed", "abe"], _corridor(2), name="d")  # pyright: ignore[reportUnknownMemberType] — keepout is typed Shape[Unknown]
+    )
+    (result,) = evaluate(a)
+    assert result.detail == "nearest of 2: zed at 23.0000mm"
 
 
 def test_a_keepout_claim_naming_an_absent_part_skips_whole():
