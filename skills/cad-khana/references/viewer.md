@@ -100,34 +100,44 @@ part makes it the owner's selection in Shala; a part you select with
 view", run `shala selection` (the `shala` skill) and do not guess:
 
 ```
-cad/m03/assembly.py:41
+khana://sorted-studs/cad/m03/assembly.py:build_exhibit#part=f2.baskets.basket_315_12
 label: f2.baskets.basket_315_12
-state: {"part":"f2.baskets.basket_315_12","view":{"camera":{…},"ortho":true,…,"hidden":[]}}
+state: {"camera":{…},"ortho":true,…,"hidden":[]}
 ```
 
+- **The first line is a moniker**, `khana://<project>/<target>#part=<part>`:
+  the repository's folder, the target exactly as `khana view` takes
+  it from the repository's root, and the part's dotted tree path. It
+  says which assembly the owner is looking at and which part of it. It
+  does not say where in the code the part is made; find that from the
+  part's name.
 - **`label` is the part.**
-- **The reference is the target's module, at the line that defines the
-  member the page was written from**: `def build_exhibit(`, or
-  `assembly = …`. It is the same line for every part on the page. It
-  says which assembly the owner is looking at, not where the part is
-  made; find that from the label.
-- **`state`** is the part and the view as they were at the pick.
+- **`state`** is the view as it was at the pick.
 - If the label ends `(N hidden parts not in state)`, the list of
   hidden parts was too long to carry. `khana viewer state` has it.
 - Picking the part that is already picked posts nothing new. The
   selection still reads that part, with the view as it was at the pick.
 
+**A moniker means the same without Shala.** It is one token, so it can
+go into a note or a commit message whole. To check what one names, run
+`khana resolve <moniker>` from inside its project. It builds the target
+and prints `target:` and `part:`, and it exits 1 when the part is no
+longer in the assembly.
+
 **Bring a selection back**, the part and the view both, camera
 included:
 
 ```
-shala reveal --state '<the state JSON>' cad/m03/assembly.py:41
+shala reveal --state '<the state JSON>' '<the moniker>'
 ```
 
 The page answers with what it put back. A part that is no longer on the
-page is refused, and nothing changes.
+page is refused, and so is a moniker for a target other than the one
+the page was written from. Either way, nothing changes. Without
+`--state` only the part is selected. A moniker with no `#part=` selects
+nothing and changes nothing.
 
 **"its app is not open in Shala"** means what it says: ask the owner to
 open it. The command cannot. A page written outside a git repository
-has no file to anchor to, so its picks are not selections; `khana
+has no project to name it by, so its picks are not selections; `khana
 viewer state` still reads them.

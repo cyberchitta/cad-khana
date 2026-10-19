@@ -77,44 +77,67 @@ def test_built_page_failed_build_leaves_no_page(tmp_path: Path):
     assert not any(cache.iterdir())
 
 
-def test_defining_line_prefers_the_definition_to_a_mention():
-    source = (
-        "# assembly is built below\n"
-        "from parts import build_lid\n"
-        "def build_unit(\n    lift: float = 1.0,\n) -> Assembly:\n    return build_lid()\n"
-        "assembly: Assembly = build_unit()\n"
-    )
-    assert viewer.defining_line(source, "build_unit") == "def build_unit("
+def test_a_moniker_reads_back_as_it_was_written():
+    """The target keeps its path and factory; a part rides the fragment,
+    and a name a URL cannot carry as it is comes back whole."""
+    for named in (
+        viewer.Moniker("sorted-studs", "cad/m03/assembly.py:build_exhibit"),
+        viewer.Moniker(
+            "sorted-studs", "cad/m03/assembly.py", "f2.baskets.basket_315_12"
+        ),
+        viewer.Moniker("my repo", "cad/a b.py:build", "odd #part name"),
+    ):
+        assert viewer.Moniker.parse(str(named)) == named
     assert (
-        viewer.defining_line(source, "assembly") == "assembly: Assembly = build_unit()"
+        str(viewer.Moniker("sorted-studs", "cad/unit.py:build_unit", "f2.rail"))
+        == "khana://sorted-studs/cad/unit.py:build_unit#part=f2.rail"
     )
-    assert viewer.defining_line(source, "build_lid") == "from parts import build_lid"
-    assert viewer.defining_line(source, "build") is None
+    assert " " not in str(viewer.Moniker("my repo", "cad/a b.py", "odd name"))
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "cad/unit.py",
+        "shala://sorted-studs/cad/unit.py",
+        "khana://sorted-studs",
+        "khana://sorted-studs/",
+        "khana:///cad/unit.py",
+        "khana://sorted-studs/cad/unit.py#f2.rail",
+        "khana://sorted-studs/cad/unit.py#part=",
+    ],
+)
+def test_what_is_not_a_moniker_says_so(text: str):
+    with pytest.raises(ValueError, match="khana://<project>/<target>"):
+        viewer.Moniker.parse(text)
 
 
 def test_origin_is_relative_to_the_repository(tmp_path: Path):
     """The target reads as `khana view` would be given it from the
-    repository root; outside one there is nothing to point at."""
+    repository root, and the moniker names it in that repository;
+    outside one there is nothing to name it by."""
     (tmp_path / "repo" / ".git").mkdir(parents=True)
     module = tmp_path / "repo" / "cad" / "unit.py"
     module.parent.mkdir()
     module.write_text("def build_unit() -> Assembly:\n    ...\n")
-    assert viewer.origin(module, "build_unit", "build_unit") == viewer.Origin(
-        "cad/unit.py:build_unit", "cad/unit.py", "def build_unit() -> Assembly:"
+    assert viewer.origin(module, "build_unit") == viewer.Origin(
+        "cad/unit.py:build_unit", "khana://repo/cad/unit.py:build_unit"
     )
-    assert viewer.origin(module, "assembly") == viewer.Origin(
-        "cad/unit.py", "cad/unit.py", None
+    assert viewer.origin(module) == viewer.Origin(
+        "cad/unit.py", "khana://repo/cad/unit.py"
     )
     loose = tmp_path / "loose.py"
     loose.write_text("assembly = 1\n")
-    assert viewer.origin(loose, "assembly") == viewer.Origin(str(loose))
+    assert viewer.origin(loose) == viewer.Origin(str(loose))
 
 
 def test_write_page_says_where_the_assembly_was_declared(tmp_path: Path):
     built = tmp_path / "built"
     built.mkdir()
     (built / "index.html").write_text("<!doctype html>")
-    origin = viewer.Origin("cad/unit.py:build_unit", "cad/unit.py", "def build_unit(")
+    origin = viewer.Origin(
+        "cad/unit.py:build_unit", "khana://repo/cad/unit.py:build_unit"
+    )
     out = tmp_path / "page"
     written = viewer.write_page(
         Assembly().with_part("lid", Box(1, 1, 1)), built, out, origin=origin
@@ -122,6 +145,12 @@ def test_write_page_says_where_the_assembly_was_declared(tmp_path: Path):
     assert {p.name for p in written} == {"index.html", "shapes.json", "page.json"}
     assert json.loads((out / "page.json").read_text()) == {
         "target": "cad/unit.py:build_unit",
-        "path": "cad/unit.py",
-        "anchor": "def build_unit(",
+        "moniker": "khana://repo/cad/unit.py:build_unit",
     }
+
+
+def test_the_page_claims_the_khana_scheme():
+    """Shala reads the claim from the built index.html on disk; it is how
+    a reveal of a khana moniker reaches the page."""
+    html = (viewer.SOURCE / "src" / "index.html").read_text()
+    assert f'<meta name="shala-scheme" content="{viewer.SCHEME}" />' in html

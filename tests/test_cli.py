@@ -1775,6 +1775,61 @@ def test_view_writes_the_page_under_out_by_default(
     assert not pushed
 
 
+def _repo_with(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A repository named `proj` holding `cad/assembly.py`, the cwd."""
+    root = tmp_path / "proj"
+    (root / ".git").mkdir(parents=True)
+    (root / "cad").mkdir()
+    _write(root / "cad" / "assembly.py", _NESTED_MODULE)
+    monkeypatch.chdir(root / "cad")
+    return root
+
+
+def test_resolve_names_the_target_and_its_part(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Run anywhere inside the project, against the target as the
+    moniker gives it from the root."""
+    _repo_with(tmp_path, monkeypatch)
+    result = runner.invoke(
+        app, ["resolve", "khana://proj/cad/assembly.py#part=unit.cube"]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output.splitlines() == ["target: cad/assembly.py", "part: unit.cube"]
+    whole = runner.invoke(app, ["resolve", "khana://proj/cad/assembly.py"])
+    assert whole.exit_code == 0, whole.output
+    assert whole.output.splitlines() == ["target: cad/assembly.py", "parts: 2"]
+
+
+def test_resolve_of_a_part_that_is_gone_exits_1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _repo_with(tmp_path, monkeypatch)
+    result = runner.invoke(
+        app, ["resolve", "khana://proj/cad/assembly.py#part=unit.lid"]
+    )
+    assert result.exit_code == 1
+    assert "no part unit.lid" in result.output
+
+
+@pytest.mark.parametrize(
+    "moniker",
+    [
+        "cad/assembly.py",
+        "khana://other/cad/assembly.py",
+        "khana://proj/cad/missing.py",
+        "khana://proj/cad/assembly.py:build_nothing",
+    ],
+)
+def test_resolve_what_cannot_be_resolved_is_a_usage_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, moniker: str
+):
+    """Malformed, another project's, or a target naming nothing: exit 2."""
+    _repo_with(tmp_path, monkeypatch)
+    result = runner.invoke(app, ["resolve", moniker])
+    assert result.exit_code == 2, result.output
+
+
 def test_view_push_without_the_client_is_a_usage_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

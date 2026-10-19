@@ -155,7 +155,7 @@ cad-khana/
         tessellation.py       # render-mesh tolerances
       export.py               # STL, STEP (used by `khana export`)
       draw.py                 # HLR engineering drawings (PNG + SVG)
-      viewer.py               # the static page `khana view` writes, and its shapes
+      viewer.py               # the static page `khana view` writes, its shapes and monikers
                               # the page is built on first use into the user's cache;
                               # a wheel carries viewer/'s sources as cad_khana/_viewer/
       push.py                 # `view --push`: the one importer of ocp_vscode (the `ocp` extra)
@@ -259,6 +259,7 @@ khana draw   <target> --format png|svg|both   # orthographic/iso HLR line-art
 khana run    <script>           # execute an orchestration script
 khana diff <old> <new>          # diff two diagnostics JSON files
 khana show <json> [--grep/--failed/--skipped/--sort/--group/--json]  # read one
+khana resolve <moniker>         # what a khana:// moniker names: target, part
 ```
 
 A target's member is the named factory called with its defaults, or —
@@ -294,10 +295,13 @@ these commands and the skill's text, never by a message written by hand
 to; the page refuses a body whose `khana:` number is not its own
 (`drive.PROTOCOL`, held equal to `page.ts`'s by `tests/test_drive.py`),
 and every answer names the target the page was written from. A pick is
-not a command: the page posts it as Shala's selection, anchored at the
-line that defines the target's member (`viewer.origin`, written beside
-the page as `page.json`). Exit 1 when the page or its host refused, 2
-when neither could be reached.
+not a command: the page posts it as Shala's selection, a moniker
+`khana://<project>/<target>#part=<part>` (`viewer.Moniker`; the page's own
+is written beside it as `page.json`), and `index.html` claims the
+`khana` scheme so Shala routes a reveal of one to the page. `khana
+resolve` reads a moniker without Shala, so one in a note outlives the
+host. Exit 1 when the page or its host refused, 2 when neither could be
+reached.
 
 Declarations are imported by verbs; effects live at the CLI boundary.
 A module the import-model verbs consume never calls `check()`,

@@ -22,7 +22,6 @@ from cad_khana.mechanism.diagnostics import Diagnostics
 from cad_khana.selection import SelectionError
 from cad_khana.show import report, report_json, require_diagnostics
 from cad_khana.target import (
-    DEFAULT_MEMBER,
     Target,
     TargetError,
     ensure_importable,
@@ -346,7 +345,7 @@ def _pager(spec: str, page: Path | None) -> Verb:
         a,
         built,
         out / "page" if page is None else Path.cwd() / page,
-        viewer.origin(target.path, target.factory or DEFAULT_MEMBER, target.factory),
+        viewer.origin(target.path, target.factory),
     )
 
 
@@ -379,6 +378,49 @@ def _write_page(
 ) -> None:
     for path in viewer.write_page(assembly, built, out, origin):
         typer.echo(str(path))
+
+
+@app.command("resolve")
+def resolve_moniker(
+    moniker: Annotated[
+        str,
+        typer.Argument(help="A `khana://<project>/<target>[#part=<part>]` moniker."),
+    ],
+) -> None:
+    """Say what a moniker names, by building its target: the target, and
+    the part when it names one. Run from inside the moniker's project.
+    Exits 1 when the part is no longer in the assembly, 2 when the
+    moniker is malformed, names another project, or its target does not
+    resolve."""
+    try:
+        named = viewer.Moniker.parse(moniker)
+    except ValueError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2) from None
+    root = viewer.repository(Path.cwd())
+    if root is None or root.name != named.project:
+        here = "not in a repository" if root is None else f"this is {root.name}"
+        typer.echo(
+            f"error: {here}; run from inside {named.project}, which the moniker names",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    typer.echo(f"target: {named.target}")
+    _run_target(str(root / named.target), None, "resolve", _part_named(named.part))
+
+
+def _part_named(part: str | None) -> Verb:
+    def say(assembly: Assembly, _out: Path) -> None:
+        names = {p.name for p in assembly.placed_parts}
+        if part is None:
+            typer.echo(f"parts: {len(names)}")
+        elif part in names:
+            typer.echo(f"part: {part}")
+        else:
+            typer.echo(f"no part {part} in the assembly any more", err=True)
+            raise typer.Exit(code=1)
+
+    return say
 
 
 @app.command()

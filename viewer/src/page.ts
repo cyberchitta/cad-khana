@@ -1,13 +1,15 @@
 // The khana viewer page: three-cad-viewer over the shapes.json beside it.
-// page.json beside it says where the assembly was declared (its `origin`).
+// page.json beside it says where the assembly was declared (its `origin`):
+// the target, and the moniker that names it, khana://<project>/<target>.
 //
 // In Shala the page is driven two ways, and neither by hand:
-// - Pointing. A pick posts {shala: 1, select} anchored at the origin's line,
-//   with the part and the view as `state`, and the page declares the origin's
-//   file in `shows`. So a pick is the owner's selection, and a
-//   {shala: 1, reveal} carrying that state puts the part and the view back.
-//   Only the owner's own pick is posted: a part a command or a reveal
-//   selects is not what the owner selected.
+// - Pointing. A pick posts {shala: 1, select} naming the part by moniker,
+//   <origin's moniker>#part=<dotted path>, with the view as `state`. So a
+//   pick is the owner's selection, and a {shala: 1, reveal} of that moniker
+//   and state puts the part and the view back. index.html claims the
+//   `khana` scheme, which is how Shala knows to send it here. Only the
+//   owner's own pick is posted: a part a command or a reveal selects is not
+//   what the owner selected.
 // - The `khana viewer` commands (cad_khana/drive.py), whose bodies arrive
 //   wrapped as {shala: 1, tell: {id, body}} and are answered with
 //   {shala: 1, told: {id, ok, message?, result?}}.
@@ -89,11 +91,11 @@ interface Group {
 }
 interface Origin {
   target: string;
-  path: string | null;
-  anchor: string | null;
+  moniker: string | null;
 }
 interface Reveal {
-  state: Show | null;
+  moniker: string;
+  state: View | null;
 }
 type Change = { lastPick?: { new: PickInfo | null }; zoom?: { new: number } };
 interface Kept {
@@ -176,7 +178,8 @@ window.addEventListener("message", (event: MessageEvent) => {
 });
 
 const bytes = (value: unknown): number => new TextEncoder().encode(JSON.stringify(value)).length;
-const unknownOrigin: Origin = { target: "", path: null, anchor: null };
+const unknownOrigin: Origin = { target: "", moniker: null };
+const PART = "#part=";
 
 // The browser's storage, which a private window or a strict host may refuse.
 const stored = {
@@ -282,16 +285,15 @@ async function main(): Promise<void> {
   // A pick as the owner's selection in Shala. A hidden list too long for
   // the state is left out of it, and the label says so.
   const point = (part: string): void => {
-    if (origin.path === null || origin.anchor === null) return;
-    const whole = { part, view: view() };
-    const { hidden, ...rest } = whole.view;
+    if (origin.moniker === null) return;
+    const whole = view();
+    const { hidden, ...rest } = whole;
     const fits = bytes(whole) < STATE_LIMIT;
     shala({
       select: {
-        path: origin.path,
-        anchor: origin.anchor,
+        moniker: `${origin.moniker}${PART}${encodeURIComponent(part)}`,
         label: fits ? part : `${part} (${hidden?.length} hidden parts not in state)`,
-        state: fits ? whole : { part, view: rest },
+        state: fits ? whole : rest,
       },
     });
   };
@@ -458,18 +460,45 @@ async function main(): Promise<void> {
     return done.ok ? { ...done, result: { target: origin.target, ...done.result } } : done;
   };
 
-  // A selection's state put back: the part and whatever of the view it carried.
-  reveal = ({ state }) => {
-    if (state === null) return { ok: true, message: `${origin.target}: ${parts.length} parts; no state to put back` };
-    const done = show(state);
+  // A moniker put back: the part it names, and whatever of the view its
+  // state carried. One for another target, or for a part that is gone,
+  // changes nothing.
+  reveal = ({ moniker, state }) => {
+    const named = resolved(String(moniker));
+    if (typeof named === "string") return { ok: false, message: named };
+    const done = show({ ...named, ...(state === null ? {} : { view: state }) });
     if (!done.ok) return done;
-    const put = [...(state.part === undefined ? [] : [`part ${state.part}`]), ...Object.keys(state.view ?? {})];
+    const put = [...(named.part === undefined ? [] : [`part ${named.part}`]), ...Object.keys(state ?? {})];
     return { ok: true, message: `${origin.target}: put back ${put.join(", ") || "nothing"}` };
+  };
+  // The part a moniker of this page names, or why it names none here.
+  const resolved = (moniker: string): { part?: string } | string => {
+    if (origin.moniker === null) return "this page was written outside a repository, so nothing names it";
+    const cut = moniker.indexOf("#");
+    const [base, fragment] = cut < 0 ? [moniker, ""] : [moniker.slice(0, cut), moniker.slice(cut)];
+    const same = (a: string, b: string): boolean => {
+      try {
+        return decodeURI(a) === decodeURI(b);
+      } catch {
+        return false;
+      }
+    };
+    if (!same(base, origin.moniker)) return `this page shows ${origin.moniker}; run \`khana view\` on the target ${moniker} names`;
+    if (fragment === "") return {};
+    if (!fragment.startsWith(PART) || fragment.length === PART.length) return `after # a moniker names a part (${PART}<dotted path>), not ${fragment}`;
+    try {
+      return { part: decodeURIComponent(fragment.slice(PART.length)) };
+    } catch {
+      return `the part in ${moniker} is not readable`;
+    }
   };
 
   say(`${parts.length} parts · three-cad-viewer ${version} · ${before ? "the view as it was left" : "double-click a part to name it"}`);
   tell({ ready: { parts } });
-  if (origin.path !== null) shala({ shows: [origin.path] });
+  // Shala holds a reveal until the page's first message after its recall,
+  // and the page may have nothing else to say yet: this one says only that
+  // it can answer now.
+  shala({});
   Object.assign(window, { khana: { viewer, parts, view, handle } });
 }
 

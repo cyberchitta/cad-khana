@@ -3,13 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import shutil
 import subprocess
 import tempfile
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from urllib.parse import quote, unquote
 
 from build123d import Compound, Shape
 from ocp_tessellate.convert import (  # pyright: ignore[reportMissingTypeStubs]
@@ -32,6 +32,9 @@ CACHE = (
 FETCHED = "node_modules"
 INSTALL = ("install", "--frozen-lockfile", "--production")
 ROOT = "assembly"
+SCHEME = "khana"
+PART = "part="
+FORM = "khana://<project>/<target>[#part=<dotted path>]"
 
 
 def _leaf(p: PlacedPart) -> Shape:
@@ -79,42 +82,66 @@ def shapes(assembly: Assembly) -> str:
 
 
 @dataclass(frozen=True)
+class Moniker:
+    """What a page shows, named so a host can point at it and anyone can
+    resolve it without one: ``khana://<project>/<target>`` for the
+    assembly, then ``#part=<dotted path>`` for one part of it.
+    ``project`` is the repository's folder name, ``target`` what `khana
+    view` is given from the repository's root."""
+
+    project: str
+    target: str
+    part: str | None = None
+
+    def __str__(self) -> str:
+        whole = (
+            f"{SCHEME}://{quote(self.project, safe='')}/{quote(self.target, safe='/:')}"
+        )
+        return (
+            whole if self.part is None else f"{whole}#{PART}{quote(self.part, safe='')}"
+        )
+
+    @staticmethod
+    def parse(text: str) -> Moniker:
+        """The moniker ``text`` spells; ``ValueError`` saying what is
+        wrong when it spells none."""
+        scheme, sep, rest = text.partition("://")
+        project, slash, path = rest.partition("/")
+        target, hashed, fragment = path.partition("#")
+        if scheme != SCHEME or not (sep and project and slash and target):
+            raise ValueError(f"not a khana moniker: {text!r} ({FORM})")
+        if hashed and not (fragment.startswith(PART) and len(fragment) > len(PART)):
+            raise ValueError(f"after `#` a moniker names a part: {text!r} ({FORM})")
+        part = unquote(fragment.removeprefix(PART)) if hashed else None
+        return Moniker(unquote(project), unquote(target), part)
+
+
+@dataclass(frozen=True)
 class Origin:
     """Where a page's assembly was declared: the target as `khana view`
-    would be given it from the repository root, and the file and line a
-    host can point at for it. Outside a repository there is no root to
-    be relative to, so no ``path``; ``anchor`` is that line's own text,
-    which survives edits where a line number does not."""
+    would be given it from the repository root, and the moniker a host
+    points at it by. Outside a repository there is no project and no
+    root to be relative to, so no moniker."""
 
     target: str
-    path: str | None = None
-    anchor: str | None = None
+    moniker: str | None = None
 
 
-def defining_line(source: str, member: str) -> str | None:
-    """The line that defines ``member`` in ``source``, stripped: its
-    ``def`` or its assignment, else the first line that names it (an
-    import), else nothing."""
-    name = re.escape(member)
-    lines = tuple(line.strip() for line in source.splitlines())
-    defined = re.compile(rf"(async\s+)?def\s+{name}\s*\(|{name}\s*[:=]")
-    named = re.compile(rf"(?!#).*\b{name}\b")
-    return next(
-        (line for found in (defined, named) for line in lines if found.match(line)),
-        None,
-    )
+def repository(path: Path) -> Path | None:
+    """The root of the git repository ``path`` is in."""
+    here = path.resolve()
+    return next((p for p in (here, *here.parents) if (p / ".git").exists()), None)
 
 
-def origin(module: Path, member: str, factory: str | None = None) -> Origin:
-    """The origin of ``member`` of ``module``, addressed as ``factory``
-    when the target named one."""
-    file = module.resolve()
-    root = next((p for p in file.parents if (p / ".git").exists()), None)
+def origin(module: Path, factory: str | None = None) -> Origin:
+    """The origin of ``module``'s assembly, addressed as ``factory`` when
+    the target named one."""
+    root = repository(module)
     suffix = "" if factory is None else f":{factory}"
     if root is None:
         return Origin(f"{module}{suffix}")
-    path = file.relative_to(root).as_posix()
-    return Origin(f"{path}{suffix}", path, defining_line(file.read_text(), member))
+    target = f"{module.resolve().relative_to(root).as_posix()}{suffix}"
+    return Origin(target, str(Moniker(root.name, target)))
 
 
 def page_key(source: Path) -> str:
