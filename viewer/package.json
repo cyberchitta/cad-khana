@@ -6,6 +6,7 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
+    "pair-ui": "github:cyberchitta/pair-ui#5ad81afb307f53d658dc86e52041e901eacf6305",
     "three-cad-viewer": "5.1.3"
   },
   "devDependencies": {

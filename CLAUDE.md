@@ -100,8 +100,8 @@ cad-khana/
   _notes/                     # working notes, gitignored — see below
   pyproject.toml              # uv-managed, entry point: khana = cad_khana.cli:main
   viewer/                     # the viewer page, TypeScript, built with bun
-    src/page.ts               # three-cad-viewer, the pick as Shala's selection, and the
-                              # bodies `khana viewer` sends (show, set, get)
+    src/page.ts               # three-cad-viewer, the owner's pick, pair-ui's messages, and
+                              # the bodies `khana viewer` sends (show, set, get)
     build.ts                  # bundles into the directory it is given
   skills/
     cad-khana/
@@ -159,7 +159,7 @@ cad-khana/
                               # the page is built on first use into the user's cache;
                               # a wheel carries viewer/'s sources as cad_khana/_viewer/
       push.py                 # `view --push`: the one importer of ocp_vscode (the `ocp` extra)
-      drive.py                # `khana viewer`: bodies for an open page, carried by `shala tell`
+      drive.py                # `khana viewer`: bodies for an open page, carried by `pair-ui` or `shala`
       diff.py                 # dispatches on file kind (mechanism/printability)
       selection.py            # subset of one run: claim globs, tree paths
       show.py                 # reads one diagnostics JSON: summary, filters, groups
@@ -254,7 +254,7 @@ khana export <target>           # STL + STEP
 khana view   <target>           # write a static viewer page, nested by sub-assembly
 khana view   <target> --page <dir>      # into <dir> instead of <out>/page
 khana view   <target> --push            # push to a listening OCP viewer instead (the `ocp` extra)
-khana viewer parts|state|show|panes     # ask the page open in Shala what it shows, or change it
+khana viewer parts|state|show|reveal|panes  # ask the open page what it shows, or change it
 khana draw   <target> --format png|svg|both   # orthographic/iso HLR line-art
 khana run    <script>           # execute an orchestration script
 khana diff <old> <new>          # diff two diagnostics JSON files
@@ -291,14 +291,20 @@ when it is not a diagnostics file.
 `khana viewer` takes no target: it reaches the page the owner has open
 (`drive.py`, the skill's `viewer.md`). An agent drives the page through
 these commands and the skill's text, never by a message written by hand
-(owner, 2026-10-12). `shala tell` is the carrier `drive.ask` shells out
-to; the page refuses a body whose `khana:` number is not its own
+(owner, 2026-10-12). Two hosts carry the bodies, both in pair-ui's
+protocol: a pair-ui host listening on the project's socket, else Shala
+(`drive.carrier`); `drive.ask` and `drive.reveal` shell out to that
+host's `tell` or `reveal`. The page reaches either through pair-ui's
+page client, so one build runs under both. The page refuses a body whose `khana:` number is not its own
 (`drive.PROTOCOL`, held equal to `page.ts`'s by `tests/test_drive.py`),
-and every answer names the target the page was written from. A pick is
-not a command: the page posts it as Shala's selection, a moniker
+and every answer names the target the page was written from, and
+carries a message, which pair-ui requires. The owner's pick is the page's own state, never a host's selection:
+`picked` holds the part the owner last double-clicked and its moniker
 `khana://<project>/<target>#part=<part>` (`viewer.Moniker`; the page's own
-is written beside it as `page.json`), and `index.html` claims the
-`khana` scheme so Shala routes a reveal of one to the page. `khana
+is written beside it as `page.json`), and a part a command or a reveal
+selects leaves it alone. `index.html` claims the `khana` scheme so Shala
+routes a reveal of a moniker to the page; `khana viewer reveal` sends
+one through whichever host is running. `khana
 resolve` reads a moniker without Shala, so one in a note outlives the
 host. Exit 1 when the page or its host refused, 2 when neither could be
 reached.
@@ -716,7 +722,12 @@ group.
 External CLI tools (not Python deps — shelled out to):
 
 - `shala` — the owner's workspace app's CLI. `drive.ask` runs `shala tell`
-  to reach a viewer page open there. Needed by `khana viewer` alone.
+  (and `drive.reveal` `shala reveal`) to reach a viewer page open there.
+- `pair-ui` (`cargo install --git https://github.com/cyberchitta/pair-ui`)
+  — the other host: `pair-ui serve` puts the page in a browser, and
+  `drive` runs its `tell`/`reveal` when its host is listening. `khana
+  viewer` needs one of the two. Its page client is a dependency of the
+  page, pinned to a commit in `viewer/package.json` (0BSD).
 
 - `bun` — `viewer.built_page` runs it to build the viewer page the first
   time `khana view` is asked for one, and keeps the result under

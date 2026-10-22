@@ -2015,3 +2015,21 @@ def test_viewer_outside_a_repository_asks_for_the_project(
     assert result.exit_code == 2
     assert "--project" in result.output
     assert not asked
+
+
+def test_viewer_reveal_reaches_the_monikers_project(monkeypatch: pytest.MonkeyPatch):
+    asked: list[tuple[str, str, str | None]] = []
+
+    def reveal(moniker: str, project: str, state: str | None) -> drive.Answer:
+        asked.append((moniker, project, state))
+        return drive.Answer({}, message="a.py: put back part lid")
+
+    monkeypatch.setattr(drive, "reveal", reveal)
+    moniker = "khana://studs/cad/a.py#part=lid"
+    result = runner.invoke(app, ["viewer", "reveal", moniker, "--state", "{}"])
+    assert result.exit_code == 0, result.output
+    assert "a.py: put back part lid" in result.output
+    assert asked == [(moniker, "studs", "{}")]
+    for bad in (["shala://studs/a.py"], [moniker, "--state", "{camera"]):
+        assert runner.invoke(app, ["viewer", "reveal", *bad]).exit_code == 2
+    assert len(asked) == 1

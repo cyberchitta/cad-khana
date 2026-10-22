@@ -2,22 +2,24 @@
 // page.json beside it says where the assembly was declared (its `origin`):
 // the target, and the moniker that names it, khana://<project>/<target>.
 //
-// In Shala the page is driven two ways, and neither by hand:
-// - Pointing. A pick posts {shala: 1, select} naming the part by moniker,
-//   <origin's moniker>#part=<dotted path>, with the view as `state`. So a
-//   pick is the owner's selection, and a {shala: 1, reveal} of that moniker
-//   and state puts the part and the view back. index.html claims the
-//   `khana` scheme, which is how Shala knows to send it here. Only the
-//   owner's own pick is posted: a part a command or a reveal selects is not
-//   what the owner selected.
+// The page reaches its host through pair-ui's page client, which speaks to
+// a framing host (Shala) over postMessage and to the pair-ui host over HTTP,
+// so one build runs under either. It is driven two ways, neither by hand:
+// - Pointing. The owner's own pick is the page's `picked`: the part and the
+//   moniker naming it, <origin's moniker>#part=<dotted path>. A part a
+//   command or a reveal selects is not what the owner picked, so it leaves
+//   `picked` alone. A reveal of a moniker puts the part and the view back.
+//   index.html claims the `khana` scheme, which is how Shala knows to send
+//   it here.
 // - The `khana viewer` commands (cad_khana/drive.py), whose bodies arrive
-//   wrapped as {shala: 1, tell: {id, body}} and are answered with
-//   {shala: 1, told: {id, ok, message?, result?}}.
+//   as tells.
+// Every answer carries a message, which pair-ui requires.
 //
 // A body is {khana: PROTOCOL} and exactly one of
 //   show: {part?, view?}            select a part, set any of the view
 //   set:  {tree?, info?, toolbar?}  show or hide the page's own panes
-//   get:  [parts|picked|view|frame] ask what the page holds
+//   get:  [parts|picked|view|frame] ask what the page holds; `picked`
+//         is {part, moniker} or null
 // One the page cannot do in full changes nothing. Every answer's `result`
 // names the origin's target. A body with another protocol number is refused:
 // the command and the page were built apart.
@@ -33,12 +35,15 @@
 // view kept before a rebuild, what still fits is put back and a part that is
 // gone is dropped, unlike a `show`. Storage the browser refuses keeps nothing.
 // Shala's WebKit keeps a frame's storage only while Shala runs, so the entry
-// also goes to Shala as {shala: 1, keep}, and a load that finds no entry
-// asks for it back with {shala: 1, recall}, waiting a moment for the answer.
+// also goes to the host to keep, and a load that finds no entry takes the
+// host's copy. Under the pair-ui host the page's origin changes with each
+// run, so its copy is the only one that lasts.
 //
 // A host other than Shala that frames the page posts the same bodies bare,
 // hears {khana, done: {ok, message?, result?}}, {khana, ready: {parts}} once
 // and {khana, pick: {part, view}} for each pick.
+import { connect } from "pair-ui/page";
+import type { Host } from "pair-ui/page";
 import { Display, Viewer, version } from "three-cad-viewer";
 import type { PickInfo, Shapes, VisibilityState } from "three-cad-viewer";
 
@@ -73,7 +78,7 @@ type Frame = Record<(typeof FRAME)[number], boolean>;
 const GETS = ["parts", "picked", "view", "frame"] as const;
 interface Done {
   ok: boolean;
-  message?: string;
+  message: string;
   result?: object;
 }
 type Handle = (body: unknown) => Done;
@@ -93,10 +98,6 @@ interface Origin {
   target: string;
   moniker: string | null;
 }
-interface Reveal {
-  moniker: string;
-  state: View | null;
-}
 type Change = { lastPick?: { new: PickInfo | null }; zoom?: { new: number } };
 interface Kept {
   view: View;
@@ -109,7 +110,6 @@ interface Panes {
 }
 
 const PROTOCOL = 2; // cad_khana/drive.py carries the same number
-const STATE_LIMIT = 32000; // Shala takes a selection's state up to 32 KB
 const TREE = 260;
 const TOOLBAR = 54;
 const STATUS = 22;
@@ -118,7 +118,6 @@ const SHOWN: VisibilityState = [1, 1];
 const HIDDEN: VisibilityState = [0, 0];
 const SETTLE = 400; // ms a camera stays still before its view is kept
 const KEEP_LIMIT = 64000; // Shala holds a kept value up to 64 KB
-const RECALL_WAIT = 300; // ms a load with nothing stored waits for Shala's copy
 
 // The status line: what the page last had to say, then the zoom, which the
 // renderer shows nowhere.
@@ -133,7 +132,6 @@ const say = (text: string): void => {
 };
 const host = window.parent === window ? null : window.parent;
 const tell = (message: object): void => host?.postMessage({ khana: PROTOCOL, ...message }, "*");
-const shala = (message: object): void => host?.postMessage({ shala: 1, ...message }, "*");
 
 const narrow = (): boolean => window.innerWidth < NARROW;
 // The panes dock beside the view only when both show and there is room.
@@ -157,29 +155,20 @@ const starting = ({ camera, hidden: _hidden, direction: _direction, ...toggles }
 // A message that comes before the assembly has drawn is answered, not dropped.
 const early = (): Done => ({ ok: false, message: "the assembly has not drawn yet; send it again" });
 let handle: Handle = early;
-let reveal: (asked: Reveal) => Done = early;
-// What Shala kept for this project, asked for at once so the answer can
-// arrive while the page loads; it is waited for only when the browser's
-// storage has nothing, and only so long, since outside Shala nothing answers.
-let recalled: (value: unknown) => void = () => {};
-const recall = new Promise<unknown>((resolve) => {
-  recalled = resolve;
-  shala({ recall: true });
-});
-const recallSoon = (): Promise<unknown> =>
-  host ? Promise.race([recall, new Promise((resolve) => setTimeout(() => resolve(null), RECALL_WAIT))]) : Promise.resolve(null);
+// The host pair-ui's client found, asked for at once so its kept view can
+// arrive while the page loads; null when the page has none.
+const paired: Promise<Host | null> = connect().catch(() => null);
 window.addEventListener("message", (event: MessageEvent) => {
-  if (event.source !== host) return;
-  const sent: { tell?: { id: unknown; body: unknown }; reveal?: Reveal; recalled?: unknown } = event.data?.shala === 1 ? event.data : {};
-  if ("recalled" in sent) return recalled(sent.recalled);
-  if (sent.tell) return shala({ told: { id: sent.tell.id, ...handle(sent.tell.body) } });
-  if (sent.reveal) return shala({ revealed: reveal(sent.reveal) });
-  if (typeof event.data?.khana === "number") tell({ done: handle(event.data) });
+  if (event.source === host && typeof event.data?.khana === "number") tell({ done: handle(event.data) });
 });
 
 const bytes = (value: unknown): number => new TextEncoder().encode(JSON.stringify(value)).length;
 const unknownOrigin: Origin = { target: "", moniker: null };
 const PART = "#part=";
+
+// What a view set, for an answer's message: a toggle says which way.
+const said = (view: object): string[] =>
+  Object.entries(view).map(([key, value]) => (typeof value === "boolean" ? `${key} ${value ? "on" : "off"}` : key));
 
 // The browser's storage, which a private window or a strict host may refuse.
 const stored = {
@@ -239,13 +228,15 @@ const keptFor = (value: unknown, target: string): unknown => (record(value).targ
 async function main(): Promise<void> {
   const shapes = (await (await fetch("./shapes.json")).json()) as Shapes;
   const origin = (await fetch("./page.json").then((found) => (found.ok ? found.json() : unknownOrigin), () => unknownOrigin)) as Origin;
+  const pairHost = await paired;
   const root = shapes.id;
   // "/assembly/unit/cube" <-> "unit.cube"
   const dotted = (id: string): string => id.slice(root.length + 1).replaceAll("/", ".");
   const slashed = (part: string): string => `${root}/${part.replaceAll(".", "/")}`;
   const parts = leaves(shapes).map(dotted);
 
-  let picked: string | null = null;
+  // The owner's own pick; a part a command or a reveal selects is not it.
+  let picked: { part: string; moniker: string | null } | null = null;
   let forHost = false; // a part being selected for a host, not by the owner
   const key = `khana-view:${origin.target}`;
   let settling: ReturnType<typeof setTimeout> | undefined;
@@ -258,7 +249,7 @@ async function main(): Promise<void> {
     stored.write(key, JSON.stringify(entry));
     const whole = { target: origin.target, ...entry };
     const { hidden: _hidden, ...rest } = entry.view;
-    shala({ keep: bytes(whole) < KEEP_LIMIT ? whole : { ...whole, view: rest } });
+    pairHost?.keep(bytes(whole) < KEEP_LIMIT ? whole : { ...whole, view: rest });
   };
   const keepSoon = (): void => {
     changed = true;
@@ -276,32 +267,16 @@ async function main(): Promise<void> {
     }
     const pick = change.lastPick?.new;
     if (!pick) return;
-    picked = dotted(`${pick.path}/${pick.name}`);
-    say(picked);
-    tell({ pick: { part: picked, view: view() } });
-    if (!forHost) point(picked);
-  };
-
-  // A pick as the owner's selection in Shala. A hidden list too long for
-  // the state is left out of it, and the label says so.
-  const point = (part: string): void => {
-    if (origin.moniker === null) return;
-    const whole = view();
-    const { hidden, ...rest } = whole;
-    const fits = bytes(whole) < STATE_LIMIT;
-    shala({
-      select: {
-        moniker: `${origin.moniker}${PART}${encodeURIComponent(part)}`,
-        label: fits ? part : `${part} (${hidden?.length} hidden parts not in state)`,
-        state: fits ? whole : rest,
-      },
-    });
+    const part = dotted(`${pick.path}/${pick.name}`);
+    say(part);
+    tell({ pick: { part, view: view() } });
+    if (!forHost) picked = { part, moniker: origin.moniker === null ? null : `${origin.moniker}${PART}${encodeURIComponent(part)}` };
   };
 
   // At phone width the panes start collapsed whatever was kept.
   const initial: Frame = { tree: !narrow(), info: !narrow(), toolbar: false };
   const local = parsed(stored.read(key));
-  const before = kept(local ?? keptFor(await recallSoon(), origin.target), parts, initial);
+  const before = kept(local ?? keptFor(pairHost?.kept ?? null, origin.target), parts, initial);
   let frame: Frame = before ? { ...before.frame, tree: before.frame.tree && !narrow(), info: before.frame.info && !narrow() } : initial;
   const options = { ...size(frame), theme: "browser", pinning: false, up: "Z" };
   type DisplayOptions = ConstructorParameters<typeof Display>[1];
@@ -411,6 +386,7 @@ async function main(): Promise<void> {
     const message = refusal(asked);
     if (message !== null) return { ok: false, message };
     if (asked.view) apply(asked.view);
+    const did = [...(asked.part === undefined ? [] : [`selected ${asked.part}`]), ...said(asked.view ?? {})];
     if (asked.part !== undefined) {
       const id = slashed(asked.part);
       const cut = id.lastIndexOf("/");
@@ -421,7 +397,7 @@ async function main(): Promise<void> {
         forHost = false;
       }
     }
-    return { ok: true };
+    return { ok: true, message: did.join(", ") || "nothing to change" };
   };
 
   const set = (asked: Partial<Frame>): Done => {
@@ -431,7 +407,7 @@ async function main(): Promise<void> {
     frame = { ...shownFrame(), ...asked };
     layout();
     keepSoon();
-    return { ok: true };
+    return { ok: true, message: Object.entries(asked).map(([pane, on]) => `${pane} ${on ? "shown" : "hidden"}`).join(", ") };
   };
 
   const get = (asked: unknown): Done => {
@@ -439,7 +415,8 @@ async function main(): Promise<void> {
     const bad = Array.isArray(asked) ? asked.filter((key) => !known.includes(key)) : null;
     if (bad === null || bad.length) return { ok: false, message: `get takes a list from ${GETS.join(", ")}; not ${JSON.stringify(bad ?? asked)}` };
     const all = { parts, picked, view: view(), frame: shownFrame() };
-    return { ok: true, result: Object.fromEntries((asked as (typeof GETS)[number][]).map((key) => [key, all[key]])) };
+    // A reading's message is empty, so the commands print only what was read.
+    return { ok: true, message: "", result: Object.fromEntries((asked as (typeof GETS)[number][]).map((key) => [key, all[key]])) };
   };
 
   const does = (asked: { show?: Show; set?: Partial<Frame>; get?: unknown }): Done => {
@@ -463,12 +440,12 @@ async function main(): Promise<void> {
   // A moniker put back: the part it names, and whatever of the view its
   // state carried. One for another target, or for a part that is gone,
   // changes nothing.
-  reveal = ({ moniker, state }) => {
+  const reveal = (moniker: string, state: unknown): Done => {
     const named = resolved(String(moniker));
     if (typeof named === "string") return { ok: false, message: named };
-    const done = show({ ...named, ...(state === null ? {} : { view: state }) });
+    const done = show({ ...named, ...(state === null ? {} : { view: state as View }) });
     if (!done.ok) return done;
-    const put = [...(named.part === undefined ? [] : [`part ${named.part}`]), ...Object.keys(state ?? {})];
+    const put = [...(named.part === undefined ? [] : [`part ${named.part}`]), ...said(record(state))];
     return { ok: true, message: `${origin.target}: put back ${put.join(", ") || "nothing"}` };
   };
   // The part a moniker of this page names, or why it names none here.
@@ -495,14 +472,13 @@ async function main(): Promise<void> {
 
   say(`${parts.length} parts · three-cad-viewer ${version} · ${before ? "the view as it was left" : "double-click a part to name it"}`);
   tell({ ready: { parts } });
-  // Shala holds a reveal until the page's first message after its recall,
-  // and the page may have nothing else to say yet: this one says only that
-  // it can answer now.
-  shala({});
+  // The host holds reveals until this, and the kept view is drawn by now.
+  pairHost?.start({ tell: handle, reveal });
   Object.assign(window, { khana: { viewer, parts, view, handle } });
 }
 
-main().catch((error: unknown) => {
+main().catch(async (error: unknown) => {
   handle = () => ({ ok: false, message: `the page failed to load its assembly: ${error}` });
   say(`failed: ${error}`);
+  (await paired)?.start({ tell: handle, reveal: () => handle(null) });
 });

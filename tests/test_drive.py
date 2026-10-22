@@ -1,6 +1,8 @@
 import json
 import re
+import socket
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -107,3 +109,49 @@ def test_project_is_the_repository_folder(tmp_path: Path):
     (tmp_path / "studs" / "cad" / "m1").mkdir(parents=True)
     assert drive.project(tmp_path / "studs" / "cad" / "m1") == "studs"
     assert drive.project(tmp_path / "studs") == "studs"
+
+
+def test_the_pair_socket_is_where_pair_ui_puts_it():
+    assert drive.pair_socket(
+        "studs", {"XDG_RUNTIME_DIR": "/run/u", "TMPDIR": "/t"}
+    ) == Path("/run/u/pair-ui/studs.sock")
+    assert drive.pair_socket("studs", {"TMPDIR": "/t/"}) == Path(
+        "/t/pair-ui/studs.sock"
+    )
+    assert drive.pair_socket("studs", {}) == Path("/tmp/pair-ui/studs.sock")
+
+
+def test_a_socket_counts_only_while_a_host_answers_on_it():
+    # A short directory: a Unix socket's path has a length limit.
+    with tempfile.TemporaryDirectory(dir="/tmp") as where:
+        path = Path(where) / "p.sock"
+        assert not drive.listening(path)
+        with socket.socket(socket.AF_UNIX) as host:
+            host.bind(str(path))
+            host.listen()
+            assert drive.listening(path)
+        assert path.exists()
+        assert not drive.listening(path)
+
+
+def test_ask_through_pair_ui_sends_what_shala_would():
+    calls, run = _carrier(0, 'told p\nmessage: \nresult: {"target": "a.py"}\n')
+    answer = drive.ask("p", drive.get("parts"), run, via=drive.PAIR_UI)
+    assert answer.target == "a.py"
+    assert answer.message is None
+    assert calls == [["pair-ui", "tell", "p", '{"khana":2,"get":["parts"]}']]
+
+
+def test_reveal_puts_the_state_where_each_carrier_takes_it():
+    moniker = "khana://p/a.py#part=lid"
+    calls, run = _carrier(0, f"revealed {moniker}\nmessage: a.py: put back part lid\n")
+    answer = drive.reveal(moniker, "p", '{"ortho":true}', run, via=drive.PAIR_UI)
+    assert answer.message == "a.py: put back part lid"
+    shala = f"revealed {moniker} in the app: a.py: put back part lid (build of now)\n"
+    later, run = _carrier(0, shala)
+    answer = drive.reveal(moniker, "p", '{"ortho":true}', run, via=drive.SHALA)
+    assert (answer.message, answer.build) == ("a.py: put back part lid", "now")
+    assert calls + later == [
+        ["pair-ui", "reveal", moniker, "--state", '{"ortho":true}'],
+        ["shala", "reveal", "--state", '{"ortho":true}', moniker],
+    ]

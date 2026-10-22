@@ -5,6 +5,7 @@
     "": {
       "name": "khana-viewer-page",
       "dependencies": {
+        "pair-ui": "github:cyberchitta/pair-ui#5ad81afb307f53d658dc86e52041e901eacf6305",
         "three-cad-viewer": "5.1.3",
       },
       "devDependencies": {
@@ -21,6 +22,8 @@
     "bun-types": ["bun-types@1.3.14", "", { "dependencies": { "@types/node": "*" } }, "sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ=="],
 
     "n8ao": ["n8ao@1.10.1", "", { "peerDependencies": { "postprocessing": ">=6.30.0", "three": ">=0.137" } }, "sha512-hhI1pC+BfOZBV1KMwynBrVlIm8wqLxj/abAWhF2nZ0qQKyzTSQa1QtLVS2veRiuoBQXojxobcnp0oe+PUoxf/w=="],
+
+    "pair-ui": ["pair-ui@github:cyberchitta/pair-ui#5ad81af", {}, "cyberchitta-pair-ui-5ad81af", "sha512-yVagVDWLhgoHkl147AlBfykVoeorNxa4DP1dNrBPO+qyTq2JdqQY8lc9qipbxNFGr3w/HcXVfM6NgV7+Fbvfvw=="],
 
     "postprocessing": ["postprocessing@6.39.0", "", { "peerDependencies": { "three": ">= 0.168.0 < 0.184.0" } }, "sha512-/G6JY8hs426lcto/pBZlnFSkyEo1fHsh4gy7FPJtq1SaSUOzJgDW6f6f1K/+aMOYzK/eQEefyOb3++jPPIUeDA=="],
 

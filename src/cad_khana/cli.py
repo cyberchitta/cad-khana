@@ -550,7 +550,7 @@ viewer_app = typer.Typer(
     help=(
         "Ask an open viewer page what it shows, or change it. The page is "
         "the one `khana view` wrote, open in a host that carries these "
-        "commands to it (Shala)."
+        "commands to it: a pair-ui host serving the project, else Shala."
     ),
     no_args_is_help=True,
 )
@@ -577,8 +577,12 @@ def _ask(project: str | None, body: drive.Body) -> drive.Answer:
             "error: not in a repository; name the project with --project", err=True
         )
         raise typer.Exit(code=2)
+    return _carried(lambda: drive.ask(name, body))
+
+
+def _carried(call: Callable[[], drive.Answer]) -> drive.Answer:
     try:
-        return drive.ask(name, body)
+        return call()
     except drive.Refused as exc:
         typer.echo(f"refused: {exc}", err=True)
         raise typer.Exit(code=1) from None
@@ -606,8 +610,8 @@ def viewer_parts(project: ProjectOpt = None) -> None:
 
 @viewer_app.command("state")
 def viewer_state(project: ProjectOpt = None) -> None:
-    """Print what the open page is showing, as JSON: the part last
-    picked, the view (camera, toggles, hidden parts) and its panes."""
+    """Print what the open page is showing, as JSON: the part the owner
+    last picked, the view (camera, toggles, hidden parts) and its panes."""
     answer = _ask(project, drive.get("picked", "view", "frame"))
     shown = {k: v for k, v in answer.result.items() if k != "target"}
     _say(answer, json.dumps(shown, indent=2))
@@ -705,6 +709,36 @@ def viewer_show(
         answer,
         *(() if hidden is None else (f"hidden: {len(hidden)} parts",)),
     )
+
+
+@viewer_app.command("reveal")
+def viewer_reveal(
+    moniker: Annotated[
+        str,
+        typer.Argument(help="A `khana://<project>/<target>[#part=<part>]` moniker."),
+    ],
+    state: Annotated[
+        str | None,
+        typer.Option(
+            "--state",
+            help="A view to put back, as JSON: `view` from `khana viewer state`.",
+        ),
+    ] = None,
+) -> None:
+    """Put back on the open page the part a moniker names, and the view
+    in --state. The page of the moniker's project is reached. It
+    refuses, changing nothing, a moniker for another target or a part
+    that is gone."""
+    try:
+        named = viewer.Moniker.parse(moniker)
+        if state is not None:
+            json.loads(state)
+    except ValueError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2) from None
+    answer = _carried(lambda: drive.reveal(moniker, named.project, state))
+    built = f" (build of {answer.build})" if answer.build else ""
+    typer.echo(f"{answer.message or 'revealed'}{built}")
 
 
 @viewer_app.command("panes")
