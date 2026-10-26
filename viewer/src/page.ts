@@ -167,8 +167,7 @@ const unknownOrigin: Origin = { target: "", moniker: null };
 const PART = "#part=";
 
 // What a view set, for an answer's message: a toggle says which way.
-const said = (view: object): string[] =>
-  Object.entries(view).map(([key, value]) => (typeof value === "boolean" ? `${key} ${value ? "on" : "off"}` : key));
+const said = (view: object): string[] => Object.entries(view).map(([key, value]) => (typeof value === "boolean" ? `${key} ${value ? "on" : "off"}` : key));
 
 // The browser's storage, which a private window or a strict host may refuse.
 const stored = {
@@ -227,7 +226,10 @@ const keptFor = (value: unknown, target: string): unknown => (record(value).targ
 
 async function main(): Promise<void> {
   const shapes = (await (await fetch("./shapes.json")).json()) as Shapes;
-  const origin = (await fetch("./page.json").then((found) => (found.ok ? found.json() : unknownOrigin), () => unknownOrigin)) as Origin;
+  const origin = (await fetch("./page.json").then(
+    (found) => (found.ok ? found.json() : unknownOrigin),
+    () => unknownOrigin,
+  )) as Origin;
   const pairHost = await paired;
   const root = shapes.id;
   // "/assembly/unit/cube" <-> "unit.cube"
@@ -407,7 +409,12 @@ async function main(): Promise<void> {
     frame = { ...shownFrame(), ...asked };
     layout();
     keepSoon();
-    return { ok: true, message: Object.entries(asked).map(([pane, on]) => `${pane} ${on ? "shown" : "hidden"}`).join(", ") };
+    return {
+      ok: true,
+      message: Object.entries(asked)
+        .map(([pane, on]) => `${pane} ${on ? "shown" : "hidden"}`)
+        .join(", "),
+    };
   };
 
   const get = (asked: unknown): Done => {
@@ -432,7 +439,10 @@ async function main(): Promise<void> {
   handle = (body) => {
     const asked = body as { khana?: unknown; show?: Show; set?: Partial<Frame>; get?: unknown } | null;
     if (asked?.khana !== PROTOCOL)
-      return { ok: false, message: `this page takes khana: ${PROTOCOL} and was sent ${JSON.stringify(asked?.khana)}; the page and the khana command were built apart, so run \`khana view\` again to rewrite the page` };
+      return {
+        ok: false,
+        message: `this page takes khana: ${PROTOCOL} and was sent ${JSON.stringify(asked?.khana)}; the page and the khana command were built apart, so run \`khana view\` again to rewrite the page`,
+      };
     const done = does(asked);
     return done.ok ? { ...done, result: { target: origin.target, ...done.result } } : done;
   };
