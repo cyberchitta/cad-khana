@@ -42,10 +42,11 @@
 // A host other than Shala that frames the page posts the same bodies bare,
 // hears {khana, done: {ok, message?, result?}}, {khana, ready: {parts}} once
 // and {khana, pick: {part, view}} for each pick.
-import { connect } from "pair-ui/page";
+
 import type { Host } from "pair-ui/page";
-import { Display, Viewer, version } from "three-cad-viewer";
+import { connect } from "pair-ui/page";
 import type { PickInfo, Shapes, VisibilityState } from "three-cad-viewer";
+import { Display, Viewer, version } from "three-cad-viewer";
 
 type Vec3 = [number, number, number];
 type Quat = [number, number, number, number];
