@@ -1,2 +1,8 @@
 # ruff format adoption — whitespace only
 bfd0da46e5b921219070175dea8971e83b859d7c
+
+# style: format TypeScript with Biome
+744d004e37a0c60747b50e9e3b280822ac989275
+
+# style: sort imports with Biome
+cf68d0a02588d1d0a169162cfd685812d9eff2a4
