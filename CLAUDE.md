@@ -626,61 +626,16 @@ Units are always in the field name (`_mm`, `_mm3`, `_deg`). No ambiguity.
 
 ## Code style
 
-Follow these rigorously. They apply to every code change inside the `cad_khana`
-library and CLI.
+Code in the `cad_khana` library and CLI follows the global `code-style` and
+`python-style` skills, and the viewer's TypeScript also `typescript-style`;
+load them before writing code. What this repo adds:
 
-### Universal principles
-
-- **Functional first.** Prefer pure functions and immutable data. Design for
-  method chaining through immutable transformations. Prefer conditional
-  expressions over statements when possible.
-- **Self-documenting code.** Good names make comments superfluous. Compose
-  complex operations from small, focused functions.
-- **Object design.** Keep `__init__` trivial. Use `@staticmethod create()` for
-  complex construction. Methods return new instances rather than mutating.
-  Default to frozen dataclasses.
-- **Error handling — natural failure over validation.** Validate only at
-  application boundaries (CLI input, user scripts, external data). Internal
-  functions assume valid inputs and fail fast via built-in mechanisms
-  (TypeError, KeyError, etc.). No defensive checks in core logic.
-- **Composition over inheritance.** No static dependencies — inject for
-  testability. Separate pure logic from side effects; keep side effects at
-  the edges.
-
-### Python specifics
-
-- **Pythonic patterns.** Comprehensions over loops. Single-pass operations
-  (`sum(x for x in items if cond)`, not filter-then-sum). Tuple unpacking.
-  Conditional expressions for simple branches.
-- **Type system.** Comprehensive type hints. Specific types: `list[str]`,
-  `dict[str, int]`. Avoid `Any`.
-- **Classes.** `@dataclass(frozen=True)` by default. `@property` for computed
-  attributes. `@staticmethod create()` for non-trivial construction.
-- **Imports.** Always at module top. Order: stdlib, third-party, local. No
-  function-level imports except documented lazy-loading: `bpy` and
-  `mathutils` inside `render/`; and `ocp_vscode`, the optional `ocp`
-  extra, reached only through `cli._pusher` importing `push.py` and
-  `environment._probe_viewer`. Nothing else.
-- **Idioms.** `isinstance()` for type checks. `enumerate()` and `zip()` for
-  iteration. Context managers for resources. `pathlib.Path` over string paths.
-
-### Pre-flight checklist (run mentally before every code change)
-
-1. Are functions pure? Do they return new data instead of mutating?
-2. Are names concise but expressive? Avoid verbose parameters (`threshold`,
-   not `coverage_threshold`).
-3. Are data structures immutable? Can operations chain?
-4. Can this be written more elegantly with comprehensions or functional
-   patterns?
-5. Are all parameters and returns typed?
-
-**Red flags:** functions that mutate inputs, verbose parameter names,
-imperative loops where comprehensions fit, missing or vague type hints,
-nested conditionals where guard clauses would work, defensive validation
-inside internal functions.
-
-When in doubt, prefer elegance and functional patterns over apparent
-convenience.
+- The boundaries where input is validated are CLI input, user scripts and
+  external data.
+- The documented lazy imports, and nothing else: `bpy` and `mathutils`
+  inside `render/`; and `ocp_vscode`, the optional `ocp` extra, reached
+  only through `cli._pusher` importing `push.py` and
+  `environment._probe_viewer`.
 
 **Before every commit:** `uv run ruff format && uv run ruff check &&
 uv run basedpyright`. Rules live in `pyproject.toml`; a `noqa` carries
