@@ -4,9 +4,10 @@
 // is asked for and keeps the result.
 import { cp, mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const out = `${resolve(Bun.argv[2])}/`;
-const renderer = new URL("./node_modules/three-cad-viewer/", import.meta.url).pathname;
+const renderer = fileURLToPath(new URL("./node_modules/three-cad-viewer/", import.meta.url));
 
 await rm(out, { recursive: true, force: true });
 await mkdir(out, { recursive: true });
